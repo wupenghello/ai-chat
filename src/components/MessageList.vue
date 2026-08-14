@@ -46,7 +46,7 @@ watch(
         @retry="emit('retry', m.id)"
         @go-settings="emit('goSettings')"
       />
-      <div v-else class="row-wrap">
+      <div v-else class="row-wrap" :class="m.role">
         <MessageBubble :message="m" />
       </div>
     </template>
@@ -66,5 +66,8 @@ watch(
 .row-wrap {
   width: 100%;
   display: flex;
+}
+.row-wrap.user {
+  justify-content: flex-end;
 }
 </style>

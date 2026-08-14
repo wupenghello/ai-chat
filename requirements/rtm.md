@@ -9,7 +9,7 @@
 | REQ-001 | 发送消息并流式接收回复 | P0 | design/iter-1（已基线） | api/client.ts, ComposerBox, MessageBubble | client.spec / composer.spec | 已验证（DeepSeek 真实流式实测通过；GLM 待余额） | iter-1 |
 | REQ-002 | 多轮上下文记忆（系统提示词 + 最近 20 轮截断） | P0 | 不涉及（数据层逻辑） | api/client.ts buildContext | client.spec | 已实现 | iter-1 |
 | REQ-003 | 新建会话（生成中新建 = 中断并标注） | P0 | design/iter-1（已基线） | stores/sessions.ts, TheSidebar | sessions.spec | 已实现 | iter-1 |
-| REQ-004 | 查看历史会话并切换（生成中切换 = 中断并标注） | P0 | design/iter-1（已基线） | stores/sessions.ts, SessionListItem | sessions.spec | 已实现 | iter-1 |
+| REQ-004 | 查看历史会话并切换（CHG-001：切换不中断，后台继续生成） | P0 | design/iter-1（已基线） | stores/sessions.ts, SessionListItem | sessions.spec（CHG-001 用例） | 已验证 | iter-1 |
 | REQ-005 | 删除会话 | P0 | design/iter-1（已基线） | TheSidebar + ConfirmModal | sessions.spec | 已实现 | iter-1 |
 | REQ-006 | 会话本地持久化与恢复（IndexedDB） | P0 | 不涉及（数据层） | db/idb.ts, stores/sessions.ts | sessions.spec + 浏览器实测（修复 Proxy 克隆缺陷后端到端通过） | 已实现 | iter-1 |
 | REQ-007 | 调用异常与降级提示（401 引导至设置页） | P0 | design/iter-1（已基线） | api/client.ts, ErrorBubble, AppToast | client.spec / sessions.spec + 浏览器实测（未配置引导、429 原因透传） | 已实现 | iter-1 |

@@ -24,6 +24,7 @@ function submit() {
 }
 
 function onKey(e: KeyboardEvent) {
+  if (e.isComposing) return // 中文输入法选词回车不发送
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     submit()

@@ -61,7 +61,7 @@ describe('sessions store · 发送与生成（REQ-001/002）', () => {
   })
 })
 
-describe('中断与错误（REQ-003/004/007）', () => {
+describe('中断与错误（REQ-003/004/007 + CHG-001）', () => {
   it('生成中新建会话：原回复标注 interrupted，新会话立即激活', async () => {
     mockedStream.mockImplementation(abortableStream)
     const sessions = useSessionsStore()
@@ -71,7 +71,34 @@ describe('中断与错误（REQ-003/004/007）', () => {
     await p
     expect(sessions.sessions[1].messages[1].status).toBe('interrupted')
     expect(sessions.activeId).toBe(sessions.sessions[0].id)
-    expect(sessions.generating).toBe(false)
+    expect(sessions.isGenerating(sessions.sessions[1].id)).toBe(false)
+  })
+
+  it('CHG-001 + Bug#1：生成中切换会话不中断、后台流式更新在 store 中实时可见', async () => {
+    let release!: (v: string) => void
+    const gate = new Promise<string>((res) => (release = res))
+    mockedStream.mockImplementation((_c, _m, h: StreamHandlers) => {
+      h.onDelta('部分')
+      return gate
+    })
+    const sessions = useSessionsStore()
+    const other = sessions.createSession() // 历史会话（无生成）
+    const p = sessions.send('慢问题') // 在当前会话生成
+    await new Promise((r) => setTimeout(r, 10))
+    const genId = sessions.activeId!
+
+    // Bug#1 回归：onDelta 改的是响应式代理，store 读到的内容实时更新
+    expect(sessions.sessions.find((s) => s.id === genId)!.messages[1].content).toBe('部分')
+
+    sessions.switchTo(other) // 切走（CHG-001：不中断）
+    expect(sessions.isGenerating(genId)).toBe(true)
+    release('完整')
+    await p
+    expect(sessions.isGenerating(genId)).toBe(false)
+    expect(sessions.sessions.find((s) => s.id === genId)!.messages[1]).toMatchObject({
+      status: 'done',
+      content: '部分',
+    })
   })
 
   it('API 401：消息标 error 且带 kind=auth，可重试成功', async () => {

@@ -36,13 +36,17 @@ export const useSessionsStore = defineStore('sessions', {
   state: () => ({
     sessions: [] as Session[],
     activeId: null as string | null,
-    generating: false,
-    controller: null as AbortController | null,
+    /** 每个会话独立的生成控制器（CHG-001：切换会话不再中断，后台继续） */
+    controllers: {} as Record<string, AbortController>,
   }),
 
   getters: {
     active(state): Session | null {
       return state.sessions.find((s) => s.id === state.activeId) ?? null
+    },
+    /** 指定会话是否正在生成（Composer 按当前会话禁用） */
+    isGenerating(state) {
+      return (sessionId: string | null) => !!sessionId && !!state.controllers[sessionId]
     },
   },
 
@@ -64,15 +68,13 @@ export const useSessionsStore = defineStore('sessions', {
       return db.saveSession(JSON.parse(JSON.stringify(clean)))
     },
 
-    /** 生成中新建/切换 = 中断当前并标注（REQ-003/004） */
-    abortActive() {
-      if (!this.controller) return
-      this.controller.abort()
-      this.controller = null
+    /** 中断指定会话的生成并标注（REQ-003：仅"新建会话"使用；CHG-001 后切换不再调用） */
+    abortSession(sessionId: string) {
+      this.controllers[sessionId]?.abort()
     },
 
     createSession(): string {
-      this.abortActive()
+      if (this.activeId) this.abortSession(this.activeId) // REQ-003：生成中新建 = 中断并标注
       const s: Session = {
         id: uid(),
         title: '新会话',
@@ -89,12 +91,12 @@ export const useSessionsStore = defineStore('sessions', {
     switchTo(id: string) {
       const target = this.sessions.find((s) => s.id === id)
       if (!target || target.corrupted) return
-      this.abortActive()
+      // CHG-001：切换不中断生成，目标会话在后台继续流式更新
       this.activeId = id
     },
 
     async removeSession(id: string) {
-      if (this.activeId === id) this.abortActive()
+      this.abortSession(id) // 被删会话若有后台生成，一并终止
       this.sessions = this.sessions.filter((s) => s.id !== id)
       if (this.activeId === id) this.activeId = this.sessions[0]?.id ?? null
       await db.deleteSession(id)
@@ -111,36 +113,38 @@ export const useSessionsStore = defineStore('sessions', {
         this.createSession()
         session = this.active!
       }
+      if (this.controllers[session.id]) return true // 该会话已在生成中，忽略重复发送
 
+      if (session.messages.length === 0) session.title = titleOf(text)
       const userMsg: Message = { id: uid(), role: 'user', content: text, status: 'done' }
       const aiMsg: Message = { id: uid(), role: 'assistant', content: '', status: 'generating' }
-      if (session.messages.length === 0) session.title = titleOf(text)
       session.messages.push(userMsg, aiMsg)
       session.updatedAt = Date.now()
       void this.persist(session)
 
-      await this.generate(session, aiMsg)
+      // 关键：从响应式数组取回代理对象，后续变更才能触发视图更新（Bug#1 根因）
+      const aiMsgReactive = session.messages[session.messages.length - 1]
+      await this.generate(session, aiMsgReactive)
       return true
     },
 
     /** 重试失败的回复：复用原用户消息重新生成（REQ-007 验收） */
     async retry(messageId: string): Promise<void> {
       const session = this.active
-      if (!session) return
+      if (!session || this.controllers[session.id]) return
       const idx = session.messages.findIndex((m) => m.id === messageId)
       if (idx < 0) return
       const failed = session.messages[idx]
       if (failed.status !== 'error') return
-      const retryMsg: Message = { ...failed, status: 'generating', content: '', error: undefined }
-      session.messages.splice(idx, 1, retryMsg)
+      session.messages.splice(idx, 1, { ...failed, status: 'generating', content: '', error: undefined })
+      const retryMsg = session.messages[idx]
       await this.generate(session, retryMsg)
     },
 
     async generate(session: Session, aiMsg: Message) {
       const settings = useSettingsStore()
       const controller = new AbortController()
-      this.controller = controller
-      this.generating = true
+      this.controllers[session.id] = controller
       try {
         const full = await streamChat(
           { baseUrl: settings.config.baseUrl!, model: settings.config.model!, apiKey: settings.config.apiKey! },
@@ -156,7 +160,7 @@ export const useSessionsStore = defineStore('sessions', {
         aiMsg.status = 'done'
       } catch (e) {
         if ((e as Error).name === 'AbortError') {
-          aiMsg.status = 'interrupted' // REQ-003/004：中断并标注
+          aiMsg.status = 'interrupted' // REQ-003：中断并标注
         } else {
           const err = e as { kind?: string; message?: string }
           aiMsg.status = 'error'
@@ -164,8 +168,7 @@ export const useSessionsStore = defineStore('sessions', {
         }
       } finally {
         session.updatedAt = Date.now()
-        this.generating = false
-        this.controller = null
+        delete this.controllers[session.id]
         void this.persist(session)
       }
     },

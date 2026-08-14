@@ -58,7 +58,11 @@ async function send(text: string) {
             @go-settings="openSettings"
           />
           <div class="composer-row">
-            <ComposerBox :disabled="sessions.generating" hint="正在生成回复…" @send="send" />
+            <ComposerBox
+              :disabled="sessions.isGenerating(sessions.activeId)"
+              hint="正在生成回复…"
+              @send="send"
+            />
           </div>
         </div>
       </template>
@@ -122,6 +126,6 @@ body {
 }
 .composer-row {
   flex: none;
-  padding: 16px 0 20px;
+  padding: 16px 0 20px; /* 水平边距由 .chat 的 24px padding 统一提供，输入框与消息天然同宽 */
 }
 </style>
