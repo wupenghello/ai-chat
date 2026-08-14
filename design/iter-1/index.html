@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-chat · iter-1 设计稿（待基线 design-iter-1）</title>
+<!--
+  ============================================================
+  ai-chat 迭代 1 正式设计稿（设计稿即页面骨架，开发对照实现）
+  依据：requirements/spec.md（req-baseline-v1，P0 共 8 条）
+        plans/iter-1.md（Vue 3 + 模块化，T2~T6 任务）
+        design/proto/index.html（已随需求基线的交互原型，本稿在其基础上细化）
+        design-system/logo/（方案 C 主色版 + 组合规则）
+  状态：待 CEO 评审 → 通过后由主会话打 design-iter-1 tag（设计师不打 tag）
+  零外部依赖，直接双击打开
+  ============================================================
+-->
+<style>
+/* ============================================================
+   设计令牌（与原型 design/proto/index.html 完全一致，此处为基线定稿值）
+   ------------------------------------------------------------
+   色板（浅色 · 飞书蓝白系）：
+     主色   #3370FF（hover #2E5FDF / active #2860D8 / 浅底 #F0F4FF）
+     底色   #F5F6F7 · 表面 #FFFFFF · 描边 #E5E6EB
+     文字   #1F2329 / #646A73 / #8F959E（三级）
+     错误   #D93025（浅底 #FDECEA）· 警告 #B45309（浅底 #FFF7E8）
+     成功   #1A9E5C · 代码块深底（P1 预留）#23272E / #2B303A
+   字号：12 辅注 · 13 按钮/侧栏 · 14 正文 · 15 消息 · 16 表单 ·
+         17 区块标题 · 20 空态标题（行高：正文 1.6 / 消息 1.75）
+   圆角：6 小按钮 · 8 按钮/卡片 · 12 气泡/模态 · 999 胶囊
+   阴影：1 级 0 1px 2px .06 · 2 级 0 4px 16px .10 · 3 级 0 12px 40px .16
+   间距：4 的倍数刻度 4/8/12/16/20/24/32
+   动效：交互过渡 .15s ease · 消息进入 .25s 上浮渐显 · 模态 .18s ·
+         光标闪烁 .8s · 骨架屏 shimmer 1.2s
+   ============================================================ */
+:root {
+  --c-bg: #F5F6F7; --c-surface: #FFFFFF; --c-border: #E5E6EB;
+  --c-text-1: #1F2329; --c-text-2: #646A73; --c-text-3: #8F959E;
+  --c-primary: #3370FF; --c-primary-h: #2E5FDF; --c-primary-a: #2860D8; --c-primary-l: #F0F4FF;
+  --c-danger: #D93025; --c-danger-l: #FDECEA; --c-success: #1A9E5C;
+  --c-warn: #B45309; --c-warn-l: #FFF7E8;
+  --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-full: 999px;
+  --shadow-1: 0 1px 2px rgba(31,35,41,.06);
+  --shadow-2: 0 4px 16px rgba(31,35,41,.10);
+  --shadow-3: 0 12px 40px rgba(31,35,41,.16);
+  --sidebar-w: 264px; --content-w: 760px;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-size: 14px; line-height: 1.6; color: var(--c-text-1);
+  background: var(--c-bg); padding: 40px 32px 80px;
+}
+.page { max-width: 960px; margin: 0 auto; }
+h1 { font-size: 20px; font-weight: 600; }
+.sub { font-size: 13px; color: var(--c-text-3); margin: 4px 0 8px; }
+.sub b { color: var(--c-text-2); }
+.badge {
+  display: inline-block; padding: 1px 10px; border-radius: var(--r-full);
+  font-size: 12px; font-weight: 500; background: var(--c-warn-l); color: var(--c-warn);
+  margin-bottom: 32px;
+}
+section { margin-bottom: 48px; }
+h2 { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+h2 .no { color: var(--c-primary); margin-right: 4px; }
+.sec-desc { font-size: 13px; color: var(--c-text-3); margin-bottom: 16px; }
+
+table { width: 100%; border-collapse: collapse; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-md); overflow: hidden; font-size: 13px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--c-border); vertical-align: top; }
+th { color: var(--c-text-3); font-weight: 500; background: #FAFBFC; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; background: #F2F3F5; padding: 1px 5px; border-radius: 4px; }
+td code { white-space: nowrap; }
+
+/* ---------- 样件展示容器 ---------- */
+.spec {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
+  padding: 24px;
+  box-shadow: var(--shadow-1);
+  margin-bottom: 16px;
+}
+.spec-title { font-size: 13px; font-weight: 600; color: var(--c-text-2); margin-bottom: 12px; }
+.spec-title .tag { font-weight: 400; color: var(--c-text-3); margin-left: 8px; }
+.stage { border: 1px dashed var(--c-border); border-radius: var(--r-md); padding: 16px; background: var(--c-bg); }
+.stage.white { background: var(--c-surface); }
+.stage.dark { background: #2B303A; }
+.ann { font-size: 12px; color: var(--c-text-3); margin-top: 8px; line-height: 1.8; }
+.ann b { color: var(--c-text-2); font-weight: 600; }
+
+/* ============================================================
+   以下为产品组件最终视觉（与原型一致的实现样式，开发直接对照）
+   ============================================================ */
+
+/* ---- BrandMark 品牌位：logo 24px + 喵喵 15px/600，gap 8px，安全边距见注释 ---- */
+.brand { display: flex; align-items: center; gap: 8px; }
+.brand svg { width: 24px; height: 24px; }
+.brand .name { font-size: 15px; font-weight: 600; color: #1F2329; }
+
+/* ---- 侧栏样件：宽 264px，白底右描边 ---- */
+.sidebar-demo {
+  width: var(--sidebar-w);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
+  display: flex; flex-direction: column;
+  box-shadow: var(--shadow-1);
+}
+.sidebar-demo .hd { padding: 16px 16px 8px; }
+.btn-new {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  width: calc(100% - 32px); margin: 12px 16px 0; height: 36px;
+  background: var(--c-primary); color: #fff;
+  border-radius: var(--r-md); font-size: 13px; font-weight: 600;
+  transition: background .15s ease, transform .1s ease;
+}
+.btn-new:hover { background: var(--c-primary-h); }
+.btn-new:active { background: var(--c-primary-a); transform: scale(.98); }
+.session-list { padding: 8px; }
+.list-label { font-size: 12px; color: var(--c-text-3); font-weight: 500; padding: 8px 8px 4px; }
+.session-item {
+  position: relative; display: flex; flex-direction: column; justify-content: center;
+  min-height: 48px; padding: 6px 32px 6px 10px;
+  border-radius: var(--r-md); cursor: pointer; transition: background .15s ease;
+}
+.session-item:hover { background: #F2F3F5; }
+.session-item.active { background: var(--c-primary-l); }
+.session-title { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session-item.active .session-title { color: var(--c-primary-h); }
+.session-meta { font-size: 12px; color: var(--c-text-3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session-del {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  width: 24px; height: 24px; border-radius: var(--r-sm);
+  display: flex; align-items: center; justify-content: center; color: var(--c-text-3);
+}
+.session-item:hover .session-del { display: flex; }
+.session-del:hover { background: var(--c-danger-l); color: var(--c-danger); }
+.session-item.corrupt { opacity: .55; cursor: not-allowed; }
+.tagpill { display: inline-block; padding: 0 6px; height: 18px; line-height: 18px; border-radius: var(--r-full); font-size: 12px; font-weight: 500; }
+.tag-corrupt { background: var(--c-danger-l); color: var(--c-danger); }
+.tag-interrupted { background: var(--c-warn-l); color: var(--c-warn); }
+.sidebar-demo .ft { border-top: 1px solid var(--c-border); padding: 8px; display: flex; align-items: center; gap: 8px; height: 56px; font-size: 13px; font-weight: 500; color: var(--c-text-2); padding-left: 16px; }
+.api-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c-danger); margin-left: auto; margin-right: 8px; }
+.api-dot.ok { background: var(--c-success); }
+
+/* ---- 消息组件 ---- */
+.msg { display: flex; gap: 12px; margin-bottom: 24px; animation: msgIn .25s ease; }
+@keyframes msgIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.msg-avatar { width: 28px; height: 28px; border-radius: var(--r-full); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; }
+.msg-ai .msg-avatar { background: var(--c-primary-l); color: var(--c-primary-h); }
+.msg-user { flex-direction: row-reverse; }
+.msg-user .msg-avatar { background: #E8EBF2; color: var(--c-text-2); }
+.msg-body { max-width: calc(100% - 80px); min-width: 0; }
+.msg-role { font-size: 12px; color: var(--c-text-3); margin-bottom: 4px; }
+.msg-user .msg-role { text-align: right; }
+.bubble-ai { font-size: 15px; line-height: 1.75; white-space: pre-wrap; word-break: break-word; }
+.bubble-user { background: var(--c-primary); color: #fff; font-size: 15px; line-height: 1.7; padding: 10px 14px; border-radius: var(--r-lg); border-top-right-radius: 4px; white-space: pre-wrap; word-break: break-word; }
+.cursor { display: inline-block; width: 2px; height: 1em; background: var(--c-primary); vertical-align: -2px; margin-left: 2px; animation: blink .8s step-end infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.msg-status-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.status-generating { font-size: 12px; color: var(--c-text-3); display: flex; align-items: center; gap: 6px; }
+.spinner { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--c-border); border-top-color: var(--c-primary); animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.status-interrupted { display: inline-flex; align-items: center; gap: 4px; background: var(--c-warn-l); color: var(--c-warn); font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: var(--r-full); }
+.bubble-error { background: var(--c-danger-l); border: 1px solid #F5C6C2; border-radius: var(--r-lg); padding: 12px 16px; font-size: 14px; color: #8C2820; }
+.bubble-error .err-title { font-weight: 600; margin-bottom: 4px; color: var(--c-danger); }
+.err-actions { display: flex; gap: 8px; margin-top: 10px; }
+.btn-retry { height: 28px; padding: 0 12px; background: var(--c-danger); color: #fff; border-radius: var(--r-sm); font-size: 13px; font-weight: 500; }
+.btn-retry:hover { background: #B7251C; }
+.btn-link { height: 28px; padding: 0 12px; border: 1px solid #F5C6C2; background: #fff; border-radius: var(--r-sm); font-size: 13px; font-weight: 500; color: var(--c-text-2); }
+.btn-link:hover { border-color: var(--c-primary); color: var(--c-primary); }
+/* P1 预留代码块（iter-1 回复按纯文本渲染，见样件 4.7） */
+.code-block { position: relative; margin: 12px 0; }
+.code-head { display: flex; align-items: center; justify-content: space-between; background: #23272E; color: #9AA4B2; font-size: 12px; padding: 6px 12px; border-radius: var(--r-lg) var(--r-lg) 0 0; }
+.code-block pre { background: #2B303A; color: #E6EAF0; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; line-height: 1.6; padding: 12px 16px; border-radius: 0 0 var(--r-lg) var(--r-lg); overflow-x: auto; white-space: pre; }
+
+/* ---- 空状态 ---- */
+.empty-hero { text-align: center; padding: 24px 0 8px; }
+.empty-hero .logo-big { margin: 0 auto 16px; width: 48px; height: 48px; }
+.empty-title { font-size: 20px; font-weight: 600; margin-bottom: 8px; }
+.empty-desc { font-size: 14px; color: var(--c-text-2); margin-bottom: 24px; }
+.suggests { display: flex; flex-direction: column; gap: 8px; max-width: 420px; margin: 0 auto; text-align: left; }
+.suggest { border: 1px solid var(--c-border); background: var(--c-surface); border-radius: var(--r-md); padding: 10px 16px; font-size: 13px; color: var(--c-text-2); transition: border-color .15s ease, color .15s ease, box-shadow .15s ease; }
+.suggest:hover { border-color: var(--c-primary); color: var(--c-primary-h); box-shadow: var(--shadow-1); }
+
+/* ---- 骨架屏 ---- */
+.skeleton-row { display: flex; gap: 12px; margin-bottom: 24px; }
+.skeleton-row.user { flex-direction: row-reverse; }
+.sk { background: linear-gradient(90deg, #EEF0F3 25%, #F7F8FA 50%, #EEF0F3 75%); background-size: 200% 100%; animation: shimmer 1.2s infinite; border-radius: var(--r-sm); }
+@keyframes shimmer { to { background-position: -200% 0; } }
+.sk-avatar { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; }
+.sk-line { height: 14px; margin-bottom: 8px; }
+
+/* ---- 输入区 ---- */
+.composer-box { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); padding: 12px 12px 8px; box-shadow: var(--shadow-1); transition: border-color .15s ease, box-shadow .15s ease; }
+.composer-box.focus { border-color: var(--c-primary); box-shadow: 0 0 0 3px rgba(51,112,255,.12); }
+.composer-demo { width: 100%; border: none; outline: none; resize: none; font-size: 14px; line-height: 1.6; background: transparent; color: var(--c-text-1); display: block; }
+.composer-demo::placeholder { color: var(--c-text-3); }
+.composer-bar { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.composer-hint { font-size: 12px; color: var(--c-text-3); margin-right: auto; }
+.btn-send { width: 36px; height: 36px; border-radius: var(--r-md); background: var(--c-primary); color: #fff; display: flex; align-items: center; justify-content: center; transition: background .15s ease, transform .1s ease, opacity .15s ease; }
+.btn-send:hover:not(:disabled) { background: var(--c-primary-h); }
+.btn-send:active:not(:disabled) { transform: scale(.94); }
+.btn-send:disabled { background: #C9CFDB; cursor: not-allowed; }
+
+/* ---- 设置表单 ---- */
+.settings-form { max-width: 420px; }
+.field { margin-bottom: 20px; }
+.field label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+.field .req { color: var(--c-danger); margin-left: 2px; }
+.field input { width: 100%; height: 36px; padding: 0 12px; font-size: 16px; border: 1px solid var(--c-border); border-radius: var(--r-md); outline: none; color: var(--c-text-1); transition: border-color .15s ease, box-shadow .15s ease; }
+.field input:focus { border-color: var(--c-primary); box-shadow: 0 0 0 3px rgba(51,112,255,.12); }
+.field input.invalid { border-color: var(--c-danger); box-shadow: 0 0 0 3px rgba(217,48,37,.10); }
+.hint { font-size: 12px; color: var(--c-text-3); margin-top: 4px; }
+.hint.error { color: var(--c-danger); }
+.settings-actions { display: flex; align-items: center; gap: 12px; margin-top: 24px; }
+.btn-primary { height: 36px; padding: 0 20px; background: var(--c-primary); color: #fff; border-radius: var(--r-md); font-size: 13px; font-weight: 600; transition: background .15s ease, transform .1s ease; }
+.btn-primary:hover { background: var(--c-primary-h); }
+.btn-primary:active { background: var(--c-primary-a); transform: scale(.98); }
+.btn-text-danger { height: 36px; padding: 0 8px; font-size: 13px; color: var(--c-danger); border-radius: var(--r-md); }
+.btn-text-danger:hover { background: var(--c-danger-l); }
+
+/* ---- 模态 ---- */
+.modal-mask { background: rgba(31,35,41,.45); border-radius: var(--r-md); padding: 24px; display: flex; align-items: center; justify-content: center; }
+.modal { background: var(--c-surface); border-radius: var(--r-lg); box-shadow: var(--shadow-3); width: 360px; padding: 24px; animation: modalIn .18s ease; }
+@keyframes modalIn { from { opacity: 0; transform: scale(.96) translateY(8px); } to { opacity: 1; transform: none; } }
+.modal h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+.modal .modal-body { font-size: 14px; color: var(--c-text-2); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
+.btn-ghost { height: 32px; padding: 0 12px; border: 1px solid var(--c-border); border-radius: var(--r-md); font-size: 13px; color: var(--c-text-2); background: var(--c-surface); }
+.btn-ghost:hover { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-l); }
+.btn-danger { height: 32px; padding: 0 16px; background: var(--c-danger); color: #fff; border-radius: var(--r-md); font-size: 13px; font-weight: 500; }
+.btn-danger:hover { background: #B7251C; }
+
+/* ---- Toast ---- */
+.toast { display: flex; align-items: center; gap: 12px; background: #23272E; color: #fff; font-size: 13px; padding: 10px 16px; border-radius: var(--r-md); box-shadow: var(--shadow-2); }
+.toast .t-action { color: #A3BCFF; font-size: 13px; font-weight: 600; padding: 2px 6px; border-radius: 4px; }
+.toast .t-action:hover { background: rgba(255,255,255,.12); }
+
+/* ---- 顶栏 ---- */
+.main-header-demo { height: 56px; display: flex; align-items: center; gap: 12px; padding: 0 24px; border-bottom: 1px solid var(--c-border); background: var(--c-surface); border-radius: var(--r-md) var(--r-md) 0 0; }
+.main-header-demo .t { font-size: 15px; font-weight: 600; }
+.main-header-demo .s { font-size: 12px; color: var(--c-text-3); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>ai-chat · iter-1 设计稿</h1>
+  <div class="sub">
+    依据：<b>req-baseline-v1</b>（P0 共 8 条：REQ-001~007 + REQ-014）·
+    <b>plans/iter-1.md</b>（Vue 3 + Vite + TS，模块化）·
+    基础：<b>design/proto/index.html</b>（已基线原型，本稿为细化定稿，非重新设计）·
+    品牌：<b>design-system/logo/</b>（方案 C 主色版）
+  </div>
+  <div class="badge">状态：待 CEO 评审 → 通过后打 design-iter-1 基线（tag 由主会话打）</div>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">1</span>设计令牌（基线定稿值）</h2>
+    <div class="sec-desc">全部组件只允许使用以下令牌（CSS 变量命名与 <code>:root</code> 定义见本文件源码注释，开发在 <code>src/assets/tokens.css</code> 落地）。</div>
+    <table>
+      <tr><th>类别</th><th>令牌</th><th>值 / 用途</th></tr>
+      <tr><td rowspan="5">颜色</td><td>主色</td><td><code>#3370FF</code>（hover <code>#2E5FDF</code> / active <code>#2860D8</code> / 浅底 <code>#F0F4FF</code>）— 按钮、选中态、用户气泡、焦点环、链接、状态点</td></tr>
+      <tr><td>中性色</td><td>底色 <code>#F5F6F7</code> · 表面 <code>#FFFFFF</code> · 描边 <code>#E5E6EB</code> · hover 灰底 <code>#F2F3F5</code></td></tr>
+      <tr><td>文字三级</td><td><code>#1F2329</code>（主）/ <code>#646A73</code>（次）/ <code>#8F959E</code>（辅、占位符）</td></tr>
+      <tr><td>语义色</td><td>错误 <code>#D93025</code>（浅底 <code>#FDECEA</code>、描边 <code>#F5C6C2</code>）· 警告 <code>#B45309</code>（浅底 <code>#FFF7E8</code>，"生成中断"专用）· 成功 <code>#1A9E5C</code></td></tr>
+      <tr><td>辅助</td><td>禁用按钮 <code>#C9CFDB</code> · 用户头像底 <code>#E8EBF2</code> · Toast 深底 <code>#23272E</code> · 错误文字 <code>#8C2820</code></td></tr>
+      <tr><td>字号</td><td>正文系</td><td>12 辅注/标签 · 13 按钮与侧栏 · 14 正文输入 · 15 消息体与顶栏标题 · 16 表单输入与模态标题 · 17 区块标题 · 20 空态标题；行高：正文 1.6、消息 1.75</td></tr>
+      <tr><td>圆角</td><td>四级</td><td>6px 小按钮/标签 · 8px 按钮/卡片/输入框 · 12px 气泡/模态/输入区容器 · 999px 胶囊（用户气泡右上角 4px 收角）</td></tr>
+      <tr><td>阴影</td><td>三级</td><td>1 级 <code>0 1px 2px .06</code>（常规表面）· 2 级 <code>0 4px 16px .10</code>（下拉/Toast）· 3 级 <code>0 12px 40px .16</code>（模态）</td></tr>
+      <tr><td>间距/尺寸</td><td>关键值</td><td>间距 4 的倍数刻度；侧栏宽 <code>264px</code> · 对话内容最大宽 <code>760px</code> 居中 · 顶栏高 <code>56px</code> · 主按钮高 <code>36px</code> · 次按钮高 <code>32px</code> · 头像 <code>28px</code> · 消息间距 <code>24px</code> · 消息左右内边距 <code>24px</code></td></tr>
+      <tr><td>动效</td><td>统一参数</td><td>交互过渡 <code>.15s ease</code>（hover/active/focus）· 消息进入 <code>.25s</code> 上浮 6px 渐显 · 模态 <code>.18s</code> 缩放 .96 + 上移 8px · 流式光标闪烁 <code>.8s step-end</code> · spinner <code>.7s linear</code> · 骨架屏 <code>1.2s</code> shimmer · 焦点环 <code>3px rgba(51,112,255,.12)</code></td></tr>
+    </table>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">2</span>页面骨架与布局</h2>
+    <div class="sec-desc">两个视图：<b>对话视图</b>（默认）与<b>设置视图</b>（替换主区，侧栏常驻）。左 264px 侧栏 + 右主区，整体 <code>100vh</code>，主区内部独立滚动。</div>
+    <div class="spec">
+      <div class="spec-title">2.1 顶栏（对话视图）<span class="tag">高 56px · 白底下描边 · 左标题右动作</span></div>
+      <div class="main-header-demo">
+        <div>
+          <div class="t">会话标题（首条消息前 20 字）</div>
+          <div class="s">模型：glm-5.3 · 已配置密钥</div>
+        </div>
+        <div style="margin-left:auto" class="btn-ghost">设置</div>
+      </div>
+      <div class="ann">主标题 15px/600；副行 12px <b>#8F959E</b>，反映当前配置状态（未配置密钥时显示"未配置密钥"）。「设置」为次级按钮（32px，描边样式）。</div>
+    </div>
+    <div class="spec">
+      <div class="spec-title">2.2 品牌位（侧栏顶部）<span class="tag">组合规则：design-system/logo/README.md</span></div>
+      <div class="stage white" style="display:inline-block;padding:16px 24px;">
+        <div class="brand">
+          <svg viewBox="0 0 128 128" role="img" aria-label="喵喵标志 方案C">
+            <path fill="none" stroke="#3370FF" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"
+              d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/>
+          </svg>
+          <span class="name">喵喵</span>
+        </div>
+      </div>
+      <div class="ann">
+        标志 <b>24px</b>（≥16px 最小尺寸，安全边距由侧栏 16px 内边距保证）+ 「喵喵」<b>15px/600 #1F2329</b>，间距 <b>8px</b>；
+        浅底用主色版 logo，深底（iter-1 无深底场景）预留纯白版。禁止拉伸/改色/加框（品牌规范）。
+        组件化建议：<code>BrandMark.vue</code>，props：<code>size?: number = 24</code>、<code>variant?: 'light' | 'dark' = 'light'</code>。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">3</span>组件清单（对齐 Vue 3 模块化结构）</h2>
+    <div class="sec-desc">建议文件均放 <code>src/components/</code>；状态管理放 <code>src/stores/</code>（sessions / settings / toast），API 客户端 <code>src/api/</code>，持久化 <code>src/db/</code>。组件不直接触达 API 与 DB，只依赖 store（职责单向依赖，满足 T1 验收）。</div>
+    <table>
+      <tr><th>组件（建议文件）</th><th>对应需求</th><th>Props / 状态</th><th>Emits / 行为</th><th>必须实现的状态</th></tr>
+      <tr>
+        <td><code>TheSidebar.vue</code><br>会话侧栏容器</td><td>REQ-003/004/005</td>
+        <td>props: <code>sessions: Session[]</code>, <code>currentId: string | null</code>, <code>apiConfigured: boolean</code></td>
+        <td>emit: <code>select(id)</code> / <code>new()</code>；内含品牌位、新建按钮、列表、设置入口</td>
+        <td>列表空态（引导文案）、正常列表（updatedAt 倒序）</td>
+      </tr>
+      <tr>
+        <td><code>SessionListItem.vue</code><br>会话列表项</td><td>REQ-004/005</td>
+        <td>props: <code>session</code>（含 <code>corrupt?: boolean</code>、是否有 interrupted 消息）、<code>active: boolean</code></td>
+        <td>emit: <code>select</code> / <code>delete</code>（删除按钮 hover 时显示）</td>
+        <td>默认 / hover（灰底 #F2F3F5）/ 选中（#F0F4FF，标题 #2E5FDF）/ 损坏（半透明 .55 + "无法读取"胶囊，点击不切换仅 toast）/ 含"生成中断"胶囊</td>
+      </tr>
+      <tr>
+        <td><code>MessageList.vue</code><br>消息区</td><td>REQ-001/002/004</td>
+        <td>props: <code>messages: Message[]</code>, <code>loading: boolean</code>；流式时自动滚底（用户上翻则暂停跟滚）</td>
+        <td>切换会话时先渲染骨架屏（≤250ms 数据就绪即替换）；空会话渲染 <code>EmptyState</code></td>
+        <td>骨架屏加载态 / 空态 / 长列表（30 轮全部可滚动查看，20 轮截断仅在请求层）</td>
+      </tr>
+      <tr>
+        <td><code>MessageBubble.vue</code><br>消息气泡</td><td>REQ-001/002</td>
+        <td>props: <code>message: { role, content, status: 'done' | 'generating' | 'interrupted' }</code></td>
+        <td>user：右对齐主色实底气泡；ai：左对齐无气泡直排；generating：尾部光标 + 底部 spinner 行；interrupted：底部"生成中断"胶囊（#FFF7E8/#B45309）</td>
+        <td>done / generating / interrupted ×（user/ai 两种 role）</td>
+      </tr>
+      <tr>
+        <td><code>ErrorBubble.vue</code><br>错误气泡</td><td>REQ-001/007</td>
+        <td>props: <code>error: { type: 'auth' | 'rate' | 'server' | 'network', code?: string }</code></td>
+        <td>emit: <code>retry</code>（复用原消息重发）/ <code>go-settings</code>（仅 auth 型显示入口）</td>
+        <td>四型文案见 4.5 样件；错误浅底卡 + 标题（含错误码）+ 动作按钮区</td>
+      </tr>
+      <tr>
+        <td><code>ComposerBox.vue</code><br>输入区</td><td>REQ-001</td>
+        <td>props: <code>generating: boolean</code>；v-model 文本；textarea 自动增高（max 160px）</td>
+        <td>emit: <code>send(text)</code>（Enter 发送 / Shift+Enter 换行 / 空白输入不发）</td>
+        <td>默认 / focus（主色描边 + 3px 光晕）/ 空输入（发送禁用 #C9CFDB）/ 生成中（发送禁用 + 提示文案切换，见 4.6）</td>
+      </tr>
+      <tr>
+        <td><code>SettingsForm.vue</code><br>设置表单</td><td>REQ-014</td>
+        <td>props: <code>config: { baseUrl, model, apiKey }</code>；本地 state：三个字段值、字段级错误、savedFlag</td>
+        <td>emit: <code>save(config)</code>（三项非空才 emit）/ <code>clear-key</code>（触发确认模态）；保存成功后"已保存"反馈 2s 淡出</td>
+        <td>默认 / 聚焦 / 校验错误（红框 + 行内 12px 错误提示，任一为空不写入）/ 已保存反馈（#1A9E5C）</td>
+      </tr>
+      <tr>
+        <td><code>ConfirmModal.vue</code><br>确认模态</td><td>REQ-005/014</td>
+        <td>props: <code>title</code>, <code>body</code>, <code>confirmText</code>, <code>danger?: boolean = true</code></td>
+        <td>emit: <code>confirm</code> / <code>cancel</code>（Esc / 点击遮罩 = cancel）</td>
+        <td>删除会话确认 / 清除密钥确认（复用同一组件，文案由 props 注入）</td>
+      </tr>
+      <tr>
+        <td><code>AppToast.vue</code><br>全局提示</td><td>REQ-006/007/014</td>
+        <td>由 <code>stores/toast.ts</code> 驱动：队列，单项 <code>{ message, action?: { label, fn } }</code></td>
+        <td>自动消失（普通 3s / 带动作 6s）；动作按钮点击执行并关闭</td>
+        <td>普通提示 / 带动作（如"请先完成 API 配置 → 前往设置"）/ 存储写入失败提示</td>
+      </tr>
+      <tr>
+        <td><code>EmptyState.vue</code><br>空状态</td><td>REQ-003/004</td>
+        <td>props: <code>hasSession: boolean</code>（无会话 vs 空会话文案不同）</td>
+        <td>建议卡点击 → 填充输入框（emit <code>pick(text)</code>）</td>
+        <td>首次无会话 / 空会话；logo 48px + 标题 20px + 建议卡三条</td>
+      </tr>
+      <tr>
+        <td><code>BrandMark.vue</code><br>品牌位</td><td>—（品牌规范）</td>
+        <td>props: <code>size = 24</code>, <code>variant = 'light'</code></td>
+        <td>内联 SVG（方案 C path），禁止位图</td>
+        <td>light（主色 #3370FF）/ dark（纯白，预留）</td>
+      </tr>
+    </table>
+    <div class="ann">注：原型的"上下文预览"模态与"演示控制"面板为<b>需求演示辅助，不进产品组件</b>；REQ-002（20 轮截断）为 <code>src/api/</code> 数据层逻辑，界面无专属组件，验收走请求体观测。</div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">4</span>组件视觉样件（开发对照实现）</h2>
+
+    <div class="spec">
+      <div class="spec-title">4.1 侧栏整件<span class="tag">264px · 品牌位/新建/列表/设置入口</span></div>
+      <div class="stage" style="display:flex;justify-content:center;">
+        <div class="sidebar-demo">
+          <div class="hd">
+            <div class="brand">
+              <svg viewBox="0 0 128 128"><path fill="none" stroke="#3370FF" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+              <span class="name">喵喵</span>
+            </div>
+            <div class="btn-new">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              新建会话
+            </div>
+          </div>
+          <div class="session-list">
+            <div class="list-label">历史会话（按最近活跃排序）</div>
+            <div class="session-item active">
+              <div class="session-title">帮我写一封请假邮件，理由是家里…</div>
+              <div class="session-meta">内容摘要 · 14:32</div>
+              <div class="session-del" title="删除会话"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 3.5h10M5.5 3.5V2h3v1.5M3.5 3.5l.6 8.5h5.8l.6-8.5M5.8 6v3.5M8.2 6v3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></div>
+            </div>
+            <div class="session-item">
+              <div class="session-title">流式请求的代码示例</div>
+              <div class="session-meta"><span class="tagpill tag-interrupted">生成中断</span> 给我一个用 JS 实… · 12:08</div>
+            </div>
+            <div class="session-item">
+              <div class="session-title">我叫小明，请记住我的名字</div>
+              <div class="session-meta">内容摘要 · 昨天</div>
+            </div>
+            <div class="session-item corrupt">
+              <div class="session-title">旧会话</div>
+              <div class="session-meta"><span class="tagpill tag-corrupt">无法读取</span></div>
+            </div>
+          </div>
+          <div class="ft">
+            API 设置（未配置）
+            <span class="api-dot"></span>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        列表项高 48px / 圆角 8px / 内边距 6px 32px 6px 10px；选中项浅蓝底 <b>#F0F4FF</b> + 标题 <b>#2E5FDF</b>；
+        损坏项透明度 .55 + 红色"无法读取"胶囊；含中断消息的会话在摘要前挂"生成中断"胶囊；
+        删除按钮 24px，仅 hover 显示，hover 时红底浅色 <b>#FDECEA</b>；底部设置入口 56px 高，右侧 API 状态点（未配置红 <b>#D93025</b> / 已配置绿 <b>#1A9E5C</b>，8px 圆点）。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.2 消息流样件<span class="tag">user 右侧实底气泡 · ai 左侧直排</span></div>
+      <div class="stage white" style="max-width:760px;margin:0 auto;">
+        <div class="msg msg-user">
+          <div class="msg-avatar">我</div>
+          <div class="msg-body"><div class="msg-role">我</div><div class="bubble-user">我叫小明，请记住我的名字。</div></div>
+        </div>
+        <div class="msg msg-ai">
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body"><div class="msg-role">AI</div><div class="bubble-ai">你好小明！已经记住了。后续每轮请求都会携带本会话最近 20 轮的上下文，你可以接着问我「我叫什么」试试。</div></div>
+        </div>
+      </div>
+      <div class="ann">头像 28px 圆形（AI：#F0F4FF 底 #2E5FDF 字；我：#E8EBF2 底 #646A73 字）；角色标签 12px #8F959E；用户气泡 #3370FF 白字 15px，圆角 12px/右上 4px，内边距 10px 14px；AI 消息无气泡，15px/1.75 直排；消息间距 24px，进入动画 .25s。</div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.3 流式生成中<span class="tag">REQ-001 · 打字机 + 光标 + spinner</span></div>
+      <div class="stage white" style="max-width:760px;margin:0 auto;">
+        <div class="msg msg-ai">
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body"><div class="msg-role">AI</div><div class="bubble-ai">流式输出就是服务器边生成边返回，前端逐块渲染，用户不必等全文生成完毕<span class="cursor"></span></div>
+          <div class="msg-status-row"><span class="status-generating"><span class="spinner"></span>正在生成…</span></div></div>
+        </div>
+      </div>
+      <div class="ann">生成中：内容尾部 2px 主色光标（.8s 闪烁）+ 底部 12px "正在生成…"（12px spinner，主色环）；此时输入区发送禁用（见 4.6）。首块到达 200ms 内开始渲染，历史消息不得重排闪烁（验收项）。</div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.4 生成中断标注<span class="tag">REQ-003/004 · 新建/切换会话时中断</span></div>
+      <div class="stage white" style="max-width:760px;margin:0 auto;">
+        <div class="msg msg-ai">
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body"><div class="msg-role">AI</div><div class="bubble-ai">从前有座山，山里有座庙，庙里有个老和尚在给小和尚讲故事：从前有座山，山里有座……</div>
+          <div class="msg-status-row"><span class="status-interrupted"><svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>生成中断</span><span style="font-size:12px;color:var(--c-text-3)">已生成内容保留，可继续提问</span></div></div>
+        </div>
+      </div>
+      <div class="ann">中断胶囊：#FFF7E8 底 #B45309 字，999px 圆角，内 11px 叉线图标；右侧固定辅注文案。生成中新建/切换会话、以及流式中途刷新页面恢复时，均用此标注；会话列表同步挂胶囊（见 4.1）。</div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.5 错误气泡四型<span class="tag">REQ-007 · 3 秒内出现 · 用户消息保留</span></div>
+      <div class="stage white" style="max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:24px;">
+        <div class="msg msg-ai">
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body"><div class="msg-role">AI</div>
+            <div class="bubble-error"><div class="err-title">API 密钥无效（401）</div>服务端拒绝了该密钥（密钥错误、过期或无权限）。请到设置页检查并更新 API Key。
+            <div class="err-actions"><button class="btn-retry">重试</button><button class="btn-link">前往设置更新密钥</button></div></div></div>
+        </div>
+        <div class="msg msg-ai">
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body"><div class="msg-role">AI</div>
+            <div class="bubble-error"><div class="err-title">请求过于频繁（429）</div>已触发服务限流，请稍等片刻再重试。为避免连续失败，不会自动重试。
+            <div class="err-actions"><button class="btn-retry">重试</button></div></div></div>
+        </div>
+        <div class="msg msg-ai">
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body"><div class="msg-role">AI</div>
+            <div class="bubble-error"><div class="err-title">服务暂时不可用（500）</div>AI 服务端出现异常（5xx）。你可以稍后重试；原消息已保留。
+            <div class="err-actions"><button class="btn-retry">重试</button></div></div></div>
+        </div>
+        <div class="msg msg-ai">
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body"><div class="msg-role">AI</div>
+            <div class="bubble-error"><div class="err-title">网络连接失败</div>无法连接到 API 服务，请检查网络或 Base URL 是否正确。原消息已保留。
+            <div class="err-actions"><button class="btn-retry">重试</button></div></div></div>
+        </div>
+      </div>
+      <div class="ann">统一卡式：#FDECEA 底 + #F5C6C2 描边 + 12px 圆角，标题 #D93025/600（含错误码），正文 #8C2820 14px；动作区：重试（#D93025 实底 28px）+ 仅 401/403 显示"前往设置更新密钥"（白底描边）。四型文案定稿如上，开发不得改写；重试复用原消息，不重复显示用户气泡。</div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.6 输入区状态<span class="tag">REQ-001 · 空输入禁用 / 生成中禁用</span></div>
+      <div class="stage" style="max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:24px;">
+        <div class="composer-box focus">
+          <textarea class="composer-demo" rows="1">输入内容时按钮可用</textarea>
+          <div class="composer-bar"><span class="composer-hint">Enter 发送 · Shift+Enter 换行</span>
+            <button class="btn-send"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8l12-6-4.5 12L8 9.5 2 8z" fill="currentColor"/></svg></button></div>
+        </div>
+        <div class="composer-box">
+          <textarea class="composer-demo" rows="1" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
+          <div class="composer-bar"><span class="composer-hint">Enter 发送 · Shift+Enter 换行</span>
+            <button class="btn-send" disabled><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8l12-6-4.5 12L8 9.5 2 8z" fill="currentColor"/></svg></button></div>
+        </div>
+        <div class="composer-box">
+          <textarea class="composer-demo" rows="1">生成中可继续输入，但不能发送</textarea>
+          <div class="composer-bar"><span class="composer-hint">AI 回复生成中，发送暂不可用…</span>
+            <button class="btn-send" disabled><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8l12-6-4.5 12L8 9.5 2 8z" fill="currentColor"/></svg></button></div>
+        </div>
+      </div>
+      <div class="ann">容器：白底 12px 圆角 + 1 级阴影；focus 时主色描边 + 3px rgba(51,112,255,.12) 光晕；发送按钮 36px 方形；禁用 #C9CFDB；生成中提示文案切换为"AI 回复生成中，发送暂不可用…"。无密钥发送：不发请求，toast 引导（见 4.9）。</div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.7 极端内容<span class="tag">超长文本 / 代码内容（iter-1 按纯文本渲染）</span></div>
+      <div class="stage white" style="max-width:760px;margin:0 auto;">
+        <div class="msg msg-ai">
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body"><div class="msg-role">AI</div><div class="bubble-ai">这是一段超长回复，用于验证极端内容下的布局：气泡不撑破容器、自动换行与断词正常、长英文单词 URL 不溢出例如 https://example.com/a-very-long-unbreakable-url-path-segment-for-testing、滚动始终顺滑、用户消息与 AI 消息的视觉层级在长内容下依然清晰。需求验收要求含 20 轮消息的会话可完整滚动查看，此样式即该场景的定稿视觉。继续延长内容以模拟真实长回复……继续延长内容以模拟真实长回复……继续延长内容以模拟真实长回复……继续延长内容以模拟真实长回复……继续延长内容以模拟真实长回复。</div></div>
+        </div>
+        <div class="msg msg-ai">
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body"><div class="msg-role">AI</div><div class="bubble-ai" style="font-family:'SF Mono',Menlo,Consolas,monospace;font-size:13px;">iter-1 范围：代码按纯文本等宽渲染（white-space: pre-wrap），示例：
+const r = await fetch(url, { method: "POST", body })
+if (!r.ok) throw new Error("HTTP " + r.status)</div></div>
+        </div>
+      </div>
+      <div class="ann">iter-1 无 Markdown 渲染（REQ-011 为 P1）：AI 回复一律纯文本 pre-wrap；含代码时整段等宽字体 13px（与正文样式区分即可）。下方为 iter-2 的代码块样式预留（与原型一致，本轮<b>不实现</b>，仅固化视觉避免返工）：</div>
+      <div class="stage" style="max-width:760px;margin:12px auto 0;">
+        <div class="code-block">
+          <div class="code-head"><span>javascript</span><span style="font-size:12px">复制按钮（P1）</span></div>
+          <pre><code>const reader = res.body.getReader();
+while (true) { const { done, value } = await reader.read(); if (done) break; }</code></pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.8 空状态与骨架屏<span class="tag">REQ-003/004</span></div>
+      <div class="stage white">
+        <div class="empty-hero">
+          <svg class="logo-big" viewBox="0 0 128 128"><path fill="none" stroke="#3370FF" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+          <div class="empty-title">开始新的对话</div>
+          <div class="empty-desc">输入任何问题开始对话；会话自动保存在本地浏览器。</div>
+          <div class="suggests">
+            <button class="suggest">我叫小明，请记住我的名字（体验多轮上下文）</button>
+            <button class="suggest">解释一下什么是流式输出</button>
+            <button class="suggest">先去配置 API（Base URL / 模型名 / 密钥）</button>
+          </div>
+        </div>
+      </div>
+      <div class="ann">空态：品牌 logo 48px + 标题 20px/600 + 描述 14px #646A73 + 建议卡（白底描边 8px 圆角，hover 主色描边）；无会话时标题为"欢迎使用喵喵"，侧栏同步显示列表空态文案。骨架屏（切换会话 ≤250ms 加载期）：三行 shimmer 占位（28px 圆占位 + 14px 线条，1.2s 循环），数据就绪即替换。</div>
+      <div class="stage white" style="margin-top:12px;max-width:760px;margin:12px auto 0;">
+        <div class="skeleton-row"><div class="sk sk-avatar"></div><div style="flex:1"><div class="sk sk-line" style="width:60%"></div><div class="sk sk-line" style="width:35%"></div></div></div>
+        <div class="skeleton-row user"><div class="sk sk-avatar"></div><div class="sk sk-line" style="width:45%"></div></div>
+        <div class="skeleton-row"><div class="sk sk-avatar"></div><div style="flex:1"><div class="sk sk-line" style="width:80%"></div><div class="sk sk-line" style="width:70%"></div></div></div>
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.9 设置表单（含校验错误态）<span class="tag">REQ-014 · 三项 · 必填</span></div>
+      <div class="stage white">
+        <div class="settings-form">
+          <div class="field">
+            <label>Base URL<span class="req">*</span></label>
+            <input value="https://open.bigmodel.cn/api/paas/v4" spellcheck="false">
+            <div class="hint">OpenAI 兼容服务的接口地址，如 GLM / DeepSeek</div>
+          </div>
+          <div class="field">
+            <label>模型名<span class="req">*</span></label>
+            <input class="invalid" value="" spellcheck="false">
+            <div class="hint error">模型名不能为空</div>
+          </div>
+          <div class="field">
+            <label>API Key<span class="req">*</span></label>
+            <input type="password" value="********" spellcheck="false" autocomplete="off">
+            <div class="hint">仅存浏览器本地（IndexedDB），不会上传、不会进入代码仓库</div>
+          </div>
+          <div class="settings-actions">
+            <button class="btn-primary">保存</button>
+            <button class="btn-text-danger">清除密钥</button>
+          </div>
+        </div>
+      </div>
+      <div class="ann">输入框高 36px / 字号 16px / 圆角 8px；必填星号 #D93025；校验错误：红描边 + rgba(217,48,37,.10) 光晕 + 12px 红色行内提示，任一为空不写入配置；保存成功显示"已保存"（#1A9E5C，2s 淡出）；「清除密钥」触发确认模态（4.10）。</div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.10 确认模态与 Toast<span class="tag">REQ-005/007/014</span></div>
+      <div class="stage" style="display:flex;gap:24px;flex-wrap:wrap;">
+        <div class="modal-mask" style="flex:1;min-width:300px;">
+          <div class="modal">
+            <h3>删除会话</h3>
+            <div class="modal-body">确定删除会话「流式请求的代码示例」吗？删除后无法恢复。</div>
+            <div class="modal-actions"><button class="btn-ghost">取消</button><button class="btn-danger">删除</button></div>
+          </div>
+        </div>
+        <div class="modal-mask" style="flex:1;min-width:300px;">
+          <div class="modal">
+            <h3>清除 API 密钥</h3>
+            <div class="modal-body">将从本地存储中彻底清除 API Key（Base URL 与模型名保留）。清除后发送消息会提示先完成配置。</div>
+            <div class="modal-actions"><button class="btn-ghost">取消</button><button class="btn-danger">清除</button></div>
+          </div>
+        </div>
+      </div>
+      <div class="stage" style="margin-top:12px;display:flex;gap:24px;flex-wrap:wrap;align-items:center;justify-content:center;">
+        <div class="toast">本地存储写入失败：会话已在内存中保留，本次使用不受影响</div>
+        <div class="toast">请先完成 API 配置（Base URL / 模型名 / API Key）<button class="t-action">前往设置</button></div>
+      </div>
+      <div class="ann">模态 360px 宽 / 12px 圆角 / 3 级阴影 / 遮罩 rgba(31,35,41,.45)，Esc 与遮罩点击 = 取消（删除未确认前会话不移除）；Toast：顶部居中深底 #23272E，普通 3s / 带动作 6s 自动消失，动作字色 #A3BCFF。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">5</span>状态覆盖矩阵（走查对照用）</h2>
+    <div class="sec-desc">开发完成与视觉走查（T7）逐项对照；√ = 本稿已给出定稿视觉。</div>
+    <table>
+      <tr><th>需求</th><th>页面 / 组件</th><th>状态</th><th>覆盖</th><th>样件</th></tr>
+      <tr><td>REQ-001</td><td>对话视图</td><td>发送 + 流式生成中（光标/spinner）</td><td>√</td><td>4.2 / 4.3</td></tr>
+      <tr><td>REQ-001</td><td>ComposerBox</td><td>空输入禁用 / 生成中禁用 / focus</td><td>√</td><td>4.6</td></tr>
+      <tr><td>REQ-002</td><td>数据层（src/api/）</td><td>20 轮截断（无 UI，请求体观测验收）</td><td>√（无视觉）</td><td>3 节注</td></tr>
+      <tr><td>REQ-003</td><td>侧栏 + 对话视图</td><td>新建 → 空会话输入就绪 / 生成中新建 → 中断标注</td><td>√</td><td>4.1 / 4.4 / 4.8</td></tr>
+      <tr><td>REQ-004</td><td>侧栏 + MessageList</td><td>列表 / 切换骨架屏 / 空态 / 损坏会话"无法读取"</td><td>√</td><td>4.1 / 4.8</td></tr>
+      <tr><td>REQ-005</td><td>ConfirmModal</td><td>删除确认 / 取消无变化 / 删除当前会话自动切换</td><td>√</td><td>4.10</td></tr>
+      <tr><td>REQ-006</td><td>AppToast + 恢复逻辑</td><td>写入失败提示 / 流式中断刷新恢复标注"生成中断"</td><td>√</td><td>4.4 / 4.10</td></tr>
+      <tr><td>REQ-007</td><td>ErrorBubble</td><td>401（含设置入口）/ 429 / 500 / 网络失败 / 无密钥 toast 引导</td><td>√</td><td>4.5 / 4.10</td></tr>
+      <tr><td>REQ-014</td><td>SettingsForm</td><td>三配置项 / 校验错误 / 保存反馈 / 清除密钥确认 / 状态点</td><td>√</td><td>4.9 / 4.10 / 4.1</td></tr>
+      <tr><td>极端内容</td><td>MessageBubble</td><td>超长文本 / 长 URL 断词 / 代码纯文本渲染</td><td>√</td><td>4.7</td></tr>
+      <tr><td>品牌</td><td>BrandMark</td><td>侧栏品牌位 / 空态 logo（组合规则见 design-system/logo/）</td><td>√</td><td>2.2 / 4.8</td></tr>
+    </table>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">6</span>与基线原型的差异（iter-1 细化点）</h2>
+    <table>
+      <tr><th>项</th><th>原型（design/proto）</th><th>本稿（iter-1 定稿）</th></tr>
+      <tr><td>品牌位</td><td>紫底方形"喵"字占位</td><td>正式方案 C 标志（24px 主色版）+「喵喵」15px/600 组合，规则对齐 design-system/logo/README.md</td></tr>
+      <tr><td>组件化定义</td><td>无（单文件原型）</td><td>10 个组件的文件命名、Props/Emits/状态清单（第 3 节），对齐 Vue 3 模块化结构</td></tr>
+      <tr><td>代码块</td><td>按 Markdown 围栏渲染 + 复制按钮</td><td>iter-1 回复一律纯文本（REQ-011 为 P1）；含代码时等宽 13px；深色代码块样式固化为 iter-2 预留</td></tr>
+      <tr><td>演示辅助</td><td>演示控制面板、上下文预览模态</td><td>移除（需求演示工具，不进产品）；REQ-002 走请求体观测验收</td></tr>
+      <tr><td>示例配置</td><td>DeepSeek 占位</td><td>Base URL 示例改为 GLM（open.bigmodel.cn）+ 模型 glm-5.3（对齐 iter-1 冒烟环境）</td></tr>
+      <tr><td>持久化提示文案</td><td>"localStorage 演示"</td><td>定稿为 IndexedDB（仅提示文案层面，界面样式不变）</td></tr>
+      <tr><td>令牌</td><td>同源</td><td>与原型完全一致（飞书蓝白系），无改动；令牌表升格为基线定稿值</td></tr>
+    </table>
+  </section>
+
+</div>
+</body>
+</html>
