@@ -6,9 +6,10 @@ build/
 .vite/
 coverage/
 
-# 环境与密钥（API key 一律不入库）
+# 环境与密钥（API key 一律不入库；.env.example 占位文件除外）
 .env
 .env.*
+!.env.example
 *.local
 
 # 系统与编辑器
