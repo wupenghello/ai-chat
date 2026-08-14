@@ -49,8 +49,13 @@ describe('streamChat（REQ-001 流式 + REQ-007 错误分类）', () => {
   })
 
   it('429 → rateLimit；500 → server', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 429 })))
-    await expect(streamChat(cfg, [], { onDelta: () => {} })).rejects.toMatchObject({ kind: 'rateLimit' })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response('{"error":{"code":"1113","message":"余额不足"}}', { status: 429 })),
+    )
+    const err = await streamChat(cfg, [], { onDelta: () => {} }).catch((e) => e)
+    expect(err.kind).toBe('rateLimit')
+    expect(err.message).toContain('余额不足') // 供应商具体原因透传给用户
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 500 })))
     await expect(streamChat(cfg, [], { onDelta: () => {} })).rejects.toMatchObject({ kind: 'server' })
   })

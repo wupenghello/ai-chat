@@ -8,12 +8,13 @@ import ConfirmModal from './ConfirmModal.vue'
 
 const sessions = useSessionsStore()
 const settings = useSettingsStore()
-const emit = defineEmits<{ openSettings: [] }>()
+const emit = defineEmits<{ openSettings: []; chat: [] }>()
 
 const pendingDelete = ref<Session | null>(null)
 
 function onNew() {
   sessions.createSession() // 生成中新建 = 中断并标注（store 内处理）
+  emit('chat')
 }
 </script>
 
@@ -36,7 +37,7 @@ function onNew() {
         :key="s.id"
         :session="s"
         :active="s.id === sessions.activeId"
-        @select="sessions.switchTo(s.id)"
+        @select="sessions.switchTo(s.id); emit('chat')"
         @remove="pendingDelete = s"
       />
     </ul>

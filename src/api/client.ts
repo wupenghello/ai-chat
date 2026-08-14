@@ -98,18 +98,24 @@ export async function streamChat(
   if (!res.ok) {
     let detail = ''
     try {
-      detail = (await res.text()).slice(0, 200)
+      const body = await res.text()
+      try {
+        detail = JSON.parse(body)?.error?.message ?? body.slice(0, 200)
+      } catch {
+        detail = body.slice(0, 200)
+      }
     } catch {
       /* 忽略读取失败 */
     }
     const kind = kindFromStatus(res.status)
+    // 供应商用 429 同时表示限流和余额不足（如 GLM 1113），透传具体原因，避免误导
     const msg =
       kind === 'auth'
         ? `密钥无效或未授权（${res.status}），请前往设置更新密钥`
         : kind === 'rateLimit'
-          ? `请求过于频繁（${res.status}），请稍后重试`
+          ? `请求被拒绝（${res.status}）${detail ? '：' + detail : '，请稍后重试'}`
           : kind === 'server'
-            ? `服务端错误（${res.status}）`
+            ? `服务端错误（${res.status}）${detail ? '：' + detail : ''}`
             : `请求失败（${res.status}）${detail ? '：' + detail : ''}`
     throw new ApiError(kind, msg, res.status)
   }

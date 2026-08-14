@@ -60,7 +60,8 @@ export const useSessionsStore = defineStore('sessions', {
 
     persist(session: Session) {
       const { corrupted: _c, ...clean } = session
-      return db.saveSession(clean)
+      // Pinia 的 reactive Proxy 无法被 IndexedDB 结构化克隆，深拷贝为普通对象
+      return db.saveSession(JSON.parse(JSON.stringify(clean)))
     },
 
     /** 生成中新建/切换 = 中断当前并标注（REQ-003/004） */

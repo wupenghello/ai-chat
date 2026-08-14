@@ -39,7 +39,7 @@ async function send(text: string) {
 
 <template>
   <div class="app">
-    <TheSidebar @open-settings="openSettings" />
+    <TheSidebar @open-settings="openSettings" @chat="view = 'chat'" />
 
     <main class="main">
       <SettingsForm v-if="view === 'settings'" />
