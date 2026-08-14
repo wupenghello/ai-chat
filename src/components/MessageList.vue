@@ -60,8 +60,20 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 24px 0;
+  padding: 24px 12px 24px 0; /* 右侧 12px 让滚动条不贴消息 */
   scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: #d5d9e0 transparent;
+}
+.list::-webkit-scrollbar {
+  width: 6px;
+}
+.list::-webkit-scrollbar-thumb {
+  background: #d5d9e0;
+  border-radius: 999px;
+}
+.list::-webkit-scrollbar-track {
+  background: transparent;
 }
 .row-wrap {
   width: 100%;

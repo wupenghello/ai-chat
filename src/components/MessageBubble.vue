@@ -32,6 +32,7 @@ defineProps<{ message: Message }>()
   display: flex;
   gap: 8px;
   align-items: flex-start;
+  width: 100%; /* 占满行宽，max-width 百分比才能按内容区正确解析 */
   animation: rise 0.25s ease;
 }
 .row.user {
@@ -56,7 +57,7 @@ defineProps<{ message: Message }>()
   color: var(--c-text-2);
 }
 .bubble {
-  max-width: 76%;
+  max-width: 80%;
   font-size: 15px;
   line-height: 1.75;
   white-space: pre-wrap;
