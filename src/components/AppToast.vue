@@ -1,0 +1,82 @@
+<script setup lang="ts">
+import { useToastStore } from '../stores/toast'
+
+const toast = useToastStore()
+const emit = defineEmits<{ navigate: [to: 'settings'] }>()
+</script>
+
+<template>
+  <div class="toast-wrap" aria-live="polite">
+    <TransitionGroup name="toast">
+      <div v-for="t in toast.items" :key="t.id" class="toast">
+        <span class="toast-msg">{{ t.message }}</span>
+        <button v-if="t.action" class="toast-action" @click="emit('navigate', t.action.to); toast.dismiss(t.id)">
+          {{ t.action.label }}
+        </button>
+        <button class="toast-close" aria-label="关闭" @click="toast.dismiss(t.id)">×</button>
+      </div>
+    </TransitionGroup>
+  </div>
+</template>
+
+<style scoped>
+.toast-wrap {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--c-text-1);
+  color: #fff;
+  font-size: 13px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+.toast-msg {
+  line-height: 1.5;
+}
+.toast-action {
+  border: none;
+  background: none;
+  color: #a3bcff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+  white-space: nowrap;
+}
+.toast-action:hover {
+  text-decoration: underline;
+}
+.toast-close {
+  border: none;
+  background: none;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.toast-enter-active {
+  transition: all 0.25s ease;
+}
+.toast-leave-active {
+  transition: all 0.18s ease;
+}
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+</style>
