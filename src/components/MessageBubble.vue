@@ -70,6 +70,7 @@ defineProps<{ message: Message }>()
   border-radius: 12px 12px 4px 12px;
 }
 .bubble.assistant {
+  max-width: 100%; /* AI 回复占满内容列（DeepSeek 布局模式），不设气泡上限 */
   padding: 4px 0;
 }
 .content:empty::before {

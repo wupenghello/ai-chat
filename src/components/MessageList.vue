@@ -38,30 +38,30 @@ watch(
 
 <template>
   <div ref="el" class="list" @scroll.passive="onScroll">
-    <template v-for="m in messages" :key="m.id">
-      <ErrorBubble
-        v-if="m.status === 'error'"
-        :kind="m.error?.kind ?? 'unknown'"
-        :message="m.error?.message ?? '未知错误'"
-        @retry="emit('retry', m.id)"
-        @go-settings="emit('goSettings')"
-      />
-      <div v-else class="row-wrap" :class="m.role">
-        <MessageBubble :message="m" />
-      </div>
-    </template>
+    <div class="list-col">
+      <template v-for="m in messages" :key="m.id">
+        <ErrorBubble
+          v-if="m.status === 'error'"
+          :kind="m.error?.kind ?? 'unknown'"
+          :message="m.error?.message ?? '未知错误'"
+          @retry="emit('retry', m.id)"
+          @go-settings="emit('goSettings')"
+        />
+        <div v-else class="row-wrap" :class="m.role">
+          <MessageBubble :message="m" />
+        </div>
+      </template>
+    </div>
   </div>
 </template>
 
 <style scoped>
+/* 滚动区横贯主区域（负 margin 破出内容列的 padding），滚动条贴近窗口右缘，
+   文字列窄栏居中——对齐 chat.deepseek.com 的布局模式 */
 .list {
   flex: 1;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 24px 12px 24px 0; /* 右侧 12px 让滚动条不贴消息 */
-  scroll-behavior: smooth;
+  padding: 24px 12px; /* 左右对称，滚动条与文字两侧间距一致 */
   scrollbar-width: thin;
   scrollbar-color: #d5d9e0 transparent;
 }
@@ -74,6 +74,14 @@ watch(
 }
 .list::-webkit-scrollbar-track {
   background: transparent;
+}
+.list-col {
+  width: 100%;
+  max-width: 712px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 .row-wrap {
   width: 100%;
