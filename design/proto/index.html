@@ -1,0 +1,1208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-chat 交互原型（P0 · REQ-001~007 + REQ-014）</title>
+<!--
+  ============================================================
+  ai-chat 需求阶段可交互原型（原型即需求）
+  覆盖：REQ-001/002/003/004/005/006/007/014（全部 P0）
+  纯 HTML/CSS/原生 JS，零外部依赖，直接双击打开
+  说明：所有"AI 回复"为本地假数据脚本，不调用真实 API；
+        持久化用 localStorage 演示（产品实现为 IndexedDB）
+  ============================================================
+-->
+<style>
+/* ============================================================
+   设计令牌（Design Tokens）——建议沉淀进 design-system/tokens.md
+   色板（浅色主题 · 飞书 Lark 蓝白风格）：
+     --c-bg        #F5F6F7   页面底色（飞书浅灰）
+     --c-surface   #FFFFFF   卡片/侧栏表面
+     --c-border    #E5E6EB   描边/分隔线
+     --c-text-1    #1F2329   主文字
+     --c-text-2    #646A73   次级文字
+     --c-text-3    #8F959E   辅助文字/占位符
+     --c-primary   #3370FF   主色（品牌蓝）
+     --c-primary-h #2E5FDF   主色 hover（深一档）
+     --c-primary-a #2860D8   主色 active（再深一档）
+     --c-primary-l #F0F4FF   主色浅底（选中态/悬浮底/用户气泡底）
+     --c-danger    #D93025   错误
+     --c-danger-l  #FDECEA   错误浅底
+     --c-success   #1A9E5C   成功
+     --c-warn      #B45309   警告文字（生成中断标注）
+     --c-warn-l    #FFF7E8   警告浅底
+   字号（正文基准 14px，行高 1.6）：
+     12px 辅注 / 13px 侧栏与按钮 / 14px 正文输入 / 15px 消息体 /
+     16px 设置表单 / 17px 区块标题 / 20px 空态主标题
+   圆角：6px 小按钮标签 / 8px 按钮 / 12px 气泡卡片 / 999px 胶囊
+   阴影三级：
+     shadow-1 0 1px 2px rgba(29,33,41,.06)      常规表面
+     shadow-2 0 4px 16px rgba(29,33,41,.10)     浮层/下拉
+     shadow-3 0 12px 40px rgba(29,33,41,.16)    模态
+   间距采用 4 的倍数刻度：4/8/12/16/20/24/32
+   ============================================================ */
+:root {
+  --c-bg: #F5F6F7;
+  --c-surface: #FFFFFF;
+  --c-border: #E5E6EB;
+  --c-text-1: #1F2329;
+  --c-text-2: #646A73;
+  --c-text-3: #8F959E;
+  --c-primary: #3370FF;
+  --c-primary-h: #2E5FDF;
+  --c-primary-a: #2860D8;
+  --c-primary-l: #F0F4FF;
+  --c-danger: #D93025;
+  --c-danger-l: #FDECEA;
+  --c-success: #1A9E5C;
+  --c-warn: #B45309;
+  --c-warn-l: #FFF7E8;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-full: 999px;
+  --shadow-1: 0 1px 2px rgba(29,33,41,.06);
+  --shadow-2: 0 4px 16px rgba(29,33,41,.10);
+  --shadow-3: 0 12px 40px rgba(29,33,41,.16);
+  /* 侧栏宽 264px，对话内容最大宽 760px 居中 */
+  --sidebar-w: 264px;
+  --content-w: 760px;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  /* 正文字号 14px / 行高 1.6 */
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--c-text-1);
+  background: var(--c-bg);
+  overflow: hidden;
+}
+button { font-family: inherit; cursor: pointer; border: none; background: none; }
+input, textarea { font-family: inherit; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #D5D9E0; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #C0C6CF; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- 整体布局：左 264px 侧栏 + 右主区 ---------- */
+.app { display: flex; height: 100vh; }
+
+/* ============================================================
+   侧栏（会话列表）
+   ============================================================ */
+.sidebar {
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+  background: var(--c-surface);
+  border-right: 1px solid var(--c-border);
+  display: flex;
+  flex-direction: column;
+}
+.sidebar-header { padding: 16px 16px 8px; }
+.logo {
+  display: flex; align-items: center; gap: 8px;
+  /* 标题 15px/600，辅助字 12px */
+  font-size: 15px; font-weight: 600;
+}
+.logo-mark {
+  width: 24px; height: 24px; border-radius: var(--r-sm);
+  background: var(--c-primary); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700;
+}
+.logo small { font-size: 12px; font-weight: 400; color: var(--c-text-3); margin-left: auto; }
+
+.btn-new {
+  /* 主要按钮：高 36px，内边距 0 12px，字号 13px/600，圆角 8px */
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  width: 100%; height: 36px;
+  margin-top: 12px;
+  background: var(--c-primary); color: #fff;
+  border-radius: var(--r-md);
+  font-size: 13px; font-weight: 600;
+  transition: background .15s ease, transform .1s ease;
+}
+.btn-new:hover { background: var(--c-primary-h); }
+.btn-new:active { background: var(--c-primary-a); transform: scale(.98); }
+
+.session-list {
+  flex: 1; overflow-y: auto;
+  padding: 8px;
+}
+.list-label {
+  /* 分组标签 12px/500，色 --c-text-3，上 8px 左 8px */
+  font-size: 12px; color: var(--c-text-3); font-weight: 500;
+  padding: 8px 8px 4px;
+}
+.session-item {
+  /* 会话项：高 48px，圆角 8px，内边距 8px 10px；选中态主色浅底 */
+  position: relative;
+  display: flex; flex-direction: column; justify-content: center;
+  min-height: 48px;
+  padding: 6px 32px 6px 10px;
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition: background .15s ease;
+}
+.session-item:hover { background: #F2F3F5; }
+.session-item.active { background: var(--c-primary-l); }
+.session-title {
+  font-size: 13px; font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.session-item.active .session-title { color: var(--c-primary-h); }
+.session-meta {
+  font-size: 12px; color: var(--c-text-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-top: 2px;
+}
+.session-del {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  width: 24px; height: 24px; border-radius: var(--r-sm);
+  display: none; align-items: center; justify-content: center;
+  color: var(--c-text-3);
+  transition: background .15s ease, color .15s ease;
+}
+.session-item:hover .session-del { display: flex; }
+.session-del:hover { background: var(--c-danger-l); color: var(--c-danger); }
+/* 会话数据损坏态（REQ-004 异常分支） */
+.session-item.corrupt { opacity: .55; cursor: not-allowed; }
+.session-item.corrupt:hover { background: #F2F3F5; }
+.tag {
+  display: inline-block; padding: 0 6px; height: 18px; line-height: 18px;
+  border-radius: var(--r-full);
+  font-size: 12px; font-weight: 500;
+}
+.tag-corrupt { background: var(--c-danger-l); color: var(--c-danger); }
+.tag-interrupted { background: var(--c-warn-l); color: var(--c-warn); }
+
+.sidebar-empty {
+  padding: 24px 16px;
+  font-size: 13px; color: var(--c-text-3);
+  text-align: center; line-height: 1.8;
+}
+.sidebar-footer {
+  border-top: 1px solid var(--c-border);
+  padding: 8px;
+}
+.btn-settings-entry {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; height: 40px; padding: 0 10px;
+  border-radius: var(--r-md);
+  font-size: 13px; font-weight: 500; color: var(--c-text-2);
+  transition: background .15s ease;
+}
+.btn-settings-entry:hover { background: #F2F3F5; }
+.api-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--c-danger);
+  margin-left: auto; flex-shrink: 0;
+}
+.api-dot.ok { background: var(--c-success); }
+.api-label { font-size: 12px; color: var(--c-text-3); margin-left: auto; }
+.api-label.ok { color: var(--c-success); }
+
+/* ============================================================
+   主区
+   ============================================================ */
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
+
+.main-header {
+  height: 56px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--c-border);
+  background: var(--c-surface);
+}
+.main-title { font-size: 15px; font-weight: 600; }
+.header-sub { font-size: 12px; color: var(--c-text-3); }
+.btn-ghost {
+  /* 次级按钮：透明底 + 描边，高 32px，字号 13px，圆角 8px */
+  height: 32px; padding: 0 12px;
+  border: 1px solid var(--c-border); border-radius: var(--r-md);
+  font-size: 13px; color: var(--c-text-2); background: var(--c-surface);
+  transition: border-color .15s ease, color .15s ease, background .15s ease;
+}
+.btn-ghost:hover { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-l); }
+.btn-ghost:active { transform: scale(.98); }
+
+/* ---------- 消息区 ---------- */
+.messages {
+  flex: 1; overflow-y: auto;
+  padding: 24px 24px 16px;
+}
+.messages-inner { max-width: var(--content-w); margin: 0 auto; }
+
+.msg { display: flex; gap: 12px; margin-bottom: 24px; animation: msgIn .25s ease; }
+@keyframes msgIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.msg-avatar {
+  width: 28px; height: 28px; border-radius: var(--r-full);
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 600;
+}
+.msg-ai .msg-avatar { background: var(--c-primary-l); color: var(--c-primary-h); }
+.msg-user { flex-direction: row-reverse; }
+.msg-user .msg-avatar { background: #E8EBF2; color: var(--c-text-2); }
+.msg-body { max-width: calc(100% - 80px); min-width: 0; }
+.msg-role { font-size: 12px; color: var(--c-text-3); margin-bottom: 4px; }
+.msg-user .msg-role { text-align: right; }
+
+/* AI 回复：无气泡，白底直排（信息密度优先）；用户消息：主色实底气泡 */
+.bubble-ai {
+  font-size: 15px; line-height: 1.75;
+  white-space: pre-wrap; word-break: break-word;
+}
+.bubble-user {
+  background: var(--c-primary);
+  color: #fff;
+  font-size: 15px; line-height: 1.7;
+  padding: 10px 14px;
+  border-radius: var(--r-lg); border-top-right-radius: 4px;
+  white-space: pre-wrap; word-break: break-word;
+}
+.cursor {
+  display: inline-block; width: 2px; height: 1em;
+  background: var(--c-primary); vertical-align: -2px;
+  margin-left: 2px;
+  animation: blink .8s step-end infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+.msg-status-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.status-generating { font-size: 12px; color: var(--c-text-3); display: flex; align-items: center; gap: 6px; }
+.spinner {
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid var(--c-border); border-top-color: var(--c-primary);
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+/* 生成中断标注（REQ-001/003/004）：警告浅底胶囊 */
+.status-interrupted {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--c-warn-l); color: var(--c-warn);
+  font-size: 12px; font-weight: 500;
+  padding: 2px 8px; border-radius: var(--r-full);
+}
+
+/* 代码块（极端内容 + P1 预演）：深色底，圆角 12px，语言标签 + 复制 */
+.code-block { position: relative; margin: 12px 0; }
+.code-head {
+  display: flex; align-items: center; justify-content: space-between;
+  background: #23272E; color: #9AA4B2;
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+}
+.code-block pre {
+  background: #2B303A; color: #E6EAF0;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px; line-height: 1.6;
+  padding: 12px 16px;
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
+  overflow-x: auto;
+  white-space: pre;
+}
+.btn-copy {
+  font-size: 12px; color: #9AA4B2;
+  padding: 2px 8px; border-radius: var(--r-sm);
+  transition: color .15s ease, background .15s ease;
+}
+.btn-copy:hover { color: #fff; background: rgba(255,255,255,.12); }
+.btn-copy.copied { color: var(--c-success); }
+
+/* 错误气泡（REQ-007）：错误浅底卡片 + 动作按钮 */
+.bubble-error {
+  background: var(--c-danger-l);
+  border: 1px solid #F5C6C2;
+  border-radius: var(--r-lg);
+  padding: 12px 16px;
+  font-size: 14px; color: #8C2820;
+}
+.bubble-error .err-title { font-weight: 600; margin-bottom: 4px; color: var(--c-danger); display: flex; align-items: center; gap: 6px; }
+.err-actions { display: flex; gap: 8px; margin-top: 10px; }
+.btn-retry {
+  height: 28px; padding: 0 12px;
+  background: var(--c-danger); color: #fff;
+  border-radius: var(--r-sm); font-size: 13px; font-weight: 500;
+  transition: background .15s ease;
+}
+.btn-retry:hover { background: #B7251C; }
+.btn-link {
+  height: 28px; padding: 0 12px;
+  border: 1px solid #F5C6C2; background: #fff;
+  border-radius: var(--r-sm); font-size: 13px; font-weight: 500;
+  color: var(--c-text-2);
+  transition: border-color .15s ease, color .15s ease;
+}
+.btn-link:hover { border-color: var(--c-primary); color: var(--c-primary); }
+
+/* ---------- 空状态 ---------- */
+.empty-hero {
+  max-width: var(--content-w); margin: 0 auto;
+  padding: 96px 24px 0;
+  text-align: center;
+  animation: msgIn .3s ease;
+}
+.empty-hero .logo-mark { width: 48px; height: 48px; border-radius: var(--r-lg); font-size: 20px; margin: 0 auto 16px; }
+/* 空态主标题 20px/600 */
+.empty-title { font-size: 20px; font-weight: 600; margin-bottom: 8px; }
+.empty-desc { font-size: 14px; color: var(--c-text-2); margin-bottom: 24px; }
+.suggests { display: flex; flex-direction: column; gap: 8px; max-width: 420px; margin: 0 auto; }
+.suggest {
+  border: 1px solid var(--c-border); background: var(--c-surface);
+  border-radius: var(--r-md);
+  padding: 10px 16px;
+  font-size: 13px; color: var(--c-text-2); text-align: left;
+  transition: border-color .15s ease, color .15s ease, box-shadow .15s ease;
+}
+.suggest:hover { border-color: var(--c-primary); color: var(--c-primary-h); box-shadow: var(--shadow-1); }
+
+/* ---------- 骨架屏（加载态，REQ-004） ---------- */
+.skeleton-row { display: flex; gap: 12px; margin-bottom: 24px; }
+.skeleton-row.user { flex-direction: row-reverse; }
+.sk { background: linear-gradient(90deg, #EEF0F3 25%, #F7F8FA 50%, #EEF0F3 75%); background-size: 200% 100%; animation: shimmer 1.2s infinite; border-radius: var(--r-sm); }
+@keyframes shimmer { to { background-position: -200% 0; } }
+.sk-avatar { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; }
+.sk-line { height: 14px; margin-bottom: 8px; }
+
+/* ---------- 输入区 ---------- */
+.composer {
+  flex-shrink: 0;
+  padding: 8px 24px 20px;
+  background: linear-gradient(transparent, var(--c-bg) 40%);
+}
+.composer-inner { max-width: var(--content-w); margin: 0 auto; }
+.composer-box {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
+  padding: 12px 12px 8px;
+  box-shadow: var(--shadow-1);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.composer-box:focus-within { border-color: var(--c-primary); box-shadow: 0 0 0 3px rgba(51,112,255,.12); }
+.composer textarea {
+  width: 100%; border: none; outline: none; resize: none;
+  font-size: 14px; line-height: 1.6;
+  max-height: 160px;
+  background: transparent; color: var(--c-text-1);
+}
+.composer textarea::placeholder { color: var(--c-text-3); }
+.composer-bar { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.composer-hint { font-size: 12px; color: var(--c-text-3); margin-right: auto; }
+.btn-send {
+  /* 发送按钮：36px 见方，圆角 8px；禁用态灰底 */
+  width: 36px; height: 36px;
+  border-radius: var(--r-md);
+  background: var(--c-primary); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s ease, transform .1s ease, opacity .15s ease;
+}
+.btn-send:hover:not(:disabled) { background: var(--c-primary-h); }
+.btn-send:active:not(:disabled) { transform: scale(.94); }
+.btn-send:disabled { background: #C9CFDB; cursor: not-allowed; }
+
+/* ============================================================
+   设置页（REQ-014）
+   ============================================================ */
+.settings-view {
+  flex: 1; overflow-y: auto;
+  padding: 32px 24px 48px;
+}
+.settings-inner { max-width: 560px; margin: 0 auto; animation: msgIn .25s ease; }
+.settings-title { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+.settings-desc { font-size: 13px; color: var(--c-text-3); margin-bottom: 24px; }
+.settings-back {
+  height: 32px; padding: 0; margin-bottom: 16px;
+  font-size: 13px; color: var(--c-text-2); display: inline-flex; align-items: center; gap: 4px;
+  border-radius: var(--r-sm);
+  transition: color .15s ease;
+}
+.settings-back:hover { color: var(--c-primary); }
+.field { margin-bottom: 20px; }
+.field label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+.field label .req { color: var(--c-danger); margin-left: 2px; }
+.field input {
+  /* 表单输入：高 36px，字号 16px（防 iOS 缩放，桌面统一观感），圆角 8px，描边 --c-border */
+  width: 100%; height: 36px;
+  padding: 0 12px;
+  font-size: 16px;
+  border: 1px solid var(--c-border); border-radius: var(--r-md);
+  outline: none; color: var(--c-text-1);
+  background: var(--c-surface);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.field input:focus { border-color: var(--c-primary); box-shadow: 0 0 0 3px rgba(51,112,255,.12); }
+.field input.invalid { border-color: var(--c-danger); box-shadow: 0 0 0 3px rgba(217,48,37,.10); }
+.field .hint { font-size: 12px; color: var(--c-text-3); margin-top: 4px; }
+.field .hint.error { color: var(--c-danger); }
+.field .hint code { background: #F2F3F5; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+.settings-actions { display: flex; align-items: center; gap: 12px; margin-top: 24px; }
+.btn-primary {
+  /* 主要按钮（大）：高 36px，字号 13px/600 */
+  height: 36px; padding: 0 20px;
+  background: var(--c-primary); color: #fff;
+  border-radius: var(--r-md); font-size: 13px; font-weight: 600;
+  transition: background .15s ease, transform .1s ease;
+}
+.btn-primary:hover { background: var(--c-primary-h); }
+.btn-primary:active { background: var(--c-primary-a); transform: scale(.98); }
+.btn-text-danger {
+  height: 36px; padding: 0 8px;
+  font-size: 13px; color: var(--c-danger);
+  border-radius: var(--r-md);
+  transition: background .15s ease;
+}
+.btn-text-danger:hover { background: var(--c-danger-l); }
+.saved-flag { font-size: 12px; color: var(--c-success); opacity: 0; transition: opacity .3s ease; }
+.saved-flag.show { opacity: 1; }
+.settings-note {
+  margin-top: 32px; padding: 12px 16px;
+  background: var(--c-primary-l);
+  border-radius: var(--r-md);
+  font-size: 12px; color: var(--c-text-2); line-height: 1.8;
+}
+
+/* ============================================================
+   模态（删除确认 / 上下文预览 / 帮助）
+   ============================================================ */
+.modal-mask {
+  position: fixed; inset: 0;
+  background: rgba(29,33,41,.45);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100;
+  animation: fadeIn .18s ease;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.modal {
+  background: var(--c-surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-3);
+  width: 420px; max-width: calc(100vw - 48px);
+  max-height: 80vh; overflow-y: auto;
+  padding: 24px;
+  animation: modalIn .18s ease;
+}
+@keyframes modalIn { from { opacity: 0; transform: scale(.96) translateY(8px); } to { opacity: 1; transform: none; } }
+.modal h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+.modal .modal-body { font-size: 14px; color: var(--c-text-2); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
+.btn-danger {
+  height: 32px; padding: 0 16px;
+  background: var(--c-danger); color: #fff;
+  border-radius: var(--r-md); font-size: 13px; font-weight: 500;
+  transition: background .15s ease;
+}
+.btn-danger:hover { background: #B7251C; }
+.ctx-list { margin-top: 12px; border: 1px solid var(--c-border); border-radius: var(--r-md); overflow: hidden; }
+.ctx-item {
+  display: flex; gap: 8px; align-items: baseline;
+  padding: 8px 12px; font-size: 13px;
+  border-bottom: 1px solid var(--c-border);
+}
+.ctx-item:last-child { border-bottom: none; }
+.ctx-role { flex-shrink: 0; font-weight: 600; color: var(--c-text-3); width: 36px; }
+.ctx-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--c-text-1); }
+.ctx-item.excluded { background: #FAFBFC; }
+.ctx-item.excluded .ctx-text { color: var(--c-text-3); text-decoration: line-through; }
+.ctx-item.excluded::after { content: "超出 20 轮，不随请求发送"; font-size: 12px; color: var(--c-warn); flex-shrink: 0; }
+
+/* 帮助模态里的令牌标注表 */
+.token-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+.token-table th, .token-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--c-border); }
+.token-table th { color: var(--c-text-3); font-weight: 500; }
+.swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 6px; border: 1px solid rgba(0,0,0,.08); }
+
+/* ---------- Toast ---------- */
+.toast-wrap { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 200; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.toast {
+  display: flex; align-items: center; gap: 12px;
+  background: #23272E; color: #fff;
+  font-size: 13px;
+  padding: 10px 16px;
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-2);
+  animation: toastIn .22s ease;
+}
+@keyframes toastIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+.toast.out { opacity: 0; transform: translateY(-8px); transition: all .25s ease; }
+.toast .t-action {
+  color: #A3BCFF; font-size: 13px; font-weight: 600;
+  padding: 2px 6px; border-radius: 4px;
+}
+.toast .t-action:hover { background: rgba(255,255,255,.12); }
+
+/* ---------- 演示控制面板（原型辅助，非产品功能） ---------- */
+.demo-fab {
+  position: fixed; right: 20px; bottom: 20px; z-index: 90;
+  height: 36px; padding: 0 14px;
+  background: #23272E; color: #fff;
+  border-radius: var(--r-full);
+  font-size: 13px; font-weight: 600;
+  box-shadow: var(--shadow-2);
+  transition: transform .1s ease, background .15s ease;
+}
+.demo-fab:hover { background: #343944; }
+.demo-fab:active { transform: scale(.95); }
+.demo-panel {
+  position: fixed; right: 20px; bottom: 68px; z-index: 90;
+  width: 300px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-2);
+  padding: 16px;
+  animation: modalIn .18s ease;
+}
+.demo-panel h4 { font-size: 13px; margin-bottom: 4px; }
+.demo-panel .demo-note { font-size: 12px; color: var(--c-warn); margin-bottom: 12px; }
+.demo-panel label { display: block; font-size: 12px; color: var(--c-text-2); margin: 10px 0 4px; font-weight: 500; }
+.demo-panel select {
+  width: 100%; height: 32px; padding: 0 8px;
+  border: 1px solid var(--c-border); border-radius: var(--r-sm);
+  font-size: 13px; background: var(--c-surface); outline: none;
+}
+.demo-panel .demo-row { display: flex; gap: 8px; margin-top: 12px; }
+.demo-panel .demo-row button {
+  flex: 1; height: 30px; font-size: 12px;
+  border: 1px solid var(--c-border); border-radius: var(--r-sm);
+  color: var(--c-text-2); background: var(--c-surface);
+  transition: border-color .15s ease, color .15s ease;
+}
+.demo-panel .demo-row button:hover { border-color: var(--c-primary); color: var(--c-primary); }
+.chk-row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--c-text-2); margin-top: 8px; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ================= 侧栏：会话列表 ================= -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo"><span class="logo-mark">喵</span>ai-chat<small>原型 v0.1</small></div>
+      <button class="btn-new" id="btnNew" onclick="newSession()">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        新建会话
+      </button>
+    </div>
+    <div class="session-list" id="sessionList"></div>
+    <div class="sidebar-footer">
+      <button class="btn-settings-entry" onclick="openSettings()">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.4" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.6v1.8M8 12.6v1.8M1.6 8h1.8M12.6 8h1.8M3.5 3.5l1.3 1.3M11.2 11.2l1.3 1.3M12.5 3.5l-1.3 1.3M4.8 11.2l-1.3 1.3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <span id="settingsLabel">API 设置</span>
+        <span class="api-dot" id="apiDot" title="未配置"></span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ================= 主区 ================= -->
+  <main class="main">
+    <div id="chatView" style="display:flex;flex-direction:column;flex:1;min-height:0;">
+      <div class="main-header">
+        <div>
+          <div class="main-title" id="mainTitle">新会话</div>
+          <div class="header-sub" id="mainSub">模型未配置</div>
+        </div>
+        <button class="btn-ghost" style="margin-left:auto" onclick="showContextPreview()" title="演示 REQ-002：查看下次请求携带的上下文（最近 20 轮）">上下文预览</button>
+        <button class="btn-ghost" onclick="openSettings()">设置</button>
+      </div>
+      <div class="messages" id="messages"></div>
+      <div class="composer">
+        <div class="composer-inner">
+          <div class="composer-box">
+            <textarea id="input" rows="1" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
+            <div class="composer-bar">
+              <span class="composer-hint" id="composerHint">Enter 发送 · Shift+Enter 换行</span>
+              <button class="btn-send" id="btnSend" onclick="onSend()" disabled title="发送">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8l12-6-4.5 12L8 9.5 2 8z" fill="currentColor"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= 设置页（REQ-014） ================= -->
+    <div class="settings-view" id="settingsView" style="display:none;">
+      <div class="settings-inner">
+        <button class="settings-back" onclick="closeSettings()">&larr; 返回对话</button>
+        <div class="settings-title">API 设置</div>
+        <div class="settings-desc">按 OpenAI 兼容协议配置供应商，三要素均仅保存在本浏览器本地。</div>
+        <div class="field" id="fBase">
+          <label>Base URL<span class="req">*</span></label>
+          <input id="inBase" type="text" placeholder="https://api.deepseek.com/v1" spellcheck="false">
+          <div class="hint" id="hintBase">OpenAI 兼容服务的接口地址，如 DeepSeek / GLM</div>
+        </div>
+        <div class="field" id="fModel">
+          <label>模型名<span class="req">*</span></label>
+          <input id="inModel" type="text" placeholder="deepseek-chat" spellcheck="false">
+          <div class="hint" id="hintModel">如 <code>deepseek-chat</code>、<code>glm-4.6</code></div>
+        </div>
+        <div class="field" id="fKey">
+          <label>API Key<span class="req">*</span></label>
+          <input id="inKey" type="password" placeholder="sk-..." spellcheck="false" autocomplete="off">
+          <div class="hint" id="hintKey">仅存浏览器本地，不会上传、不会进入代码仓库</div>
+        </div>
+        <div class="settings-actions">
+          <button class="btn-primary" onclick="saveSettings()">保存</button>
+          <button class="btn-text-danger" onclick="confirmClearKey()">清除密钥</button>
+          <span class="saved-flag" id="savedFlag">已保存</span>
+        </div>
+        <div class="settings-note">
+          原型说明：本页演示 REQ-014 的完整交互（必填校验 / 保存反馈 / 清除密钥）。配置写入 localStorage 演示持久化；产品实现为 IndexedDB，密钥不出本地。<br>
+          未配置 API Key 时发送消息 → 不发出请求，提示并引导到本页（REQ-007）。
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Toast 容器 -->
+<div class="toast-wrap" id="toastWrap"></div>
+<!-- 模态容器 -->
+<div id="modalHost"></div>
+
+<!-- ================= 演示控制（原型辅助） ================= -->
+<button class="demo-fab" onclick="toggleDemoPanel()">演示控制</button>
+<div class="demo-panel" id="demoPanel" style="display:none;">
+  <h4>原型演示控制</h4>
+  <div class="demo-note">仅用于演示错误与极端状态，非产品功能。</div>
+  <label>下一次请求的结果模拟（REQ-007）</label>
+  <select id="demoError">
+    <option value="ok">正常（流式回复）</option>
+    <option value="401">401 密钥无效</option>
+    <option value="429">429 限流</option>
+    <option value="500">500 服务异常</option>
+    <option value="network">网络失败</option>
+  </select>
+  <label class="chk-row"><input type="checkbox" id="demoStorageFail"> 模拟本地存储写入失败（REQ-006）</label>
+  <div class="demo-row">
+    <button onclick="loadDemoData()">载入演示数据</button>
+    <button onclick="resetAll()">清空全部数据</button>
+  </div>
+  <div class="demo-row">
+    <button onclick="toggleDemoPanel();showHelp()">设计参数标注</button>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   ai-chat 原型脚本（原生 JS，无依赖）
+   数据模型：
+     session = { id, title, createdAt, updatedAt, corrupt?, messages: [msg] }
+     msg = { id, role: 'user'|'ai', content, status: 'done'|'generating'|'interrupted'|'error', error?: {type, code} }
+   持久化：localStorage 演示（产品为 IndexedDB）
+   ============================================================ */
+const LS_SESSIONS = 'aichat.proto.sessions';
+const LS_CONFIG   = 'aichat.proto.config';
+const MAX_ROUNDS  = 20; // REQ-002：上下文最近 20 轮（40 条消息）
+
+let state = {
+  sessions: [],       // 按 updatedAt 倒序
+  currentId: null,
+  view: 'chat',       // 'chat' | 'settings'
+  generating: null,   // { sessionId, timer } 生成中的假流
+};
+
+/* ---------------- 持久化（localStorage 演示 IndexedDB） ---------------- */
+function persist() {
+  if (document.getElementById('demoStorageFail').checked) {
+    toast('本地存储写入失败：会话已在内存中保留，本次使用不受影响（REQ-006 异常分支演示）');
+    return;
+  }
+  try {
+    localStorage.setItem(LS_SESSIONS, JSON.stringify(state.sessions));
+  } catch (e) { /* 忽略演示环境异常 */ }
+}
+function persistConfig(cfg) {
+  try { localStorage.setItem(LS_CONFIG, JSON.stringify(cfg)); return true; }
+  catch (e) { return false; }
+}
+function loadAll() {
+  try { state.sessions = JSON.parse(localStorage.getItem(LS_SESSIONS)) || []; } catch(e) { state.sessions = []; }
+  // 恢复时，上次生成到一半的消息统一标注为「生成中断」（REQ-006：流式中途刷新）
+  state.sessions.forEach(s => (s.messages||[]).forEach(m => {
+    if (m.status === 'generating') m.status = 'interrupted';
+  }));
+  state.currentId = state.sessions.length ? state.sessions[0].id : null;
+}
+function getConfig() {
+  try { return JSON.parse(localStorage.getItem(LS_CONFIG)) || {}; } catch(e) { return {}; }
+}
+
+/* ---------------- 工具 ---------------- */
+const $ = id => document.getElementById(id);
+function uid() { return 's' + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function fmtTime(ts) {
+  const d = new Date(ts), now = new Date();
+  const hm = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+  if (d.toDateString() === now.toDateString()) return hm;
+  return (d.getMonth()+1) + '-' + d.getDate() + ' ' + hm;
+}
+function currentSession() { return state.sessions.find(s => s.id === state.currentId); }
+
+/* ---------------- 渲染：侧栏 ---------------- */
+function renderSidebar() {
+  const list = $('sessionList');
+  if (!state.sessions.length) {
+    list.innerHTML = '<div class="sidebar-empty">暂无会话<br>点击上方「新建会话」开始对话</div>';
+    return;
+  }
+  list.innerHTML = '<div class="list-label">历史会话（按最近活跃排序）</div>' +
+    state.sessions.map(s => {
+      if (s.corrupt) {
+        // REQ-004 异常分支：数据损坏会话标注「无法读取」，不影响其他会话
+        return '<div class="session-item corrupt" title="会话数据无法读取">' +
+          '<div class="session-title">' + esc(s.title) + '</div>' +
+          '<div class="session-meta"><span class="tag tag-corrupt">无法读取</span></div></div>';
+      }
+      const last = (s.messages||[]).filter(m=>m.role==='user').slice(-1)[0];
+      const interrupted = (s.messages||[]).some(m => m.status === 'interrupted');
+      return '<div class="session-item' + (s.id===state.currentId?' active':'') + '" onclick="switchSession(\'' + s.id + '\')">' +
+        '<div class="session-title">' + esc(s.title) + '</div>' +
+        '<div class="session-meta">' + (interrupted ? '<span class="tag tag-interrupted">生成中断</span> ' : '') +
+        esc((last ? last.content : '空会话').slice(0,20)) + ' · ' + fmtTime(s.updatedAt) + '</div>' +
+        '<button class="session-del" title="删除会话" onclick="event.stopPropagation();confirmDelete(\'' + s.id + '\')">' +
+        '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 3.5h10M5.5 3.5V2h3v1.5M3.5 3.5l.6 8.5h5.8l.6-8.5M5.8 6v3.5M8.2 6v3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></button></div>';
+    }).join('');
+}
+
+/* ---------------- 渲染：消息区 ---------------- */
+function renderMessages(loading) {
+  const box = $('messages');
+  const s = currentSession();
+  if (loading) { // 切换会话的骨架屏加载态（250ms 模拟）
+    box.innerHTML = '<div class="messages-inner">' +
+      '<div class="skeleton-row"><div class="sk sk-avatar"></div><div style="flex:1"><div class="sk sk-line" style="width:60%"></div><div class="sk sk-line" style="width:35%"></div></div></div>' +
+      '<div class="skeleton-row user"><div class="sk sk-avatar"></div><div class="sk sk-line" style="width:45%"></div></div>' +
+      '<div class="skeleton-row"><div class="sk sk-avatar"></div><div style="flex:1"><div class="sk sk-line" style="width:80%"></div><div class="sk sk-line" style="width:70%"></div></div></div></div>';
+    return;
+  }
+  $('mainTitle').textContent = s ? s.title : 'ai-chat';
+  const cfg = getConfig();
+  $('mainSub').textContent = (cfg.model ? '模型：' + cfg.model : '模型未配置') + (cfg.apiKey ? ' · 已配置密钥' : ' · 未配置密钥');
+  $('apiDot').className = 'api-dot' + (cfg.apiKey ? ' ok' : '');
+  $('apiDot').title = cfg.apiKey ? 'API 已配置' : '未配置 API';
+  $('settingsLabel').textContent = cfg.apiKey ? 'API 设置（已配置）' : 'API 设置（未配置）';
+
+  if (!s || !s.messages || !s.messages.length) {
+    // 空状态（REQ-004：无会话/空会话的引导，不显示空白）
+    box.innerHTML = '<div class="empty-hero">' +
+      '<div class="logo-mark">喵</div>' +
+      '<div class="empty-title">' + (s ? '开始新的对话' : '欢迎使用 ai-chat') + '</div>' +
+      '<div class="empty-desc">输入任何问题开始对话；会话自动保存在本地浏览器。</div>' +
+      '<div class="suggests">' +
+      '<button class="suggest" onclick="fillInput(\'我叫小明，请记住我的名字。顺便介绍一下你能做什么。\')">我叫小明，请记住我的名字（演示多轮上下文）</button>' +
+      '<button class="suggest" onclick="fillInput(\'给我一个用 JS 实现流式请求的代码示例\')">要一个代码示例（演示代码块渲染）</button>' +
+      '<button class="suggest" onclick="toggleDemoPanel()">打开演示控制，模拟各种错误（401/429/网络失败）</button>' +
+      '</div></div>';
+    return;
+  }
+  box.innerHTML = '<div class="messages-inner">' + s.messages.map(renderMsg).join('') + '</div>';
+  box.scrollTop = box.scrollHeight;
+}
+
+function renderMsg(m) {
+  if (m.role === 'user') {
+    return '<div class="msg msg-user">' +
+      '<div class="msg-avatar">我</div>' +
+      '<div class="msg-body"><div class="msg-role">我</div><div class="bubble-user">' + esc(m.content) + '</div></div></div>';
+  }
+  if (m.status === 'error') {
+    const e = ERRORS[m.error.type] || ERRORS.network;
+    return '<div class="msg msg-ai">' +
+      '<div class="msg-avatar">AI</div>' +
+      '<div class="msg-body"><div class="msg-role">AI</div>' +
+      '<div class="bubble-error"><div class="err-title">' + e.title + '（' + m.error.code + '）</div>' + e.text +
+      '<div class="err-actions">' +
+      (e.retryable ? '<button class="btn-retry" onclick="retry(\'' + m.id + '\')">重试</button>' : '') +
+      (m.error.type === 'auth' ? '<button class="btn-link" onclick="openSettings()">前往设置更新密钥</button>' : '') +
+      '</div></div></div></div>';
+  }
+  const streaming = m.status === 'generating';
+  let body = renderRich(m.content);
+  if (streaming) body += '<span class="cursor"></span>';
+  const statusRow = streaming
+    ? '<div class="msg-status-row"><span class="status-generating"><span class="spinner"></span>正在生成…</span></div>'
+    : (m.status === 'interrupted'
+        ? '<div class="msg-status-row"><span class="status-interrupted"><svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>生成中断</span><span style="font-size:12px;color:var(--c-text-3)">已生成内容保留，可继续提问</span></div>'
+        : '');
+  return '<div class="msg msg-ai">' +
+    '<div class="msg-avatar">AI</div>' +
+    '<div class="msg-body"><div class="msg-role">AI</div><div class="bubble-ai" id="msg-' + m.id + '">' + body + '</div>' + statusRow + '</div></div>';
+}
+
+/* 轻量富文本：仅处理 ``` 代码围栏（P1 REQ-011 预演，其余按纯文本） */
+function renderRich(text) {
+  const parts = String(text).split(/```/);
+  return parts.map((p, i) => {
+    if (i % 2 === 1) {
+      const nl = p.indexOf('\n');
+      const lang = nl > -1 ? p.slice(0, nl).trim() : '';
+      const code = nl > -1 ? p.slice(nl + 1) : p;
+      const cid = 'code' + Math.random().toString(36).slice(2,8);
+      return '<div class="code-block"><div class="code-head"><span>' + esc(lang || 'text') + '</span>' +
+        '<button class="btn-copy" id="' + cid + '" onclick="copyCode(this)">复制</button></div>' +
+        '<pre><code>' + esc(code) + '</code></pre></div>';
+    }
+    return esc(p) ? '<div>' + esc(p) + '</div>' : '';
+  }).join('');
+}
+function copyCode(btn) {
+  const code = btn.closest('.code-block').querySelector('code').textContent;
+  const done = () => { btn.textContent = '已复制'; btn.classList.add('copied'); setTimeout(()=>{ btn.textContent='复制'; btn.classList.remove('copied'); }, 1500); };
+  if (navigator.clipboard) navigator.clipboard.writeText(code).then(done, done); else done();
+}
+
+/* ---------------- 输入框 ---------------- */
+const input = $('input');
+input.addEventListener('input', () => {
+  input.style.height = 'auto';
+  input.style.height = Math.min(input.scrollHeight, 160) + 'px';
+  updateSendState();
+});
+input.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend(); }
+});
+function updateSendState() {
+  // REQ-001：空/纯空白输入 → 发送不可用；生成中 → 禁用发送
+  const empty = !input.value.trim();
+  const generating = !!state.generating;
+  $('btnSend').disabled = empty || generating;
+  $('composerHint').textContent = generating
+    ? 'AI 回复生成中，发送暂不可用…'
+    : 'Enter 发送 · Shift+Enter 换行';
+}
+function fillInput(t) { input.value = t; updateSendState(); input.focus(); }
+
+/* ---------------- 发送与假流式（REQ-001 / 002 / 007） ---------------- */
+const ERRORS = {
+  auth:    { title: 'API 密钥无效', text: '服务端拒绝了该密钥（密钥错误、过期或无权限）。请到设置页检查并更新 API Key。', retryable: true },
+  rate:    { title: '请求过于频繁', text: '已触发服务限流，请稍等片刻再重试。为避免连续失败，不会自动重试。', retryable: true },
+  server:  { title: '服务暂时不可用', text: 'AI 服务端出现异常（5xx）。你可以稍后重试；原消息已保留。', retryable: true },
+  network: { title: '网络连接失败', text: '无法连接到 API 服务，请检查网络或 Base URL 是否正确。原消息已保留。', retryable: true },
+};
+
+function onSend() {
+  const text = input.value.trim();
+  if (!text) return;                                    // REQ-001：空输入无动作
+  if (state.generating) return;                         // REQ-001：生成中不并发
+  const cfg = getConfig();
+  if (!cfg.apiKey || !cfg.baseUrl || !cfg.model) {
+    // REQ-007/014：未配置即发送 → 不发出请求，引导设置页
+    toast('请先完成 API 配置（Base URL / 模型名 / API Key）', { label: '前往设置', fn: openSettings });
+    return;
+  }
+  let s = currentSession();
+  if (!s) { s = createSession(); state.currentId = s.id; }
+  const userMsg = { id: uid(), role: 'user', content: text, status: 'done' };
+  s.messages.push(userMsg);
+  if (s.title === '新会话') s.title = text.slice(0, 20) + (text.length > 20 ? '…' : ''); // 会话自动命名（P1 REQ-009 顺带演示）
+  s.updatedAt = Date.now();
+  input.value = ''; input.style.height = 'auto';
+  updateSendState();
+  renderSidebar(); renderMessages(); persist();
+  startFakeStream(s);
+}
+
+function startFakeStream(s, isRetry) {
+  const mode = $('demoError').value;
+  if (mode !== 'ok') {
+    // 模拟错误：800ms 后出现错误气泡（REQ-007：3 秒内）
+    const typeMap = { '401': 'auth', '403': 'auth', '429': 'rate', '500': 'server', 'network': 'network' };
+    const type = typeMap[mode] || 'network';
+    state.generating = { sessionId: s.id };
+    const aiMsg = { id: uid(), role: 'ai', content: '', status: 'generating' };
+    s.messages.push(aiMsg);
+    renderMessages(); updateSendState();
+    setTimeout(() => {
+      if (!state.generating || state.generating.sessionId !== s.id) return;
+      aiMsg.status = 'error'; aiMsg.error = { type, code: mode };
+      state.generating = null;
+      renderMessages(); persist(); updateSendState();
+    }, 800);
+    return;
+  }
+  // 正常假流式：逐字输出脚本回复
+  const aiMsg = isRetry
+    ? s.messages.filter(m => m.role === 'ai').pop()
+    : { id: uid(), role: 'ai', content: '', status: 'generating' };
+  if (!isRetry) s.messages.push(aiMsg);
+  aiMsg.status = 'generating'; aiMsg.content = '';
+  const full = scriptedReply(lastUserText(s), s.messages);
+  let i = 0;
+  renderMessages(); updateSendState();
+  const timer = setInterval(() => {
+    if (!state.generating || state.generating.timer !== timer) { clearInterval(timer); return; }
+    i += 2 + Math.floor(Math.random() * 2); // 每帧 2~3 字
+    aiMsg.content = full.slice(0, i);
+    const el = $('msg-' + aiMsg.id);
+    if (el) { el.innerHTML = renderRich(aiMsg.content) + '<span class="cursor"></span>'; $('messages').scrollTop = $('messages').scrollHeight; }
+    if (i >= full.length) {
+      clearInterval(timer);
+      aiMsg.status = 'done';
+      s.updatedAt = Date.now();
+      state.generating = null;
+      renderMessages(); renderSidebar(); persist(); updateSendState();
+    }
+  }, 40);
+  state.generating = { sessionId: s.id, timer };
+}
+
+function lastUserText(s) {
+  for (let i = s.messages.length - 1; i >= 0; i--) if (s.messages[i].role === 'user') return s.messages[i].content;
+  return '';
+}
+
+/* 假数据脚本：针对上下文演示做了定向应答 */
+function scriptedReply(userText, history) {
+  if (/(我叫什么|我是谁|记不记得我|记得我吗)/.test(userText)) {
+    const intro = history.filter(m => m.role === 'user' && /我叫/.test(m.content))[0];
+    const name = intro ? (intro.content.match(/我叫([\u4e00-\u9fa5A-Za-z0-9]{1,6})/) || [null, '小明'])[1] : null;
+    if (name) return '你叫' + name + '呀！\n\n这是多轮上下文记忆（REQ-002）的演示：你在之前的轮次里说过「' + intro.content + '」，这句话仍在本会话的上下文窗口内（最近 20 轮），会随本次请求一并发给我，所以我能记得。\n\n超过 20 轮的更早消息只保留在本地与界面上，不再随请求发送——可以点右上角「上下文预览」查看组装规则。';
+    return '本会话的上下文里还没有你自我介绍的记录，你可以先告诉我你的名字，稍后再问我试试。';
+  }
+  if (/(代码|示例|code|demo|js|javascript|流式)/i.test(userText)) {
+    return '下面是一个用 fetch 实现 OpenAI 兼容流式请求的最小示例（原型中代码块已渲染，复制按钮为 P1 预演）：\n\n```javascript\nasync function chatStream(messages, onChunk) {\n  const res = await fetch(BASE_URL + "/chat/completions", {\n    method: "POST",\n    headers: {\n      "Content-Type": "application/json",\n      "Authorization": "Bearer " + API_KEY,\n    },\n    body: JSON.stringify({ model: MODEL, messages, stream: true }),\n  });\n  if (!res.ok) throw new Error("HTTP " + res.status);\n  const reader = res.body.getReader();\n  const decoder = new TextDecoder();\n  let buf = "";\n  while (true) {\n    const { done, value } = await reader.read();\n    if (done) break;\n    buf += decoder.decode(value, { stream: true });\n    // 按 SSE 行解析 data: {...}\n    const lines = buf.split("\\n");\n    buf = lines.pop();\n    for (const line of lines) {\n      if (!line.startsWith("data: ")) continue;\n      const data = line.slice(6);\n      if (data === "[DONE]") return;\n      const delta = JSON.parse(data).choices[0].delta;\n      if (delta.content) onChunk(delta.content);\n    }\n  }\n}\n```\n\n说明：上下文组装为「最近 20 轮」，密钥仅从浏览器本地存储读取。';
+  }
+  if (/^(你好|hello|hi|嗨|在吗)/i.test(userText)) {
+    return '你好！这里是 ai-chat 需求原型。所有回复都是本地假数据脚本。\n\n建议演示路径：\n1. 告诉我「我叫小明」，再问我「我叫什么」——演示多轮上下文（REQ-002）\n2. 生成中点击左侧其他会话或新建会话——演示「生成中断」标注（REQ-003/004）\n3. 打开右下角「演示控制」，把下一次请求设为 401——演示错误提示与设置页引导（REQ-007）\n4. 刷新页面——会话与配置不丢（REQ-006 持久化演示）';
+  }
+  return '收到：「' + userText.slice(0, 40) + (userText.length > 40 ? '…' : '') + '」\n\n（原型说明：这是本地脚本生成的模拟流式回复，用于演示打字机效果、消息持久化与上下文记忆，不调用真实 API。产品实现时此处为模型真实输出。）\n\n如果你想看代码块渲染效果，可以让我「给一个流式请求的代码示例」。';
+}
+
+/* 重试（REQ-007：重试复用原消息） */
+function retry(msgId) {
+  const s = currentSession();
+  const idx = s.messages.findIndex(m => m.id === msgId);
+  if (idx < 0) return;
+  s.messages.splice(idx, 1); // 移除错误气泡，重新走发送流程
+  renderMessages();
+  startFakeStream(s, false);
+}
+
+/* 中断生成（REQ-003/004：新建/切换时中断并标注） */
+function interruptGeneration() {
+  if (!state.generating) return;
+  clearInterval(state.generating.timer);
+  const s = state.sessions.find(x => x.id === state.generating.sessionId);
+  if (s) {
+    const m = s.messages.filter(x => x.role === 'ai').pop();
+    if (m && m.status === 'generating') {
+      m.status = 'interrupted'; // 已生成部分保留 + 标注
+      if (!m.content) m.content = '（尚未收到内容即被中断）';
+    }
+    s.updatedAt = Date.now();
+  }
+  state.generating = null;
+  persist();
+}
+
+/* ---------------- 会话管理（REQ-003/004/005） ---------------- */
+function createSession() {
+  const s = { id: uid(), title: '新会话', createdAt: Date.now(), updatedAt: Date.now(), messages: [] };
+  state.sessions.unshift(s);
+  return s;
+}
+function newSession() {
+  interruptGeneration(); // REQ-003 异常分支：中断并标注
+  const s = createSession();
+  state.currentId = s.id;
+  renderSidebar(); renderMessages(); updateSendState();
+  input.focus();
+}
+function switchSession(id) {
+  const s = state.sessions.find(x => x.id === id);
+  if (!s) return;
+  if (s.corrupt) { toast('该会话数据无法读取（REQ-004 异常分支演示），不影响其他会话使用'); return; }
+  if (id === state.currentId) return;
+  interruptGeneration(); // REQ-004：切换时中断并标注
+  state.currentId = id;
+  renderSidebar();
+  renderMessages(true);            // 骨架屏加载态
+  setTimeout(() => renderMessages(), 250);
+  updateSendState();
+}
+function confirmDelete(id) {
+  const s = state.sessions.find(x => x.id === id);
+  openModal('<h3>删除会话</h3><div class="modal-body">确定删除会话「' + esc(s.title) + '」吗？删除后无法恢复。</div>' +
+    '<div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">取消</button>' +
+    '<button class="btn-danger" onclick="deleteSession(\'' + id + '\')">删除</button></div>');
+}
+function deleteSession(id) {
+  if (state.currentId === id) interruptGeneration(); // 删除生成中的当前会话：先中断
+  state.sessions = state.sessions.filter(s => s.id !== id);
+  if (state.currentId === id) {
+    // REQ-005：删除当前会话 → 切到最近会话；无会话 → 空态
+    state.currentId = state.sessions.length ? state.sessions[0].id : null;
+  }
+  closeModal();
+  renderSidebar(); renderMessages(); updateSendState();
+  toast('会话已删除');
+  persist();
+}
+
+/* ---------------- 上下文预览（REQ-002 可视化） ---------------- */
+function showContextPreview() {
+  const s = currentSession();
+  if (!s || !s.messages.length) { toast('当前会话没有消息，发送一条后再预览上下文组装'); return; }
+  const rounds = []; // 拆成轮：user+ai 相邻为 1 轮
+  s.messages.forEach(m => rounds.push(m));
+  const included = rounds.slice(-MAX_ROUNDS * 2);
+  const html = '<h3>下次请求的上下文组装</h3>' +
+    '<div class="modal-body">按 REQ-002 规则组装：<b>最近 20 轮（最多 40 条消息）</b>。当前会话共 ' + s.messages.length + ' 条消息，本次携带 <b>' + included.length + '</b> 条；被截断的更早消息仅存本地、界面仍可滚动查看。</div>' +
+    '<div class="ctx-list">' + s.messages.map((m, i) => {
+      const isIncl = i >= s.messages.length - included.length;
+      return '<div class="ctx-item' + (isIncl ? '' : ' excluded') + '">' +
+        '<span class="ctx-role">' + (m.role === 'user' ? 'user' : 'assistant') + '</span>' +
+        '<span class="ctx-text">' + esc(m.content.slice(0, 36) || '(空)') + '</span></div>';
+    }).join('') + '</div>' +
+    '<div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">关闭</button></div>';
+  openModal(html);
+}
+
+/* ---------------- 设置（REQ-014） ---------------- */
+function openSettings() {
+  const cfg = getConfig();
+  $('inBase').value = cfg.baseUrl || '';
+  $('inModel').value = cfg.model || '';
+  $('inKey').value = cfg.apiKey || '';
+  clearInvalid();
+  state.view = 'settings';
+  $('chatView').style.display = 'none';
+  $('settingsView').style.display = 'block';
+  $('savedFlag').classList.remove('show');
+}
+function closeSettings() {
+  state.view = 'chat';
+  $('settingsView').style.display = 'none';
+  $('chatView').style.display = 'flex';
+  renderMessages(); renderSidebar();
+}
+function markInvalid(fieldId, hintId, msg) {
+  $(fieldId).querySelector('input').classList.add('invalid');
+  $(hintId).textContent = msg;
+  $(hintId).classList.add('error');
+}
+function clearInvalid() {
+  ['fBase','fModel','fKey'].forEach(f => $(f).querySelector('input').classList.remove('invalid'));
+  $('hintBase').textContent = 'OpenAI 兼容服务的接口地址，如 DeepSeek / GLM'; $('hintBase').classList.remove('error');
+  $('hintModel').textContent = '如 deepseek-chat、glm-4.6'; $('hintModel').classList.remove('error');
+  $('hintKey').textContent = '仅存浏览器本地，不会上传、不会进入代码仓库'; $('hintKey').classList.remove('error');
+}
+function saveSettings() {
+  // REQ-014：三项任一为空 → 提示必填项，不写入不完整配置
+  clearInvalid();
+  const base = $('inBase').value.trim(), model = $('inModel').value.trim(), key = $('inKey').value.trim();
+  let bad = false;
+  if (!base) { markInvalid('fBase','hintBase','Base URL 不能为空'); bad = true; }
+  if (!model) { markInvalid('fModel','hintModel','模型名不能为空'); bad = true; }
+  if (!key) { markInvalid('fKey','hintKey','API Key 不能为空'); bad = true; }
+  if (bad) return;
+  const ok = persistConfig({ baseUrl: base, model: model, apiKey: key });
+  if (!ok) { toast('保存失败：本地存储不可用'); return; }
+  $('savedFlag').classList.add('show');
+  setTimeout(() => $('savedFlag').classList.remove('show'), 2000);
+  renderMessages(); renderSidebar();
+}
+function confirmClearKey() {
+  openModal('<h3>清除 API 密钥</h3><div class="modal-body">将从本地存储中彻底清除 API Key（Base URL 与模型名保留）。清除后发送消息会提示先完成配置。</div>' +
+    '<div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">取消</button>' +
+    '<button class="btn-danger" onclick="clearKey()">清除</button></div>');
+}
+function clearKey() {
+  const cfg = getConfig();
+  persistConfig({ baseUrl: cfg.baseUrl || '', model: cfg.model || '', apiKey: '' });
+  $('inKey').value = '';
+  closeModal();
+  toast('API 密钥已从本地存储清除');
+  renderMessages(); renderSidebar();
+}
+
+/* ---------------- 模态 / Toast ---------------- */
+function openModal(inner) { $('modalHost').innerHTML = '<div class="modal-mask" onclick="if(event.target===this)closeModal()"><div class="modal">' + inner + '</div></div>'; }
+function closeModal() { $('modalHost').innerHTML = ''; }
+function toast(msg, action) {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.innerHTML = '<span>' + esc(msg) + '</span>' + (action ? '<button class="t-action">' + esc(action.label) + '</button>' : '');
+  if (action) t.querySelector('.t-action').onclick = () => { action.fn(); dismiss(); };
+  $('toastWrap').appendChild(t);
+  const dismiss = () => { t.classList.add('out'); setTimeout(() => t.remove(), 300); };
+  setTimeout(dismiss, action ? 6000 : 3000);
+}
+
+/* ---------------- 演示数据 / 帮助 / 演示面板 ---------------- */
+function toggleDemoPanel() { const p = $('demoPanel'); p.style.display = p.style.display === 'none' ? 'block' : 'none'; }
+function resetAll() {
+  interruptGeneration();
+  localStorage.removeItem(LS_SESSIONS); localStorage.removeItem(LS_CONFIG);
+  state.sessions = []; state.currentId = null;
+  renderSidebar(); renderMessages(); updateSendState();
+  toast('已清空本地演示数据');
+}
+function loadDemoData() {
+  interruptGeneration();
+  const now = Date.now();
+  const mk = (title, minsAgo, msgs, opts) => Object.assign({
+    id: uid(), title, createdAt: now - minsAgo*60000, updatedAt: now - minsAgo*60000, messages: msgs
+  }, opts||{});
+  const m = (role, content, status) => ({ id: uid(), role, content, status: status || 'done' });
+  state.sessions = [
+    mk('多轮上下文演示', 3, [
+      m('user','我叫小明，请记住我的名字。'),
+      m('ai','你好小明！已经记住了。这是多轮上下文记忆的演示——这句话会随本会话后续每次请求一起发送。你可以接着问我「我叫什么」试试。'),
+      m('user','帮我用一句话解释什么是流式输出。'),
+      m('ai','流式输出就是服务器边生成边返回，前端逐块渲染，用户不必等全文生成完毕——就像你现在看到的打字机效果。'),
+      m('user','我叫什么？'),
+      m('ai','你叫小明呀！这就是 REQ-002 的上下文记忆：你的自我介绍仍在本会话最近 20 轮的上下文窗口里，随请求一同发送，所以我能记得。'),
+    ]),
+    mk('超长消息与代码块演示', 60, [
+      m('user','给我一段代码示例，并附带一段很长的说明。'),
+      m('ai','```python\n# 最小可用的 OpenAI 兼容流式客户端\nimport requests\n\ndef chat(messages):\n    r = requests.post(\n        BASE_URL + "/chat/completions",\n        headers={"Authorization": "Bearer " + API_KEY},\n        json={"model": MODEL, "messages": messages, "stream": True},\n    )\n    r.raise_for_status()\n    for line in r.iter_lines():\n        if line and line.startswith(b"data: "):\n            payload = line[6:]\n            if payload == b"[DONE]":\n                break\n            print(payload.decode(), end="")\n```\n上面是代码块渲染效果（深色底、语言标签、复制按钮）。下面是一段超长文本，用于演示极端内容下的换行、断词与滚动表现：在软件工程中，需求分析阶段产出的原型是团队沟通效率的最大杠杆之一——它把抽象的文字描述转化为可点击、可感知、可否决的具体界面，使评审从「想象对齐」变成「所见即所谈」。一人公司里这个杠杆更加重要：CEO 兼任产品、开发与测试，原型同时承担需求附件、开发对照与走查取证三重角色，因此原型必须覆盖空状态、加载态、错误态与极端内容，而不能只演示理想路径；否则开发阶段的每一次边角情况都要靠临时决策，决策成本会吃掉全部省下来的时间。这个长段落就是为了验证：当 AI 回复非常长时，气泡不会撑破布局、滚动始终顺滑、用户消息与 AI 消息的视觉层级依然清晰。'),
+    ]),
+    mk('生成中断演示', 120, [
+      m('user','讲一个长一点的故事。'),
+      m('ai','从前有座山，山里有座庙，庙里有个老和尚在给小和尚讲故事：从前有座山，山里有座……就在故事讲到一半时，用户切换到了别的会话，于是这段回复被中断并标注了「生成中断」，已生成的部分原样保留。','interrupted'),
+    ]),
+    mk('错误提示演示（401）', 180, [
+      m('user','你好'),
+      { id: uid(), role: 'ai', content: '', status: 'error', error: { type: 'auth', code: '401' } },
+    ]),
+    mk('旧会话（数据损坏演示）', 2880, [], { corrupt: true, title: '旧会话（数据损坏）' }),
+  ];
+  state.currentId = state.sessions[0].id;
+  renderSidebar(); renderMessages(); updateSendState();
+  toast('演示数据已载入：含多轮上下文 / 超长消息与代码块 / 生成中断 / 401 错误 / 损坏会话');
+}
+function showHelp() {
+  openModal('<h3>设计参数标注（供开发对照 / 走查取证）</h3>' +
+    '<table class="token-table">' +
+    '<tr><th>用途</th><th>值</th></tr>' +
+    '<tr><td><span class="swatch" style="background:#3370FF"></span>主色</td><td>#3370FF（hover #2E5FDF / active #2860D8 / 浅底 #F0F4FF）</td></tr>' +
+    '<tr><td><span class="swatch" style="background:#F5F6F7"></span>页面底色 / 表面</td><td>#F5F6F7 / #FFFFFF</td></tr>' +
+    '<tr><td><span class="swatch" style="background:#E5E6EB"></span>描边</td><td>#E5E6EB</td></tr>' +
+    '<tr><td><span class="swatch" style="background:#1F2329"></span>文字三级</td><td>#1F2329 / #646A73 / #8F959E</td></tr>' +
+    '<tr><td><span class="swatch" style="background:#D93025"></span>错误 / 警告 / 成功</td><td>#D93025（浅底 #FDECEA）/ #B45309（浅底 #FFF7E8）/ #1A9E5C</td></tr>' +
+    '<tr><td>字号</td><td>12 辅注 · 13 按钮/侧栏 · 14 正文 · 15 消息 · 16 表单 · 17 区块标题 · 20 空态标题</td></tr>' +
+    '<tr><td>圆角</td><td>6 小按钮 / 8 按钮卡片 / 12 气泡模态 / 999 胶囊</td></tr>' +
+    '<tr><td>间距刻度</td><td>4 的倍数：4 / 8 / 12 / 16 / 20 / 24 / 32</td></tr>' +
+    '<tr><td>关键尺寸</td><td>侧栏 264px · 内容区 760px · 顶栏 56px · 主按钮 36px 高 · 头像 28px</td></tr>' +
+    '<tr><td>阴影</td><td>三级：.06 / .10 / .16（见 CSS :root）</td></tr>' +
+    '<tr><td>动效</td><td>过渡统一 .15s ease；消息进入 .25s 上浮渐显；模态 .18s；光标闪烁 .8s</td></tr>' +
+    '</table>' +
+    '<div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">关闭</button></div>');
+}
+
+/* ---------------- 启动 ---------------- */
+loadAll();
+renderSidebar();
+renderMessages(true); // 首屏加载态
+setTimeout(() => { renderMessages(); updateSendState(); }, 250);
+</script>
+</body>
+</html>
