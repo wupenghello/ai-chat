@@ -6,7 +6,7 @@
 
 | 需求 | 描述摘要 | 优先级 | 设计稿 | 实现（文件/模块） | 测试（用例/文件） | 状态 | 所在迭代 |
 |------|---------|--------|----------|-----------------|------------------|------|---------|
-| REQ-001 | 发送消息并流式接收回复 | P0 | design/iter-1（已基线） | api/client.ts, ComposerBox, MessageBubble | client.spec / composer.spec | 已实现（真实流式冒烟待 GLM 余额） | iter-1 |
+| REQ-001 | 发送消息并流式接收回复 | P0 | design/iter-1（已基线） | api/client.ts, ComposerBox, MessageBubble | client.spec / composer.spec | 已验证（DeepSeek 真实流式实测通过；GLM 待余额） | iter-1 |
 | REQ-002 | 多轮上下文记忆（系统提示词 + 最近 20 轮截断） | P0 | 不涉及（数据层逻辑） | api/client.ts buildContext | client.spec | 已实现 | iter-1 |
 | REQ-003 | 新建会话（生成中新建 = 中断并标注） | P0 | design/iter-1（已基线） | stores/sessions.ts, TheSidebar | sessions.spec | 已实现 | iter-1 |
 | REQ-004 | 查看历史会话并切换（生成中切换 = 中断并标注） | P0 | design/iter-1（已基线） | stores/sessions.ts, SessionListItem | sessions.spec | 已实现 | iter-1 |
