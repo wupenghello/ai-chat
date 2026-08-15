@@ -2,7 +2,7 @@
 
 双向可追溯：需求 → 设计稿 → 实现 → 测试 → 状态。迭代收尾时必须与实际代码一致。
 
-> 需求已基线（req-baseline-v1，2026-08-15 CEO 批准）。iter-1 已关闭（G4 过，v0.1.0 已发布）。iter-2 已关闭（2026-08-15，G4 过：开发 T0~T4 全完成、37/37 测试、24 条走查、QA 审计 3 NCR 全整改、复盘完成，见 retros/iter-2.md）。iter-3 计划已批准（Σ9，REQ-009/011/012/013，2026-08-15 CEO 确认，见 plans/iter-3.md）。设计稿 design-iter-3 已基线（2026-08-15 CEO 批准，6 项待澄清定夺）。iter-3 已关闭（2026-08-15，G4 过：开发 T0~T4 全完成、62/62 测试、28 条走查、QA 审计 0 NCR 符合、复盘完成，见 retros/iter-3.md）。REQ-001~014 全部达成。iter-4 计划已批准（Σ9，REQ-015/016 + DEF-011，2026-08-15 CEO 确认，见 plans/iter-4.md）。iter-4 开发完成（T0~T3 全完成、79/79 测试、设计基线 design-iter-4）。iter-4 已关闭（2026-08-15，G4 过：开发 T0~T3 + CHG-003 全完成、79/79 测试、走查 28 条、QA 审计 5 NCR 全整改、周报含 Code Review、生产构建通过、复盘完成，见 retros/iter-4.md）。v0.3.0 已发布（CEO 批准，releases/v0.3.0.md）。
+> 需求已基线（req-baseline-v1，2026-08-15 CEO 批准）。iter-1 已关闭（G4 过，v0.1.0 已发布）。iter-2 已关闭（2026-08-15，G4 过：开发 T0~T4 全完成、37/37 测试、24 条走查、QA 审计 3 NCR 全整改、复盘完成，见 retros/iter-2.md）。iter-3 计划已批准（Σ9，REQ-009/011/012/013，2026-08-15 CEO 确认，见 plans/iter-3.md）。设计稿 design-iter-3 已基线（2026-08-15 CEO 批准，6 项待澄清定夺）。iter-3 已关闭（2026-08-15，G4 过：开发 T0~T4 全完成、62/62 测试、28 条走查、QA 审计 0 NCR 符合、复盘完成，见 retros/iter-3.md）。REQ-001~014 全部达成。iter-4 计划已批准（Σ9，REQ-015/016 + DEF-011，2026-08-15 CEO 确认，见 plans/iter-4.md）。iter-4 开发完成（T0~T3 全完成、79/79 测试、设计基线 design-iter-4）。iter-4 已关闭（2026-08-15，G4 过：开发 T0~T3 + CHG-003 全完成、79/79 测试、走查 28 条、QA 审计 5 NCR 全整改、周报含 Code Review、生产构建通过、复盘完成，见 retros/iter-4.md）。v0.3.0 已发布（CEO 批准，releases/v0.3.0.md）。iter-5 计划已批准（Σ8，REQ-017/018 + 复盘遗留 token 化，2026-08-15 CEO 确认，见 plans/iter-5.md）。
 
 | 需求 | 描述摘要 | 优先级 | 设计稿 | 实现（文件/模块） | 测试（用例/文件） | 状态 | 所在迭代 |
 |------|---------|--------|----------|-----------------|------------------|------|---------|
@@ -22,8 +22,8 @@
 | REQ-014 | API 供应商与密钥可配置（OpenAI 兼容，DeepSeek/GLM） | P0 | design/iter-1（已基线） | stores/settings.ts, SettingsForm | settings.spec / settings-form.spec + 浏览器实测 | 已验证（DeepSeek 实测通过；**GLM 部分按 CEO 决策 2026-08-15 不补验、接受部分达成**——不充值，见 defects.md DEF-002） | iter-1 |
 | REQ-015 | 消息编辑与重新生成（regenerate） | P1 | design/iter-4（已基线） | stores/sessions.ts editAndRegenerate（generation 纪元防竞态）, MessageBubble（编辑态）, MessageList/App | sessions.spec（4 用例）/ MessageBubble.spec（5 用例）+ 浏览器实测 | 已验证 | iter-4 |
 | REQ-016 | 会话搜索 | P2 | design/iter-4（已基线） | utils/search.ts, TheSidebar（搜索框）, SessionListItem（高亮/片段） | search.spec（5 用例）+ 浏览器实测（命中/空态/清除） | 已验证 | iter-4 |
-| REQ-017 | 暗色主题 | P2 | （待产出） | （待实现） | （待测试） | 未开始 |  |
-| REQ-018 | 多供应商档案一键切换（REQ-014 增强） | P2 | （待产出） | （待实现） | （待测试） | 未开始 |  |
+| REQ-017 | 暗色主题 | P2 | （待产出） | （待实现） | （待测试） | 未开始 | iter-5 |
+| REQ-018 | 多供应商档案一键切换（REQ-014 增强） | P2 | （待产出） | （待实现） | （待测试） | 未开始 | iter-5 |
 | REQ-019 | 版本切换（编辑/重生成后切换新旧分支） | P1 | design/iter-4（已同步） | stores/sessions.ts（toggleVersion + branches + forkId） | sessions.spec（版本切换用例）+ MessageBubble.spec | 已验证 | iter-4 |
 
 ## 状态定义
