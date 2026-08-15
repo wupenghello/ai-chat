@@ -28,12 +28,25 @@ describe('ComposerBox（REQ-001）', () => {
     expect(wrapper.emitted('send')).toHaveLength(1) // 未新增发送
   })
 
-  it('disabled 状态（生成中）时 Enter 不发送', async () => {
-    const wrapper = mount(ComposerBox, { props: { disabled: true, hint: '正在生成回复…' } })
+  it('生成中（generating）：可输入但 Enter 不发送，停止按钮出现并触发 stop', async () => {
+    const wrapper = mount(ComposerBox, { props: { generating: true } })
     const ta = wrapper.find('textarea')
-    await ta.setValue('x')
+    expect(ta.attributes('disabled')).toBeUndefined() // 草稿不丢，仍可输入
+    await ta.setValue('下一条草稿')
     ta.element.dispatchEvent(keyEvent('Enter'))
     await wrapper.vm.$nextTick()
     expect(wrapper.emitted('send')).toBeUndefined()
+
+    expect(wrapper.find('.send').exists()).toBe(false)
+    const stop = wrapper.find('.stop')
+    expect(stop.exists()).toBe(true)
+    expect(stop.attributes('disabled')).toBeUndefined()
+    await stop.trigger('click')
+    expect(wrapper.emitted('stop')).toHaveLength(1)
+  })
+
+  it('非生成中点停止（边界：流恰好已结束）不触发 stop 事件', async () => {
+    const wrapper = mount(ComposerBox, { props: { generating: false } })
+    expect(wrapper.find('.stop').exists()).toBe(false) // 停止按钮不渲染，send 态
   })
 })

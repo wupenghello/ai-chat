@@ -60,9 +60,10 @@ async function send(text: string) {
           <div class="composer-row">
             <div class="composer-col">
               <ComposerBox
-                :disabled="sessions.isGenerating(sessions.activeId)"
-                hint="正在生成回复…"
+                :generating="sessions.isGenerating(sessions.activeId)"
+                hint="AI 正在生成，Enter 暂不可发送…"
                 @send="send"
+                @stop="sessions.stopGeneration()"
               />
             </div>
           </div>

@@ -22,6 +22,10 @@ defineProps<{ message: Message }>()
       <span class="content">{{ message.content }}<span v-if="message.status === 'generating'" class="cursor" /></span>
       <span v-if="message.status === 'generating'" class="status-hint">正在生成…</span>
       <span v-else-if="message.status === 'interrupted'" class="pill interrupted">生成中断</span>
+      <span v-else-if="message.status === 'stopped'" class="pill stopped">
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect width="10" height="10" rx="1.5" fill="currentColor" /></svg>
+        已停止生成
+      </span>
     </div>
     <div v-if="message.role === 'user'" class="avatar user" aria-hidden="true">我</div>
   </div>
@@ -99,6 +103,19 @@ defineProps<{ message: Message }>()
   background: #fff7e8;
   border-radius: 999px;
   padding: 2px 10px;
+}
+/* REQ-010：用户主动停止 = 正常操作，用中性灰胶囊与"生成中断"警告胶囊区分 */
+.pill.stopped {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--c-text-2);
+  background: #f2f3f5;
+  border-radius: 999px;
+  padding: 2px 8px;
 }
 @keyframes blink {
   50% {

@@ -4,7 +4,7 @@ import { useSettingsStore } from './settings'
 import * as db from '../db/idb'
 import type { PersistedSession } from '../db/idb'
 
-export type MessageStatus = 'done' | 'generating' | 'interrupted' | 'error'
+export type MessageStatus = 'done' | 'generating' | 'interrupted' | 'stopped' | 'error'
 
 export interface Message {
   id: string
@@ -38,6 +38,8 @@ export const useSessionsStore = defineStore('sessions', {
     activeId: null as string | null,
     /** 每个会话独立的生成控制器（CHG-001：切换会话不再中断，后台继续） */
     controllers: {} as Record<string, AbortController>,
+    /** 用户主动停止的会话（REQ-010）：abort 后标注 stopped，与系统中断 interrupted 区分 */
+    stopRequested: {} as Record<string, true>,
   }),
 
   getters: {
@@ -71,6 +73,14 @@ export const useSessionsStore = defineStore('sessions', {
     /** 中断指定会话的生成并标注（REQ-003：仅"新建会话"使用；CHG-001 后切换不再调用） */
     abortSession(sessionId: string) {
       this.controllers[sessionId]?.abort()
+    },
+
+    /** REQ-010：停止当前查看会话的生成。已结束（无控制器）时 no-op（边界态：流恰好结束） */
+    stopGeneration() {
+      const id = this.activeId
+      if (!id || !this.controllers[id]) return
+      this.stopRequested[id] = true
+      this.controllers[id].abort()
     },
 
     createSession(): string {
@@ -160,7 +170,8 @@ export const useSessionsStore = defineStore('sessions', {
         aiMsg.status = 'done'
       } catch (e) {
         if ((e as Error).name === 'AbortError') {
-          aiMsg.status = 'interrupted' // REQ-003：中断并标注
+          // REQ-010 用户主动停止 = stopped；REQ-003/006 系统中断 = interrupted
+          aiMsg.status = this.stopRequested[session.id] ? 'stopped' : 'interrupted'
         } else {
           const err = e as { kind?: string; message?: string }
           aiMsg.status = 'error'
@@ -169,6 +180,7 @@ export const useSessionsStore = defineStore('sessions', {
       } finally {
         session.updatedAt = Date.now()
         delete this.controllers[session.id]
+        delete this.stopRequested[session.id]
         void this.persist(session)
       }
     },

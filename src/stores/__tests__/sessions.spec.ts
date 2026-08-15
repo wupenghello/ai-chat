@@ -116,6 +116,67 @@ describe('中断与错误（REQ-003/004/007 + CHG-001）', () => {
   })
 })
 
+describe('停止生成（REQ-010，iter-2 T2）', () => {
+  it('用户主动停止：保留已生成部分并标注 stopped，生成态解除', async () => {
+    let delta!: (t: string) => void
+    mockedStream.mockImplementation((_c, _m, h: StreamHandlers, signal?: AbortSignal) => {
+      delta = (t) => h.onDelta(t)
+      return new Promise<string>((_res, rej) => {
+        signal?.addEventListener('abort', () => {
+          const e = new Error('aborted')
+          e.name = 'AbortError'
+          rej(e)
+        })
+      })
+    })
+    const sessions = useSessionsStore()
+    const p = sessions.send('长问题')
+    await new Promise((r) => setTimeout(r, 10))
+    delta('已生成的一段')
+    expect(sessions.isGenerating(sessions.activeId)).toBe(true)
+
+    sessions.stopGeneration()
+    await p
+    const msg = sessions.active!.messages[1]
+    expect(msg.status).toBe('stopped') // 主动停止 ≠ interrupted
+    expect(msg.content).toBe('已生成的一段') // 已生成部分保留
+    expect(sessions.isGenerating(sessions.activeId)).toBe(false)
+  })
+
+  it('stopRequested 不残留：停止后再发新消息正常完成', async () => {
+    let first = true
+    mockedStream.mockImplementation((_c, _m, h: StreamHandlers, signal?: AbortSignal) => {
+      if (first) {
+        first = false
+        return new Promise((_res, rej) => {
+          signal?.addEventListener('abort', () => {
+            const e = new Error('aborted')
+            e.name = 'AbortError'
+            rej(e)
+          })
+          setTimeout(() => _res('完整'), 5000)
+        })
+      }
+      h.onDelta('新回复')
+      return Promise.resolve('新回复')
+    })
+    const sessions = useSessionsStore()
+    const p1 = sessions.send('第一条')
+    await new Promise((r) => setTimeout(r, 10))
+    sessions.stopGeneration()
+    await p1
+    expect(sessions.active!.messages[1].status).toBe('stopped')
+
+    await sessions.send('第二条')
+    expect(sessions.active!.messages[3]).toMatchObject({ status: 'done', content: '新回复' })
+  })
+
+  it('边界：无生成时 stopGeneration 为 no-op，不报错', () => {
+    const sessions = useSessionsStore()
+    expect(() => sessions.stopGeneration()).not.toThrow()
+  })
+})
+
 describe('会话管理（REQ-003/004/005）', () => {
   it('删除当前会话后自动切到最近的会话', async () => {
     const sessions = useSessionsStore()

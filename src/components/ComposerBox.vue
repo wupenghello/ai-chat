@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
 
-const props = defineProps<{ disabled?: boolean; hint?: string }>()
-const emit = defineEmits<{ send: [text: string] }>()
+const props = defineProps<{ generating?: boolean; hint?: string }>()
+const emit = defineEmits<{ send: [text: string]; stop: [] }>()
 
 const text = ref('')
 const el = ref<HTMLTextAreaElement | null>(null)
-const canSend = computed(() => !props.disabled && text.value.trim().length > 0)
+const canSend = computed(() => !props.generating && text.value.trim().length > 0)
 
 async function autosize() {
   await nextTick()
@@ -21,6 +21,10 @@ function submit() {
   emit('send', text.value)
   text.value = ''
   void autosize()
+}
+
+function onStop() {
+  if (props.generating) emit('stop') // 边界：流恰好结束（已非生成态）时忽略，no-op
 }
 
 function onKey(e: KeyboardEvent) {
@@ -39,12 +43,20 @@ function onKey(e: KeyboardEvent) {
       v-model="text"
       rows="1"
       class="ta"
-      :placeholder="disabled ? hint ?? '生成中…' : '输入消息，Enter 发送，Shift+Enter 换行'"
-      :disabled="disabled"
+      :placeholder="
+        generating ? hint ?? 'AI 正在生成，Enter 暂不可发送…' : '输入消息，Enter 发送，Shift+Enter 换行'
+      "
       @keydown="onKey"
       @input="autosize"
     />
-    <button class="send" :disabled="!canSend" aria-label="发送" @click="submit">
+    <!-- REQ-010：生成中发送按钮原位切换为停止按钮；输入框保持可输入（草稿不丢），Enter 不发送 -->
+    <button v-if="generating" class="stop" aria-label="停止生成" @click="onStop">
+      <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
+        <rect width="10" height="10" rx="1.5" fill="currentColor" />
+      </svg>
+      停止
+    </button>
+    <button v-else class="send" :disabled="!canSend" aria-label="发送" @click="submit">
       <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
         <path fill="currentColor" d="M3 20.5 22 12 3 3.5 3 10l13 2-13 2z" />
       </svg>
@@ -82,9 +94,6 @@ function onKey(e: KeyboardEvent) {
 .ta::placeholder {
   color: var(--c-text-3);
 }
-.ta:disabled {
-  cursor: not-allowed;
-}
 .send {
   flex: none;
   width: 36px;
@@ -108,5 +117,30 @@ function onKey(e: KeyboardEvent) {
 .send:disabled {
   background: #c9cfdb;
   cursor: not-allowed;
+}
+/* REQ-010：停止按钮（design-iter-2 已基线：红实底 + 白字 + 方块图标） */
+.stop {
+  flex: none;
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--c-error);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+.stop:hover {
+  background: #b7251c;
+}
+.stop:active {
+  background: #b7251c;
+  transform: scale(0.94);
 }
 </style>
