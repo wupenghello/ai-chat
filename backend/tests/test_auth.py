@@ -55,6 +55,12 @@ class TestRegister:
         assert resp.status_code == 422
         assert "密码" in resp.json()["detail"][0]["msg"]
 
+    def test_password_too_long_rejected(self, client: TestClient):
+        """密码上限 128（design-iter-6 §2.1，NCR-iter6-002 ⑧ 整改）。"""
+        resp = register(client, "bob", password="x" * 129)
+        assert resp.status_code == 422
+        assert "密码最长 128" in resp.json()["detail"][0]["msg"]
+
     def test_chinese_username_and_valid_charset_accepted(self, client: TestClient):
         """规则允许的字符全通过：中文/字母/数字/_/-。"""
         for name in ("猫南北", "user_01", "a-b_9", "Zz"):

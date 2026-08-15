@@ -5,8 +5,9 @@ import secrets
 
 import bcrypt
 
-# REQ-020（CHG-004 定稿）：最短 8 位
+# REQ-020（CHG-004 定稿）：最短 8 位；上限 128（design-iter-6 §2.1，防超长 DoS 输入）
 PASSWORD_MIN_LENGTH = 8
+PASSWORD_MAX_LENGTH = 128
 # 用户名规则（CEO 定 2026-08-15，随 design-iter-6 基线批准）：2~32 字符，
 # 允许中文/字母/数字/_/-；前端（T2）与这里必须同一口径
 USERNAME_PATTERN = r"^[A-Za-z0-9_\-一-鿿]{2,32}$"

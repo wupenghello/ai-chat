@@ -15,6 +15,7 @@ from pydantic import BaseModel, field_validator
 from app.config import Settings, get_settings
 from app.db import DatabaseDep
 from app.security import (
+    PASSWORD_MAX_LENGTH,
     PASSWORD_MIN_LENGTH,
     USERNAME_PATTERN,
     hash_password,
@@ -44,6 +45,8 @@ class Credentials(BaseModel):
     def password_rule(cls, v: str) -> str:
         if len(v) < PASSWORD_MIN_LENGTH:
             raise ValueError(f"密码最短 {PASSWORD_MIN_LENGTH} 位")
+        if len(v) > PASSWORD_MAX_LENGTH:
+            raise ValueError(f"密码最长 {PASSWORD_MAX_LENGTH} 位")
         return v
 
 
