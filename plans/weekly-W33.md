@@ -112,6 +112,13 @@ iter-3 计划当日完成，无延期。容量 Σ=9 全部交付（≤10 上限�
   - XSS 核对：搜索高亮用 segments 文本插值渲染（非 v-html），标题/命中片段不可注入
   - 无新发现缺陷；79/79 测试与 28 条走查为旁证
   - **CEO 过目确认：待 CEO 过目**（G4 前置条件）
+- **iter-5（本次执行）**：范围 `8da31fe..HEAD`（生产代码：settings store、App.vue 令牌根、useTheme、SettingsForm/TheSidebar 等 11 组件 token 化、测试 2 文件）。发现与结论：
+  - 档案数据核对：旧格式迁移幂等（profiles 为空才迁移、activeProfileId 一致性守卫）；removeProfile 当前生效双保险（UI 禁用 + store 拒绝）；save() 兼容路径无档案时创建首个并自动生效
+  - 主题核对：useTheme 单例 + localStorage try/catch（隐私模式降级本次会话）；切换只动根 data-theme，组件零感知
+  - token 化核对：残留裸色值仅「实底白字」与「深底白色叠层」两类（走查留档口径）；--c-danger 命名族与 v1.3 文档一致
+  - **风险如实说明**：CSS 类改动 vitest 不覆盖——DEF-012 两根因均漏过测试；修复后以 computed style 断言走查补齐（iter-5-verify.md），建议流程改进入复盘
+  - **CEO 过目确认：待 CEO 过目**（G4 前置条件）
+
 
 ## QA 审计与 NCR 处置（iter-2）
 
@@ -144,9 +151,3 @@ iter-3 计划当日完成，无延期。容量 Σ=9 全部交付（≤10 上限�
 
 - iter-3 复盘 + G4 关闭（容量校准：计划 Σ9 vs 实际 Σ9，数据待复盘采集）
 - 迭代后：REQ-001~014 全部达成，产品仅剩"暂缓想法池"（账号/RAG/暗色主题等），后续纳入走需求变更流程
-- **iter-5（本次执行）**：范围 `8da31fe..HEAD`（生产代码：settings store、App.vue 令牌根、useTheme、SettingsForm/TheSidebar 等 11 组件 token 化、测试 2 文件）。发现与结论：
-  - 档案数据核对：旧格式迁移幂等（profiles 为空才迁移、activeProfileId 一致性守卫）；removeProfile 当前生效双保险（UI 禁用 + store 拒绝）；save() 兼容路径无档案时创建首个并自动生效
-  - 主题核对：useTheme 单例 + localStorage try/catch（隐私模式降级本次会话）；切换只动根 data-theme，组件零感知
-  - token 化核对：残留裸色值仅「实底白字」与「深底白色叠层」两类（走查留档口径）；--c-danger 命名族与 v1.3 文档一致
-  - **风险如实说明**：CSS 类改动 vitest 不覆盖——DEF-012 两根因均漏过测试；修复后以 computed style 断言走查补齐（iter-5-verify.md），建议流程改进入复盘
-  - **CEO 过目确认：待 CEO 过目**（G4 前置条件）
