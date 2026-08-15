@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useSessionsStore, type Session } from '../stores/sessions'
 import { useSettingsStore } from '../stores/settings'
+import { matchSession, type SearchHit } from '../utils/search'
 import BrandMark from './BrandMark.vue'
 import SessionListItem from './SessionListItem.vue'
 import ConfirmModal from './ConfirmModal.vue'
@@ -16,6 +17,22 @@ function onNew() {
   sessions.createSession() // 生成中新建 = 中断并标注（store 内处理）
   emit('chat')
 }
+
+// REQ-016：会话搜索——标题命中优先，其次正文命中；空关键词恢复完整列表
+const searchText = ref('')
+const query = computed(() => searchText.value.trim().toLowerCase())
+
+const filtered = computed<Array<{ session: Session; hit: SearchHit | null }>>(() => {
+  if (!query.value) return sessions.sessions.map((s) => ({ session: s, hit: null }))
+  return sessions.sessions
+    .map((s) => ({ session: s, hit: matchSession(s, query.value) }))
+    .filter((x): x is { session: Session; hit: SearchHit } => x.hit !== null)
+    .sort((a, b) => {
+      if (a.hit.type === 'title' && b.hit.type === 'body') return -1
+      if (a.hit.type === 'body' && b.hit.type === 'title') return 1
+      return b.session.updatedAt - a.session.updatedAt
+    })
+})
 </script>
 
 <template>
@@ -31,16 +48,45 @@ function onNew() {
       新建会话
     </button>
 
+    <div class="search-box">
+      <svg class="search-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+        <path
+          fill="currentColor"
+          d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5Zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14Z"
+        />
+      </svg>
+      <input
+        v-model="searchText"
+        class="search-input"
+        type="text"
+        placeholder="搜索会话"
+        spellcheck="false"
+        autocomplete="off"
+        aria-label="搜索会话"
+      />
+      <button v-if="searchText" class="search-clear" aria-label="清除搜索" @click="searchText = ''">
+        <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+          <path
+            fill="currentColor"
+            d="M18.3 5.71 12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.3 19.7 2.89 18.29 9.17 12 2.89 5.71 4.3 4.29l6.29 6.3 6.3-6.3 1.41 1.42Z"
+          />
+        </svg>
+      </button>
+    </div>
+
     <ul class="session-list">
       <SessionListItem
-        v-for="s in sessions.sessions"
-        :key="s.id"
-        :session="s"
-        :active="s.id === sessions.activeId"
-        @select="sessions.switchTo(s.id); emit('chat')"
-        @remove="pendingDelete = s"
-        @rename="(title) => sessions.renameSession(s.id, title)"
+        v-for="{ session, hit } in filtered"
+        :key="session.id"
+        :session="session"
+        :active="session.id === sessions.activeId"
+        :search="query"
+        :hit="hit"
+        @select="sessions.switchTo(session.id); emit('chat')"
+        @remove="pendingDelete = session"
+        @rename="(title) => sessions.renameSession(session.id, title)"
       />
+      <li v-if="query && filtered.length === 0" class="no-result">无匹配会话</li>
     </ul>
 
     <div class="footer">
@@ -104,6 +150,64 @@ function onNew() {
 }
 .new-btn:active {
   transform: scale(0.98);
+}
+/* REQ-016 搜索框 */
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 8px;
+  background: #f2f3f5;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.search-box:focus-within {
+  background: var(--c-surface);
+  border-color: var(--c-primary);
+}
+.search-icon {
+  flex: none;
+  color: var(--c-text-3);
+}
+.search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  color: var(--c-text-1);
+  font-family: inherit;
+}
+.search-input::placeholder {
+  color: var(--c-text-3);
+}
+.search-clear {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--c-text-3);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.search-clear:hover {
+  background: #e8ebf2;
+  color: var(--c-text-1);
+}
+.no-result {
+  list-style: none;
+  padding: 16px 12px;
+  font-size: 12px;
+  color: var(--c-text-3);
+  text-align: center;
 }
 .session-list {
   flex: 1;

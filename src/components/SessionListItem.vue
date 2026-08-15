@@ -1,13 +1,20 @@
 <script setup lang="ts">
-import { nextTick, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import type { Session } from '../stores/sessions'
+import { highlightSegments, type SearchHit } from '../utils/search'
 
-const props = defineProps<{ session: Session; active: boolean }>()
+const props = defineProps<{ session: Session; active: boolean; search?: string; hit?: SearchHit | null }>()
 const emit = defineEmits<{ select: []; remove: []; rename: [title: string] }>()
 
 const editing = ref(false)
 const draft = ref('')
 const inputEl = ref<HTMLInputElement | null>(null)
+
+// REQ-016：搜索高亮片段（标题命中 / 正文命中片段）
+const titleSegs = computed(() => highlightSegments(props.session.title, props.search ?? ''))
+const snippetSegs = computed(() =>
+  props.hit?.type === 'body' && props.hit.snippet ? highlightSegments(props.hit.snippet, props.search ?? '') : [],
+)
 
 function timeLabel(ts: number) {
   const d = new Date(ts)
@@ -64,7 +71,13 @@ function cancel() {
       </template>
       <template v-else>
         <span class="title" :title="session.title" @dblclick.stop="startEdit">
-          {{ session.corrupted ? '无法读取的会话' : session.title }}
+          <template v-if="search && hit?.type === 'title'">
+            <template v-for="(seg, i) in titleSegs" :key="i">
+              <mark v-if="seg.hit" class="hl">{{ seg.text }}</mark>
+              <span v-else>{{ seg.text }}</span>
+            </template>
+          </template>
+          <template v-else>{{ session.corrupted ? '无法读取的会话' : session.title }}</template>
         </span>
         <button
           v-if="!session.corrupted"
@@ -85,6 +98,12 @@ function cancel() {
         </button>
         <span v-if="session.corrupted" class="pill broken">无法读取</span>
         <span v-else-if="session.messages.some((m) => m.status === 'interrupted')" class="pill cut">生成中断</span>
+      </template>
+    </div>
+    <div v-if="search && hit?.type === 'body' && hit.snippet" class="hit-snippet">
+      <template v-for="(seg, i) in snippetSegs" :key="i">
+        <mark v-if="seg.hit" class="hl">{{ seg.text }}</mark>
+        <span v-else>{{ seg.text }}</span>
       </template>
     </div>
     <div class="meta">
@@ -178,6 +197,19 @@ function cancel() {
 }
 .edit-input:focus {
   box-shadow: 0 0 0 3px rgba(51, 112, 255, 0.12);
+}
+/* REQ-016 搜索高亮：关键词主色高亮（mark 默认黄底重置） */
+mark.hl {
+  background: transparent;
+  color: var(--c-primary);
+  font-weight: 600;
+}
+.hit-snippet {
+  font-size: 12px;
+  color: var(--c-text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .pill {
   flex: none;
