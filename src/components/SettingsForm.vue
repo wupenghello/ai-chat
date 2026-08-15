@@ -1,13 +1,22 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useSettingsStore, type ApiProfile } from '../stores/settings'
 import { useToastStore } from '../stores/toast'
 import { useTheme } from '../composables/useTheme'
+import { useSessionsStore } from '../stores/sessions'
 import ConfirmModal from './ConfirmModal.vue'
 
 const settings = useSettingsStore()
 const toast = useToastStore()
+const sessions = useSessionsStore()
 
+// REQ-018 待澄清 7：生成中切换档案 → 「待生效」胶囊，全部生成结束自动转正
+watch(
+  () => sessions.isAnyGenerating,
+  (g) => {
+    if (!g) settings.clearPendingEffect()
+  },
+)
 // REQ-017：设置页「外观」入口（与顶栏主题按钮同状态同存储）
 const { theme, setTheme } = useTheme()
 
@@ -72,6 +81,7 @@ function confirmDelete() {
 }
 
 function switchTo(p: ApiProfile) {
+  if (sessions.isAnyGenerating) settings.markPendingEffect()
   settings.setActiveProfile(p.id)
   toast.push(`已切换到「${p.name}」，下一次请求生效`)
 }
@@ -148,7 +158,11 @@ function clearPrompt() {
             <span class="p-name">{{ p.name }}</span>
             <span class="p-sub">{{ p.model }} · {{ hostOf(p.baseUrl) }}</span>
           </div>
-          <span v-if="p.id === settings.activeProfileId" class="p-current">当前生效</span>
+          <span
+            v-if="p.id === settings.activeProfileId"
+            class="p-current"
+            :title="settings.pendingProfileEffect && sessions.isAnyGenerating ? '待生效（本轮完成后）' : '当前生效'"
+          >{{ settings.pendingProfileEffect && sessions.isAnyGenerating ? '↻ 待生效' : '当前生效' }}</span>
           <button v-else type="button" class="p-btn" @click="switchTo(p)">设为当前</button>
           <button type="button" class="p-icon" aria-label="编辑档案" title="编辑" @click="openEdit(p)">
             <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">

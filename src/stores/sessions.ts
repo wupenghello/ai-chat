@@ -62,6 +62,10 @@ export const useSessionsStore = defineStore('sessions', {
     isGenerating(state) {
       return (sessionId: string | null) => !!sessionId && !!state.controllers[sessionId]
     },
+    /** REQ-018：任一会话在生成中（用于档案切换「待生效」标注） */
+    isAnyGenerating(state): boolean {
+      return Object.keys(state.controllers).length > 0
+    },
   },
 
   actions: {

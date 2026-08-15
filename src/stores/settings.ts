@@ -98,7 +98,7 @@ export const useSettingsStore = defineStore('settings', {
     if (activeProfileId && !profiles.some((x) => x.id === activeProfileId)) {
       activeProfileId = profiles[0]?.id ?? null
     }
-    return { profiles, activeProfileId, systemPrompt: p.systemPrompt ?? '' }
+    return { profiles, activeProfileId, systemPrompt: p.systemPrompt ?? '', pendingProfileEffect: false }
   },
 
   getters: {
@@ -169,6 +169,14 @@ export const useSettingsStore = defineStore('settings', {
       if (!this.profiles.some((p) => p.id === id)) return
       this.activeProfileId = id
       this.persistAll()
+    },
+
+    /** REQ-018 待澄清 7：生成中切换 → 新当前档案标「待生效」，生成结束转正（瞬态，不持久化） */
+    markPendingEffect() {
+      this.pendingProfileEffect = true
+    },
+    clearPendingEffect() {
+      this.pendingProfileEffect = false
     },
 
     /** REQ-018：删除档案；当前生效档案不可删（UI 禁用 + store 双保险），返回是否删除 */

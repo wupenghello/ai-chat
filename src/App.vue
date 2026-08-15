@@ -153,6 +153,8 @@ function editMessage(id: string, text: string) {
   --c-avatar-bg: #e8ebf2;
   --c-scrollbar: #d5d9e0;
   --c-toast-bg: #23272e;
+  --c-toast-border: #23272e;
+  --c-primary-on-dark: #a3bcff;
   --c-mask: rgba(31, 35, 41, 0.4);
   --c-focus-ring: rgba(51, 112, 255, 0.12);
   --c-danger: #d93025;
@@ -191,6 +193,7 @@ function editMessage(id: string, text: string) {
   --c-avatar-bg: #33363e;
   --c-scrollbar: #3a3e46;
   --c-toast-bg: #2a2d34;
+  --c-toast-border: #33363e;
   --c-mask: rgba(0, 0, 0, 0.55);
   --c-focus-ring: rgba(92, 141, 255, 0.25);
   --c-danger: #ff8073;

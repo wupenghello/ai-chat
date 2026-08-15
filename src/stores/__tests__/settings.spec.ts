@@ -124,3 +124,14 @@ describe('供应商档案（REQ-018，iter-5 T3）', () => {
     expect(s.profiles).toHaveLength(0)
   })
 })
+
+describe('档案待生效标注（REQ-018 待澄清 7）', () => {
+  it('生成中切换置待生效，生成结束清除；瞬态不入持久化', () => {
+    const s = useSettingsStore()
+    s.markPendingEffect()
+    expect(s.pendingProfileEffect).toBe(true)
+    expect(localStorage.getItem('ai-chat:settings') ?? '').not.toContain('pendingProfileEffect')
+    s.clearPendingEffect()
+    expect(s.pendingProfileEffect).toBe(false)
+  })
+})

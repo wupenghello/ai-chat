@@ -37,7 +37,8 @@ const emit = defineEmits<{ navigate: [to: 'settings'] }>()
   display: flex;
   align-items: center;
   gap: 12px;
-  background: var(--c-text-1);
+  background: var(--c-toast-bg);
+  border: 1px solid var(--c-toast-border);
   color: #fff;
   font-size: 13px;
   padding: 10px 14px;
@@ -50,7 +51,7 @@ const emit = defineEmits<{ navigate: [to: 'settings'] }>()
 .toast-action {
   border: none;
   background: none;
-  color: #a3bcff;
+  color: var(--c-primary-on-dark);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;

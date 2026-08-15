@@ -1047,6 +1047,21 @@ while (true) {
   <!-- ============================================================ -->
   <section>
     <h2><span class="no">6</span>待澄清（需 CEO 逐条定夺，一次定夺零返工）</h2>
+
+    <div class="spec" style="border-color:var(--c-primary);background:var(--c-primary-l)">
+      <div class="spec-title">定夺记录（CEO 预授权，2026-08-15，7 项全部按暂定方案采纳，无调整）</div>
+      <div class="ann" style="color:var(--c-text-2)">
+        1 切换入口=双入口（顶栏+设置页，同状态同存储）✅已实现；
+        2 跟随系统 prefers-color-scheme 本期不做（仅浅/深手动）✅；
+        3 暗色品牌蓝拆分（前景 #5C8DFF / 实底 #3370FF 不变）✅与 tokens v1.3 定夺一致；
+        4 档案名称必填 ✅已实现（validateProfile）；
+        5 档案排序创建时间正序、切换不重排 ✅（列表按插入序渲染）；
+        6 侧栏外显当前档案名 ✅已实现（.profile-tag）；
+        7 生成中切换=toast + 「↻ 待生效」行内胶囊、生成结束自动转正 ✅已实现（NCR-iter5-003 整改补齐）。<br>
+        留痕说明：预授权由 CEO 于 2026-08-15 会话内明确（「批准」），主会话转述执行；本节由 NCR-iter5-003 整改固化。
+      </div>
+    </div>
+
     <div class="sec-desc">沿用 iter-1~4 固化模式：设计师暂定方案已落样件，CEO 定夺后本节固化为决策记录；未定夺前开发不得先行实现对应细节。</div>
     <table>
       <tr><th style="width:60px">编号</th><th>问题</th><th>设计师暂定方案（已落样件）</th></tr>
