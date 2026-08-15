@@ -4,6 +4,7 @@ import { useSessionsStore } from './stores/sessions'
 import { useSettingsStore } from './stores/settings'
 import { useToastStore } from './stores/toast'
 import { exportSession } from './utils/export'
+import { useTheme } from './composables/useTheme'
 import TheSidebar from './components/TheSidebar.vue'
 import MessageList from './components/MessageList.vue'
 import ComposerBox from './components/ComposerBox.vue'
@@ -12,6 +13,9 @@ import SettingsForm from './components/SettingsForm.vue'
 import AppToast from './components/AppToast.vue'
 
 const sessions = useSessionsStore()
+
+// REQ-017：顶栏主题切换入口（与设置页「外观」同状态同存储）
+const { theme, toggleTheme } = useTheme()
 const settings = useSettingsStore()
 const toast = useToastStore()
 
@@ -68,6 +72,20 @@ function editMessage(id: string, text: string) {
               <span class="title-text">{{ sessions.active.title }}</span>
               <span class="title-sub">模型：{{ settings.config.model ?? '未设置' }}</span>
             </div>
+            <!-- REQ-017：主题切换（icon-only ghost，月亮=当前浅色可切深色） -->
+            <button
+              class="theme-btn"
+              :title="theme === 'dark' ? '切换到浅色' : '切换到深色'"
+              :aria-label="theme === 'dark' ? '切换到浅色' : '切换到深色'"
+              @click="toggleTheme"
+            >
+              <svg v-if="theme === 'light'" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+                <path fill="currentColor" d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.11-1.36a5.39 5.39 0 0 1-4.4 2.26 5.4 5.4 0 0 1-3.14-9.8c-.44-.07-.9-.1-1.35-.1z" />
+              </svg>
+              <svg v-else viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+                <path fill="currentColor" d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.79 1.42-1.41zM4 10.5H1v2h3v-2zm9-9.95h-2V3.5h2V.55zm7.45 3.91l-1.41-1.41-1.79 1.79 1.41 1.41 1.79-1.79zm-3.21 13.7l1.79 1.8 1.41-1.41-1.79-1.8-1.41 1.41zM20 10.5v2h3v-2h-3zm-8-5c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm-1 16.95h2V19.5h-2v2.95zm-7.45-3.91l1.41 1.41 1.79-1.8-1.41-1.41-1.79 1.8z" />
+              </svg>
+            </button>
             <button class="export-btn" title="导出会话" @click="exportCurrent">
               <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true">
                 <path
@@ -113,22 +131,81 @@ function editMessage(id: string, text: string) {
 </template>
 
 <style>
-/* 设计令牌（design/iter-1 定稿，飞书蓝白系） */
+/* 设计令牌（design-system tokens v1.3）：组件一律引用语义令牌，禁止裸色值；
+   主题切换只覆盖根变量（REQ-017）；--c-error→--c-danger 统一命名（iter-4 复盘遗留） */
 :root {
   --c-primary: #3370ff;
   --c-primary-h: #2e5fdf;
   --c-primary-a: #2860d8;
   --c-primary-l: #f0f4ff;
+  --c-primary-solid: #3370ff;
+  --c-primary-solid-h: #2e5fdf;
+  --c-primary-solid-a: #2860d8;
   --c-bg: #f5f6f7;
   --c-surface: #ffffff;
   --c-border: #e5e6eb;
   --c-text-1: #1f2329;
   --c-text-2: #646a73;
   --c-text-3: #8f959e;
-  --c-error: #d93025;
+  --c-hover-bg: var(--c-hover-bg);
+  --c-disabled-bg: var(--c-disabled-bg);
+  --c-subtle-bg: var(--c-subtle-bg);
+  --c-avatar-bg: var(--c-avatar-bg);
+  --c-scrollbar: var(--c-scrollbar);
+  --c-toast-bg: #23272e;
+  --c-mask: var(--c-mask);
+  --c-focus-ring: var(--c-focus-ring);
+  --c-danger: #d93025;
+  --c-danger-l: var(--c-danger-l);
+  --c-danger-solid: #d93025;
+  --c-danger-solid-h: var(--c-danger-solid-h);
   --c-warning: #b45309;
+  --c-warning-l: var(--c-warning-l);
   --c-success: #1a9e5c;
   --c-success-on-dark: #4cc38a;
+  --c-code-head: #23272e;
+  --c-code-bg: var(--c-code-bg);
+  --c-code-head-text: var(--c-code-head-text);
+  --c-code-text: #e6eaf0;
+  --shadow-1: var(--shadow-1);
+  --shadow-2: 0 4px 16px rgba(31, 35, 41, 0.1);
+  --shadow-3: 0 12px 40px rgba(31, 35, 41, 0.16);
+}
+[data-theme='dark'] {
+  --c-primary: #5c8dff;
+  --c-primary-h: #7aa4ff;
+  --c-primary-a: #4c84ff;
+  --c-primary-l: #1d2740;
+  --c-primary-solid: #3370ff;
+  --c-primary-solid-h: #4c84ff;
+  --c-primary-solid-a: #3d78ff;
+  --c-bg: #131417;
+  --c-surface: #1e2026;
+  --c-border: #33363e;
+  --c-text-1: #e6eaf0;
+  --c-text-2: #a2a9b6;
+  --c-text-3: #808896;
+  --c-hover-bg: #262930;
+  --c-disabled-bg: #3d414a;
+  --c-subtle-bg: #24272e;
+  --c-avatar-bg: #33363e;
+  --c-scrollbar: #3a3e46;
+  --c-toast-bg: #2a2d34;
+  --c-mask: rgba(0, 0, 0, 0.55);
+  --c-focus-ring: rgba(92, 141, 255, 0.25);
+  --c-danger: #ff8073;
+  --c-danger-l: #361b18;
+  --c-danger-solid: #d93025;
+  --c-danger-solid-h: var(--c-danger-solid-h);
+  --c-warning: #eda23b;
+  --c-warning-l: #38290f;
+  --c-success: #4cc38a;
+  --c-success-on-dark: #4cc38a;
+  --c-code-head: #141518;
+  --c-code-bg: #191b20;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --shadow-3: 0 12px 40px rgba(0, 0, 0, 0.6);
 }
 
 * {
@@ -204,6 +281,27 @@ body {
   gap: 5px;
   cursor: pointer;
   transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+/* REQ-017 主题切换：icon-only ghost 32px（design-iter-5 触点一） */
+.theme-btn {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  justify-content: center;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  color: var(--c-text-2);
+  background: var(--c-surface);
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.theme-btn:hover {
+  border-color: var(--c-primary);
+  color: var(--c-primary);
+  background: var(--c-primary-l);
 }
 .export-btn:hover {
   border-color: var(--c-primary);

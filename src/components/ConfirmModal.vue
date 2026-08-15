@@ -44,7 +44,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(31, 35, 41, 0.4);
+  background: var(--c-mask);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -53,7 +53,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .modal {
   background: var(--c-surface);
   border-radius: 12px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.16);
+  box-shadow: var(--shadow-3);
   width: 360px;
   max-width: calc(100vw - 32px);
   padding: 24px;
@@ -86,23 +86,23 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   transition: all 0.15s ease;
 }
 .btn:hover {
-  background: #f2f3f5;
+  background: var(--c-hover-bg);
 }
 .btn:active {
   transform: scale(0.96);
 }
 .btn-primary {
   border-color: var(--c-primary);
-  background: var(--c-primary);
+  background: var(--c-primary-solid);
   color: #fff;
 }
 .btn-primary:hover {
-  background: var(--c-primary-h);
+  background: var(--c-primary-solid-h);
   border-color: var(--c-primary-h);
 }
 .btn-danger {
-  border-color: var(--c-error);
-  background: var(--c-error);
+  border-color: var(--c-danger);
+  background: var(--c-danger-solid);
   color: #fff;
 }
 .btn-danger:hover {

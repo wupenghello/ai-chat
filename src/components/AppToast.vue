@@ -42,7 +42,7 @@ const emit = defineEmits<{ navigate: [to: 'settings'] }>()
   font-size: 13px;
   padding: 10px 14px;
   border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-2);
 }
 .toast-msg {
   line-height: 1.5;

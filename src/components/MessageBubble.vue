@@ -202,7 +202,7 @@ function onEditKey(e: KeyboardEvent) {
   color: var(--c-primary);
 }
 .avatar.user {
-  background: #e8ebf2;
+  background: var(--c-avatar-bg);
   color: var(--c-text-2);
 }
 /* CHG-003：消息列（气泡 + 下方操作栏），宽度由本列约束 */
@@ -228,7 +228,7 @@ function onEditKey(e: KeyboardEvent) {
   word-break: break-word;
 }
 .bubble.user {
-  background: var(--c-primary);
+  background: var(--c-primary-solid);
   color: #fff;
   padding: 10px 14px;
   border-radius: 12px 12px 4px 12px;
@@ -240,7 +240,7 @@ function onEditKey(e: KeyboardEvent) {
   display: inline-block;
   width: 2px;
   height: 1em;
-  background: var(--c-primary);
+  background: var(--c-primary-solid);
   margin-left: 2px;
   vertical-align: text-bottom;
   animation: blink 0.9s steps(1) infinite;
@@ -256,7 +256,7 @@ function onEditKey(e: KeyboardEvent) {
   margin-top: 6px;
   font-size: 12px;
   color: var(--c-warning);
-  background: #fff7e8;
+  background: var(--c-warning-l);
   border-radius: 999px;
   padding: 2px 10px;
 }
@@ -268,7 +268,7 @@ function onEditKey(e: KeyboardEvent) {
   font-size: 12px;
   font-weight: 500;
   color: var(--c-text-2);
-  background: #f2f3f5;
+  background: var(--c-hover-bg);
   border-radius: 999px;
   padding: 2px 8px;
 }
@@ -298,7 +298,7 @@ function onEditKey(e: KeyboardEvent) {
   opacity: 1;
 }
 .action-btn:hover {
-  background: #f2f3f5;
+  background: var(--c-hover-bg);
   color: var(--c-text-1);
 }
 .version-nav {
@@ -324,7 +324,7 @@ function onEditKey(e: KeyboardEvent) {
   border: 1px solid var(--c-primary);
   border-radius: 12px;
   padding: 10px 12px;
-  box-shadow: 0 0 0 3px rgba(51, 112, 255, 0.12);
+  box-shadow: 0 0 0 3px var(--c-focus-ring);
 }
 .edit-ta {
   width: 100%;
@@ -368,7 +368,7 @@ function onEditKey(e: KeyboardEvent) {
   padding: 0 12px;
   border: none;
   border-radius: 8px;
-  background: var(--c-primary);
+  background: var(--c-primary-solid);
   color: #fff;
   font-size: 13px;
   font-weight: 500;
@@ -376,10 +376,10 @@ function onEditKey(e: KeyboardEvent) {
   transition: background 0.15s ease;
 }
 .edit-save:hover:not(:disabled) {
-  background: var(--c-primary-h);
+  background: var(--c-primary-solid-h);
 }
 .edit-save:disabled {
-  background: #c9cfdb;
+  background: var(--c-disabled-bg);
   cursor: not-allowed;
 }
 @keyframes blink {
@@ -464,7 +464,7 @@ function onEditKey(e: KeyboardEvent) {
 .md code {
   font-family: 'SF Mono', Menlo, Consolas, monospace;
   font-size: 13px;
-  background: #f2f3f5;
+  background: var(--c-hover-bg);
   padding: 1px 6px;
   border-radius: 4px;
   color: var(--c-text-1);
@@ -484,7 +484,7 @@ function onEditKey(e: KeyboardEvent) {
   vertical-align: top;
 }
 .md th {
-  background: #fafbfc;
+  background: var(--c-subtle-bg);
   font-weight: 500;
   color: var(--c-text-2);
 }
@@ -504,8 +504,8 @@ function onEditKey(e: KeyboardEvent) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #23272e;
-  color: #9aa4b2;
+  background: var(--c-code-head);
+  color: var(--c-code-head-text);
   font-size: 12px;
   padding: 6px 12px;
   border-radius: 12px 12px 0 0;
@@ -515,8 +515,8 @@ function onEditKey(e: KeyboardEvent) {
   font-size: 12px;
 }
 .code-block pre {
-  background: #2b303a;
-  color: #e6eaf0;
+  background: var(--c-code-bg);
+  color: var(--c-code-text);
   font-family: 'SF Mono', Menlo, Consolas, monospace;
   font-size: 13px;
   line-height: 1.6;
@@ -544,14 +544,14 @@ function onEditKey(e: KeyboardEvent) {
   border-radius: 6px;
   background: transparent;
   cursor: pointer;
-  color: #9aa4b2;
+  color: var(--c-code-head-text);
   font-size: 12px;
   font-weight: 500;
   font-family: inherit;
   transition: color 0.15s ease, background 0.15s ease;
 }
 .code-copy:hover {
-  color: #e6eaf0;
+  color: var(--c-code-text);
   background: rgba(255, 255, 255, 0.12);
 }
 /* REQ-011 新增令牌：深底成功反馈绿 #4CC38A（CEO 批准 2026-08-15） */

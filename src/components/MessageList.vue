@@ -68,13 +68,13 @@ watch(
   overflow-y: auto;
   padding: 24px 12px; /* 左右对称，滚动条与文字两侧间距一致 */
   scrollbar-width: thin;
-  scrollbar-color: #d5d9e0 transparent;
+  scrollbar-color: var(--c-scrollbar) transparent;
 }
 .list::-webkit-scrollbar {
   width: 6px;
 }
 .list::-webkit-scrollbar-thumb {
-  background: #d5d9e0;
+  background: var(--c-scrollbar);
   border-radius: 999px;
 }
 .list::-webkit-scrollbar-track {

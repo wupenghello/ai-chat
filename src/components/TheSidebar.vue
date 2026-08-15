@@ -139,14 +139,14 @@ const filtered = computed<Array<{ session: Session; hit: SearchHit | null }>>(()
   height: 36px;
   border: none;
   border-radius: 8px;
-  background: var(--c-primary);
+  background: var(--c-primary-solid);
   color: #fff;
   font-size: 13px;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 .new-btn:hover {
-  background: var(--c-primary-h);
+  background: var(--c-primary-solid-h);
 }
 .new-btn:active {
   transform: scale(0.98);
@@ -165,7 +165,7 @@ const filtered = computed<Array<{ session: Session; hit: SearchHit | null }>>(()
 }
 .search-box:focus-within {
   border-color: var(--c-primary);
-  box-shadow: 0 0 0 3px rgba(51, 112, 255, 0.12);
+  box-shadow: 0 0 0 3px var(--c-focus-ring);
 }
 .search-icon {
   flex: none;
@@ -199,7 +199,7 @@ const filtered = computed<Array<{ session: Session; hit: SearchHit | null }>>(()
   transition: background 0.15s ease, color 0.15s ease;
 }
 .search-clear:hover {
-  background: #e8ebf2;
+  background: var(--c-avatar-bg);
   color: var(--c-text-1);
 }
 .no-result {
@@ -239,7 +239,7 @@ const filtered = computed<Array<{ session: Session; hit: SearchHit | null }>>(()
   transition: all 0.15s ease;
 }
 .settings-btn:hover {
-  background: #f2f3f5;
+  background: var(--c-hover-bg);
   color: var(--c-text-1);
 }
 .api-dot {
@@ -251,6 +251,6 @@ const filtered = computed<Array<{ session: Session; hit: SearchHit | null }>>(()
   background: var(--c-success);
 }
 .api-dot.bad {
-  background: var(--c-error);
+  background: var(--c-danger-solid);
 }
 </style>

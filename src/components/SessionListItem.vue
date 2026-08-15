@@ -133,7 +133,7 @@ function cancel() {
   position: relative;
 }
 .item:hover {
-  background: #f2f3f5;
+  background: var(--c-hover-bg);
 }
 .item.active {
   background: var(--c-primary-l);
@@ -196,7 +196,7 @@ function cancel() {
   background: var(--c-surface);
 }
 .edit-input:focus {
-  box-shadow: 0 0 0 3px rgba(51, 112, 255, 0.12);
+  box-shadow: 0 0 0 3px var(--c-focus-ring);
 }
 /* REQ-016 搜索高亮：关键词主色高亮（mark 默认黄底重置） */
 mark.hl {
@@ -219,11 +219,11 @@ mark.hl {
 }
 .pill.broken {
   color: var(--c-text-3);
-  background: #f2f3f5;
+  background: var(--c-hover-bg);
 }
 .pill.cut {
   color: var(--c-warning);
-  background: #fff7e8;
+  background: var(--c-warning-l);
 }
 .meta {
   display: flex;
@@ -249,7 +249,7 @@ mark.hl {
   opacity: 1;
 }
 .del:hover {
-  color: var(--c-error);
-  background: #fdecea;
+  color: var(--c-danger);
+  background: var(--c-danger-l);
 }
 </style>

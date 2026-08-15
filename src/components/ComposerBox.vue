@@ -73,12 +73,12 @@ function onKey(e: KeyboardEvent) {
   border: 1px solid var(--c-border);
   border-radius: 12px;
   padding: 12px;
-  box-shadow: 0 1px 2px rgba(31, 35, 41, 0.06);
+  box-shadow: var(--shadow-1);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .composer:focus-within {
   border-color: var(--c-primary);
-  box-shadow: 0 0 0 3px rgba(51, 112, 255, 0.12);
+  box-shadow: 0 0 0 3px var(--c-focus-ring);
 }
 .composer-main {
   display: flex;
@@ -113,7 +113,7 @@ function onKey(e: KeyboardEvent) {
   height: 36px;
   border-radius: 8px;
   border: none;
-  background: var(--c-primary);
+  background: var(--c-primary-solid);
   color: #fff;
   cursor: pointer;
   display: flex;
@@ -122,13 +122,13 @@ function onKey(e: KeyboardEvent) {
   transition: all 0.15s ease;
 }
 .send:hover:not(:disabled) {
-  background: var(--c-primary-h);
+  background: var(--c-primary-solid-h);
 }
 .send:active:not(:disabled) {
   transform: scale(0.94);
 }
 .send:disabled {
-  background: #c9cfdb;
+  background: var(--c-disabled-bg);
   cursor: not-allowed;
 }
 /* REQ-010：停止按钮（design-iter-2 已基线：红实底 + 白字 + 方块图标） */
@@ -138,7 +138,7 @@ function onKey(e: KeyboardEvent) {
   padding: 0 16px;
   border: none;
   border-radius: 8px;
-  background: var(--c-error);
+  background: var(--c-danger-solid);
   color: #fff;
   font-size: 13px;
   font-weight: 600;
@@ -150,10 +150,10 @@ function onKey(e: KeyboardEvent) {
   transition: background 0.15s ease, transform 0.1s ease;
 }
 .stop:hover {
-  background: #b7251c;
+  background: var(--c-danger-solid-h);
 }
 .stop:active {
-  background: #b7251c;
+  background: var(--c-danger-solid-h);
   transform: scale(0.94);
 }
 </style>

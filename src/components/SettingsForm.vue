@@ -2,10 +2,14 @@
 import { computed, reactive, ref } from 'vue'
 import { useSettingsStore, type ApiConfig } from '../stores/settings'
 import { useToastStore } from '../stores/toast'
+import { useTheme } from '../composables/useTheme'
 import ConfirmModal from './ConfirmModal.vue'
 
 const settings = useSettingsStore()
 const toast = useToastStore()
+
+// REQ-017：设置页「外观」入口（与顶栏主题按钮同状态同存储）
+const { theme, setTheme } = useTheme()
 
 const form = reactive<Partial<ApiConfig>>({
   baseUrl: settings.config.baseUrl ?? '',
@@ -66,6 +70,31 @@ function clearPrompt() {
       <h2>设置</h2>
       <p class="hint">OpenAI 兼容接口，支持 DeepSeek、GLM 等供应商。密钥只保存在本机浏览器，不会上传到任何服务器。</p>
     </header>
+
+    <!-- REQ-017 外观 · 主题切换（segmented，与顶栏入口同步） -->
+    <div class="section-label">外观</div>
+    <div class="theme-seg" role="radiogroup" aria-label="主题">
+      <button
+        type="button"
+        class="seg-btn"
+        :class="{ on: theme === 'light' }"
+        role="radio"
+        :aria-checked="theme === 'light'"
+        @click="setTheme('light')"
+      >
+        浅色
+      </button>
+      <button
+        type="button"
+        class="seg-btn"
+        :class="{ on: theme === 'dark' }"
+        role="radio"
+        :aria-checked="theme === 'dark'"
+        @click="setTheme('dark')"
+      >
+        深色
+      </button>
+    </div>
 
     <form class="form" novalidate @submit.prevent="save">
       <label v-for="f in fields" :key="f.key" class="field">
@@ -181,14 +210,14 @@ function clearPrompt() {
 }
 .input:focus {
   border-color: var(--c-primary);
-  box-shadow: 3px 3px 0 rgba(51, 112, 255, 0.12);
+  box-shadow: 3px 3px 0 var(--c-focus-ring);
 }
 .input.invalid {
-  border-color: var(--c-error);
+  border-color: var(--c-danger);
 }
 .field-error {
   font-size: 12px;
-  color: var(--c-error);
+  color: var(--c-danger);
 }
 /* REQ-008 对话设置分组（design-iter-2：分组线 + 标签） */
 .section-label {
@@ -224,7 +253,7 @@ function clearPrompt() {
 }
 .prompt-ta:focus {
   border-color: var(--c-primary);
-  box-shadow: 3px 3px 0 rgba(51, 112, 255, 0.12);
+  box-shadow: 3px 3px 0 var(--c-focus-ring);
 }
 .prompt-ta::placeholder {
   font-size: 14px;
@@ -240,14 +269,14 @@ function clearPrompt() {
   padding: 0 12px;
   border: none;
   background: transparent;
-  color: var(--c-error);
+  color: var(--c-danger);
   font-size: 13px;
   cursor: pointer;
   border-radius: 6px;
   transition: background 0.15s ease;
 }
 .btn-text-danger:hover {
-  background: #fdecea;
+  background: var(--c-danger-l);
 }
 .saved-flag {
   display: inline-flex;
@@ -273,24 +302,48 @@ function clearPrompt() {
   transition: all 0.15s ease;
 }
 .btn:hover {
-  background: #f2f3f5;
+  background: var(--c-hover-bg);
 }
 .btn:active {
   transform: scale(0.97);
 }
 .btn:disabled {
-  background: #c9cfdb;
-  border-color: #c9cfdb;
+  background: var(--c-disabled-bg);
+  border-color: var(--c-disabled-bg);
   color: #fff;
   cursor: not-allowed;
 }
 .btn-primary {
   border-color: var(--c-primary);
-  background: var(--c-primary);
+  background: var(--c-primary-solid);
   color: #fff;
 }
 .btn-primary:hover {
-  background: var(--c-primary-h);
+  background: var(--c-primary-solid-h);
   border-color: var(--c-primary-h);
 }
 </style>
+
+/* REQ-017 外观 segmented（design-iter-5 触点一） */
+.theme-seg {
+  display: inline-flex;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.seg-btn {
+  height: 32px;
+  padding: 0 16px;
+  border: none;
+  background: transparent;
+  color: var(--c-text-2);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.seg-btn.on {
+  background: var(--c-primary-l);
+  color: var(--c-primary);
+  font-weight: 500;
+}

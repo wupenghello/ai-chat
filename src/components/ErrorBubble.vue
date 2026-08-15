@@ -28,8 +28,8 @@ const titles: Record<string, string> = {
 <style scoped>
 .error-bubble {
   max-width: 76%;
-  border: 1px solid #fdecea;
-  background: #fdecea;
+  border: 1px solid var(--c-danger-l);
+  background: var(--c-danger-l);
   border-radius: 12px;
   padding: 12px 16px;
 }
@@ -37,14 +37,14 @@ const titles: Record<string, string> = {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: var(--c-error);
+  color: var(--c-danger);
   font-size: 13px;
 }
 .dot {
   width: 6px;
   height: 6px;
   border-radius: 999px;
-  background: var(--c-error);
+  background: var(--c-danger-solid);
 }
 .msg {
   margin: 6px 0 10px;
@@ -68,18 +68,18 @@ const titles: Record<string, string> = {
   transition: all 0.15s ease;
 }
 .btn:hover {
-  background: #f2f3f5;
+  background: var(--c-hover-bg);
 }
 .btn:active {
   transform: scale(0.96);
 }
 .btn-primary {
   border-color: var(--c-primary);
-  background: var(--c-primary);
+  background: var(--c-primary-solid);
   color: #fff;
 }
 .btn-primary:hover {
-  background: var(--c-primary-h);
+  background: var(--c-primary-solid-h);
   border-color: var(--c-primary-h);
 }
 </style>
