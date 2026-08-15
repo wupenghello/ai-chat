@@ -1,6 +1,6 @@
 # iter-3 验证与走查记录（2026-08-15）
 
-- 自动化测试：**62/62 通过**（单测 58 + 集成路径 2 + 组件挂载 8，新增 25 条：sessions-naming 5、markdown 7、export 5、SessionListItem 4、MessageBubble 4），`npm test` 全绿
+- 自动化测试：**62/62 通过**（逻辑单测 52 + 组件挂载 8 + 集成路径 2，新增 25 条：sessions-naming 5、markdown 7、export 5、SessionListItem 4、MessageBubble 4），`npm test` 全绿
 - 走查方式：按 process/testing.md v1.3 完整走查 + DOM 实测优先（preview 工具读取真实 DOM 断言），不抽查
 - 走查环境：dev server（Vite 5173）+ 既有 IndexedDB 数据（含真实 DeepSeek 回复）+ 种子化 Markdown 消息
 - 走查清单来源：design/iter-3/index.html 第 5 节（28 条）

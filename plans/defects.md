@@ -14,3 +14,4 @@
 | DEF-007 | 2026-08-15 | （补录）chat 区布局宽度混乱：用户消息未右对齐（`.row-wrap` 缺 `justify-content`）。CEO 试用反馈"布局乱"走查发现 | 一般 | 已修复 | 修复：消息区布局重构为 DeepSeek 模式（提交 53c0343）+ 用户气泡单行显示（提交 3eee183）；DOM 实测走查表全过 |
 | DEF-008 | 2026-08-15 | （补录）中文输入法选词按 Enter 会误发送（未判断 `e.isComposing`）。自查发现 | 一般 | 已修复 | 修复：选词回车不再发送（提交 061746f） |
 | DEF-009 | 2026-08-15 | （补录）同一会话生成期间重复发送无防护；删除有后台生成的会话未终止其请求。自查发现 | 一般 | 已修复 | 修复：`send()` 生成中忽略；删除会话同步终止其 AbortController（提交 061746f） |
+| DEF-010 | 2026-08-15 | （iter-2 遗留，iter-3 生产构建暴露）`PersistedMessage.status` 缺 `'stopped'`，致 `Session extends PersistedSession` 类型冲突（TS2430）。iter-2 未跑 `vue-tsc` 生产构建故未暴露，属构建期类型缺口而非运行时缺陷 | 低 | 已修复 | 修复：`src/db/idb.ts` 补 `'stopped'`（iter-3 提交 740c6a1）。根因：迭代准出未含生产构建（`npm test`=vitest 不做类型检查）；建议后续把生产构建（vue-tsc）纳入迭代准出固定动作（QA 审计观察项 2） |
