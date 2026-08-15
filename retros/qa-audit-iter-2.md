@@ -59,6 +59,6 @@ CEO 决策（2026-08-15）：三项全部整改。
 
 | 编号 | CEO 处置决策 | 整改记录 | 状态 |
 |------|-------------|---------|------|
-| NCR-iter2-001 | 整改 | weekly-W33.md 更新为覆盖 iter-2（周报内容 + 37/37 测试汇总 + 技术债销账 + 全量 review 记录）；CEO 过目确认随 G4 批准登记 | 整改完成，待 CEO 确认 |
+| NCR-iter2-001 | 整改 | weekly-W33.md 更新为覆盖 iter-2（周报内容 + 37/37 测试汇总 + 技术债销账 + 全量 review 记录）；CEO 过目确认 2026-08-15（周报 Code Review 节登记） | 已关闭 |
 | NCR-iter2-002 | 整改 | design/iter-2/index.html title（第 6 行）与 badge（第 168 行）更新为"已基线" | 已关闭 |
 | NCR-iter2-003 | 整改 | sessions.spec 新增"停止时效构造性证明"用例（stopGeneration 同步 abort，37/37）；iter-2-verify.md 第 16 条取证更新 | 已关闭 |
