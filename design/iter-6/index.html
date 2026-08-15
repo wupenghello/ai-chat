@@ -1,0 +1,1247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-chat · iter-6 设计稿（REQ-020 注册与登录 · REQ-006 未登录门禁 · HttpOnly Cookie，已批准基线）</title>
+<!--
+  ============================================================
+  ai-chat 迭代 6 正式设计稿（设计稿即页面骨架，开发对照实现；已批准基线）
+  依据：requirements/spec.md（req-baseline-v3：REQ-020 注册与登录全量、REQ-006 改写条款「未登录只能看到登录页」、
+        REQ-007 错误提示体系（认证类错误映射）、REQ-017 暗色令牌已基线、非功能「架构/数据/安全/部署」条款）
+        plans/iter-6.md T0（验收：登录/注册原型 + 应用框架说明经 CEO 批准并打 design-iter-6 tag；
+        token 传递方式已定案 = HttpOnly Cookie，2026-08-15 CEO 定，同源部署前提，防 CSRF 措施随设计基线说明，前端不做 token 管理）
+        company design-system/tokens.md v1.3/v1.3.1（含暗色令牌与前景/实底拆分）+ components.md v1.0
+        （表单模态/图标按钮/主题入口等组件模式）—— 本稿只用既有令牌，零新增（见第 8 节）
+        design/iter-1~5 基线（主界面不重画：登录成功后进入的主界面沿用 iter-1~5 基线，本稿仅引用不改动）
+        品牌约束（CEO 既定）：主色飞书蓝 #3370FF（暗色前景 #5C8DFF）、喵喵 logo 方案 C
+  状态：已批准（2026-08-15 CEO 批准基线，第 9 节 7 项澄清全部定案）→ tag design-iter-6 由主会话打（设计师不打 tag、不 commit）
+  可交互：右上「演示控制」一键亮/暗（写入 localStorage）；1.1/2.1 卡片可 登录⇄注册 切换、
+          空值/规则校验可触发、密码可显隐、状态单选可载入各错误/加载态。零外部依赖，直接双击打开。
+  ============================================================
+-->
+<style>
+/* ============================================================
+   一、文档外壳（说明页自身，浅色固定，不随演示切换；色值 = tokens 浅色原值，沿 iter-5 惯例）
+   ============================================================ */
+:root { --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-full: 999px; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-size: 14px; line-height: 1.6; color: #1F2329; background: #F5F6F7; padding: 40px 32px 80px;
+}
+.page { max-width: 1100px; margin: 0 auto; }
+h1 { font-size: 20px; font-weight: 600; }
+.sub { font-size: 13px; color: #8F959E; margin: 4px 0 8px; }
+.sub b { color: #646A73; }
+.badge {
+  display: inline-block; padding: 1px 10px; border-radius: var(--r-full);
+  font-size: 12px; font-weight: 500; background: #FFF7E8; color: #B45309; margin-bottom: 32px;
+}
+section { margin-bottom: 48px; }
+h2 { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+h2 .no { color: #3370FF; margin-right: 4px; }
+.sec-desc { font-size: 13px; color: #8F959E; margin-bottom: 16px; }
+.sec-desc b { color: #646A73; }
+
+table { width: 100%; border-collapse: collapse; background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-md); overflow: hidden; font-size: 13px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #E5E6EB; vertical-align: top; }
+th { color: #8F959E; font-weight: 500; background: #FAFBFC; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+td code, li code, .ann code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; background: #F2F3F5; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
+
+.spec { background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-lg); padding: 24px; box-shadow: 0 1px 2px rgba(31,35,41,.06); margin-bottom: 16px; }
+.spec-title { font-size: 13px; font-weight: 600; color: #646A73; margin-bottom: 12px; }
+.spec-title .tag { font-weight: 400; color: #8F959E; margin-left: 8px; }
+.stage { border: 1px dashed #E5E6EB; border-radius: var(--r-md); padding: 16px; background: #F5F6F7; }
+.ann { font-size: 12px; color: #8F959E; margin-top: 8px; line-height: 1.8; }
+.ann b { color: #646A73; font-weight: 600; }
+
+/* ============================================================
+   二、演示令牌作用域 .tk（组件全部引用 var()，同 src 范式）
+   浅色 = tokens v1.3 浅色值；暗色 .dark = v1.3 暗色值；均零自造。
+   实现侧对应 :root / [data-theme="dark"] 两段变量覆盖。
+   ============================================================ */
+.tk {
+  --c-bg: #F5F6F7; --c-surface: #FFFFFF; --c-border: #E5E6EB;
+  --c-text-1: #1F2329; --c-text-2: #646A73; --c-text-3: #8F959E;
+  --c-primary: #3370FF; --c-primary-h: #2E5FDF; --c-primary-a: #2860D8; --c-primary-l: #F0F4FF;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #2E5FDF; --c-primary-solid-a: #2860D8;
+  --c-danger: #D93025; --c-danger-l: #FDECEA; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #1A9E5C; --c-success-on-dark: #4CC38A;
+  --c-warning: #B45309; --c-warning-l: #FFF7E8;
+  --c-code-head: #23272E; --c-code-bg: #2B303A; --c-code-head-text: #9AA4B2; --c-code-text: #E6EAF0;
+  --c-hover-bg: #F2F3F5; --c-disabled-bg: #C9CFDB; --c-subtle-bg: #FAFBFC; --c-avatar-bg: #E8EBF2;
+  --c-scrollbar: #D5D9E0; --c-toast-bg: #23272E; --c-toast-border: transparent;
+  --c-mask: rgba(31,35,41,.4); --c-focus-ring: rgba(51,112,255,.12);
+  --shadow-1: 0 1px 2px rgba(31,35,41,.06);
+  --shadow-2: 0 4px 16px rgba(31,35,41,.10);
+  --shadow-3: 0 12px 40px rgba(31,35,41,.16);
+  color: var(--c-text-1);
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+.tk.dark {
+  --c-bg: #131417; --c-surface: #1E2026; --c-border: #33363E;
+  --c-text-1: #E6EAF0; --c-text-2: #A2A9B6; --c-text-3: #808896;
+  --c-primary: #5C8DFF; --c-primary-h: #7AA4FF; --c-primary-a: #4C84FF; --c-primary-l: #1D2740;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #4C84FF; --c-primary-solid-a: #3D78FF;
+  --c-danger: #FF8073; --c-danger-l: #361B18; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #4CC38A;
+  --c-warning: #EDA23B; --c-warning-l: #38290F;
+  --c-code-head: #141518; --c-code-bg: #191B20;
+  --c-hover-bg: #262930; --c-disabled-bg: #3D414A; --c-subtle-bg: #24272E; --c-avatar-bg: #33363E;
+  --c-scrollbar: #3A3E46; --c-toast-bg: #2A2D34; --c-toast-border: #33363E;
+  --c-mask: rgba(0,0,0,.55); --c-focus-ring: rgba(92,141,255,.25);
+  --shadow-1: 0 1px 2px rgba(0,0,0,.4);
+  --shadow-2: 0 4px 16px rgba(0,0,0,.45);
+  --shadow-3: 0 12px 40px rgba(0,0,0,.6);
+}
+/* 锁定帧：强制锁定主题，不随演示控制翻转（沿 iter-5 惯例） */
+.tk.force-dark {
+  --c-bg: #131417; --c-surface: #1E2026; --c-border: #33363E;
+  --c-text-1: #E6EAF0; --c-text-2: #A2A9B6; --c-text-3: #808896;
+  --c-primary: #5C8DFF; --c-primary-h: #7AA4FF; --c-primary-a: #4C84FF; --c-primary-l: #1D2740;
+  --c-primary-solid-h: #4C84FF; --c-primary-solid-a: #3D78FF;
+  --c-danger: #FF8073; --c-danger-l: #361B18; --c-success: #4CC38A;
+  --c-warning: #EDA23B; --c-warning-l: #38290F;
+  --c-code-head: #141518; --c-code-bg: #191B20;
+  --c-hover-bg: #262930; --c-disabled-bg: #3D414A; --c-subtle-bg: #24272E; --c-avatar-bg: #33363E;
+  --c-scrollbar: #3A3E46; --c-toast-bg: #2A2D34; --c-toast-border: #33363E; --c-mask: rgba(0,0,0,.55); --c-focus-ring: rgba(92,141,255,.25);
+  --shadow-1: 0 1px 2px rgba(0,0,0,.4);
+}
+
+/* ============================================================
+   三、产品组件样式（登录/注册页为本稿新增 UI；表单/图标按钮/主题入口
+       模式全部取自 components.md v1.0 与 iter-1~5 基线，仅令牌引用）
+   ============================================================ */
+
+/* ---- 演示控制条（文档功能件，非产品组件） ---- */
+.demo-ctl {
+  position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 12px;
+  background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-md);
+  padding: 10px 16px; margin-bottom: 32px; box-shadow: 0 1px 2px rgba(31,35,41,.06);
+  font-size: 13px; color: #646A73; flex-wrap: wrap;
+}
+.demo-ctl .seg { display: inline-flex; border: 1px solid #E5E6EB; border-radius: var(--r-md); overflow: hidden; }
+.demo-ctl .seg button {
+  height: 30px; padding: 0 14px; border: none; background: #FFFFFF; color: #646A73;
+  font-size: 13px; cursor: pointer; transition: background .15s ease, color .15s ease;
+}
+.demo-ctl .seg button.on { background: #3370FF; color: #fff; font-weight: 600; }
+.demo-ctl .note { font-size: 12px; color: #8F959E; }
+
+/* ---- 认证页视口框架（auth frame = 整页示意） ---- */
+.auth-frame {
+  position: relative; width: 100%; height: 560px; border-radius: var(--r-lg);
+  border: 1px solid var(--c-border); background: var(--c-bg); overflow: hidden;
+}
+/* 未登录也要能切主题（主题存 localStorage，不依赖登录态）：右上角 32px icon-only ghost，
+   与 iter-5 已定夺的顶栏主题入口同款（components.md「主题切换入口」） */
+.auth-theme {
+  position: absolute; top: 16px; right: 16px; width: 32px; height: 32px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-2);
+  border-radius: var(--r-md); cursor: pointer;
+  transition: border-color .15s ease, color .15s ease, background .15s ease, transform .1s ease;
+}
+.auth-theme:hover { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-l); }
+.auth-theme:active { transform: scale(.94); }
+
+/* 居中布局：品牌位 + 卡片 */
+.auth-center { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; overflow-y: auto; }
+.auth-col { width: 360px; max-width: 100%; }
+.auth-brand { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 20px; }
+.auth-brand svg { width: 40px; height: 40px; }
+.auth-brand .name { font-size: 17px; font-weight: 600; color: var(--c-text-1); letter-spacing: .5px; }
+.auth-card {
+  background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg);
+  box-shadow: var(--shadow-1); padding: 24px;
+}
+.auth-title { font-size: 17px; font-weight: 600; color: var(--c-text-1); }
+.auth-sub { font-size: 13px; color: var(--c-text-3); margin: 4px 0 20px; }
+
+/* ---- 表单字段（= components.md「表单模态」字段口径：label 13px/500 + 输入 36px + r-md；16px 字号防 iOS 缩放） ---- */
+.field { margin-bottom: 20px; }
+.field label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: var(--c-text-1); }
+.field input {
+  width: 100%; height: 36px; padding: 0 12px; font-size: 16px; font-family: inherit;
+  border: 1px solid var(--c-border); border-radius: var(--r-md); outline: none;
+  color: var(--c-text-1); background: var(--c-surface);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.field input:focus { border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-focus-ring); }
+.field input::placeholder { color: var(--c-text-3); }
+.field.invalid input { border-color: var(--c-danger); }
+.field.invalid input:focus { box-shadow: 0 0 0 3px var(--c-danger-l); }
+.hint { font-size: 12px; color: var(--c-text-3); margin-top: 4px; }
+.hint.err { color: var(--c-danger); display: none; }
+.field.invalid .hint.err { display: block; }
+/* 密码显隐（沿用 iter-5 设置页 key-eye 图标按钮模式） */
+.key-row { position: relative; }
+.key-row input { padding-right: 40px; }
+.key-eye {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 24px; height: 24px;
+  border: none; border-radius: var(--r-sm); background: transparent; color: var(--c-text-3);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: background .15s ease, color .15s ease;
+}
+.key-eye:hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+
+/* ---- 表单级提示条（登录/注册页新增形态；色值组合 = 既有 danger-l/danger 与 warning-l/warning 令牌） ---- */
+.form-banner {
+  display: flex; align-items: flex-start; gap: 8px;
+  border-radius: var(--r-md); padding: 8px 12px; font-size: 13px; line-height: 1.6;
+  margin-bottom: 16px; flex-wrap: wrap;
+}
+.form-banner .b-ico { flex: none; font-weight: 600; }
+.form-banner.err  { background: var(--c-danger-l);  color: var(--c-danger); }
+.form-banner.warn { background: var(--c-warning-l); color: var(--c-warning); }
+.form-banner .b-act {
+  flex: none; height: 24px; padding: 0 10px; margin-left: auto;
+  border: 1px solid currentColor; border-radius: var(--r-sm); background: transparent;
+  color: inherit; font-size: 12px; cursor: pointer; transition: opacity .15s ease, transform .1s ease;
+}
+.form-banner .b-act:hover { opacity: .8; }
+.form-banner .b-act:active { transform: scale(.96); }
+
+/* ---- 主按钮（= 既有 btn-primary 形态：实底主色 36px / 13px/600 / 白字；认证页为整宽 CTA） ---- */
+.btn-auth {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; height: 36px; border: none; border-radius: var(--r-md);
+  background: var(--c-primary-solid); color: #fff; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: background .15s ease, transform .1s ease;
+}
+.btn-auth:hover { background: var(--c-primary-solid-h); }
+.btn-auth:active { background: var(--c-primary-solid-a); transform: scale(.98); }
+.btn-auth.loading { cursor: default; }
+.btn-auth.loading:hover { background: var(--c-primary-solid); }
+.btn-auth.loading:active { transform: none; }
+/* 提交中 spinner：白字族（实底上的白色元素，与按钮白字同源；轨道为白 35% 透明叠加） */
+.btn-auth .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---- 登录 ⇄ 注册 切换入口（文字链接，主色前景） ---- */
+.auth-switch { margin-top: 16px; text-align: center; font-size: 13px; color: var(--c-text-3); }
+.auth-switch a { color: var(--c-primary); font-weight: 500; cursor: pointer; }
+.auth-switch a:hover { color: var(--c-primary-h); text-decoration: underline; }
+
+/* ---- toast（iter-1 深底基线，页面级交互反馈用） ---- */
+#toastHost { position: fixed; left: 50%; bottom: 32px; transform: translateX(-50%); z-index: 100; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
+#toastHost .toast { background: #23272E; border: 1px solid transparent; color: #fff; font-size: 13px; padding: 10px 16px; border-radius: var(--r-md); box-shadow: 0 4px 16px rgba(31,35,41,.10); animation: toastIn .2s ease; }
+@keyframes toastIn { from { opacity: 0; transform: translateY(6px); } }
+
+/* ---- 演示状态单选（文档功能件，非产品组件） ---- */
+.sim-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; font-size: 12px; color: #646A73; margin-bottom: 12px; }
+.sim-row label { cursor: pointer; white-space: nowrap; }
+
+/* ---- 流程示意（第 4 节应用框架说明） ---- */
+.flow { display: flex; align-items: stretch; flex-wrap: wrap; gap: 0; }
+.flow-box {
+  flex: 1; min-width: 200px; background: var(--c-surface); border: 1px solid var(--c-border);
+  border-radius: var(--r-md); padding: 14px 16px; font-size: 13px;
+}
+.flow-box .fb-tag { font-size: 12px; font-weight: 600; color: var(--c-primary); margin-bottom: 4px; }
+.flow-box .fb-title { font-size: 14px; font-weight: 600; color: var(--c-text-1); }
+.flow-box .fb-desc { font-size: 12px; color: var(--c-text-3); margin-top: 4px; line-height: 1.7; }
+.flow-box .fb-desc code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11px; background: var(--c-hover-bg); padding: 0 4px; border-radius: 4px; }
+.flow-box.hollow { border-style: dashed; background: transparent; }
+.flow-arrow {
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+  min-width: 96px; padding: 0 8px; color: var(--c-text-3); font-size: 12px; text-align: center; gap: 2px;
+}
+.flow-arrow svg { flex: none; }
+.flow-back {
+  margin-top: 12px; border: 1px dashed var(--c-warning); border-radius: var(--r-md);
+  padding: 10px 16px; font-size: 12px; color: var(--c-warning); background: var(--c-warning-l);
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+
+/* ---- 4.2 侧栏底栏增量示意（iter-6 对主界面基线的唯一增量；底栏结构沿 iter-1/5：56px + border-top + 左右 16px 内距） ---- */
+.sb-demo { width: 264px; max-width: 100%; border-radius: var(--r-lg); border: 1px solid var(--c-border); background: var(--c-surface); overflow: hidden; box-shadow: var(--shadow-1); }
+.sb-demo .it { min-height: 44px; padding: 6px 10px; border-radius: var(--r-md); font-size: 13px; font-weight: 500; color: var(--c-text-1); display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: background .15s ease; }
+.sb-demo .it.on { background: var(--c-primary-l); color: var(--c-primary-h); }
+.sb-ft { border-top: 1px solid var(--c-border); height: 56px; padding: 0 16px; display: flex; align-items: center; gap: 8px; background: var(--c-surface); }
+.sb-ft .ft-user { font-size: 13px; font-weight: 500; color: var(--c-text-2); max-width: 96px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-ft .ft-sp { flex: 1; }
+.sb-ft .ft-profile { font-size: 13px; font-weight: 500; color: var(--c-text-2); white-space: nowrap; }
+.sb-ft .api-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c-success); flex: none; }
+.btn-logout { width: 26px; height: 26px; padding: 0; border: none; border-radius: var(--r-sm); background: transparent; color: var(--c-text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; transition: background .15s ease, color .15s ease, transform .1s ease; }
+.btn-logout:hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+.btn-logout:active { transform: scale(.94); }
+
+/* ---- 代码样例（第 5 节 CSRF 注记，沿用 iter-3 代码块基线形态） ---- */
+.codeblk { border-radius: var(--r-md); overflow: hidden; border: 1px solid var(--c-border); margin: 8px 0; }
+.code-body { background: var(--c-code-bg); color: var(--c-code-text); padding: 12px; font-size: 13px; line-height: 1.7; font-family: "SF Mono", Menlo, Consolas, monospace; overflow-x: auto; white-space: pre; }
+
+/* ---- 手机窄屏样件（第 6 节） ---- */
+.phone { width: 375px; max-width: 100%; border-radius: var(--r-lg); overflow: hidden; border: 1px solid var(--c-border); position: relative; background: var(--c-bg); }
+.frame-cap { text-align: center; font-size: 12px; color: #8F959E; margin-bottom: 8px; }
+.cols { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+.cols > div { flex: 1; min-width: 380px; max-width: 540px; }
+
+/* 面板切换（登录/注册两面板互斥显示） */
+.panel { display: none; }
+.panel.on { display: block; }
+</style>
+</head>
+<body>
+<div id="toastHost"></div>
+<div class="page">
+
+  <h1>ai-chat · iter-6 设计稿</h1>
+  <div class="sub">
+    依据：<b>req-baseline-v3</b>（REQ-020 注册与登录 · REQ-006 未登录门禁 · REQ-007 错误映射）·
+    <b>plans/iter-6.md</b> T0（token 传递已定案 <b>HttpOnly Cookie</b>，2026-08-15 CEO 定）·
+    令牌全部来自公司 <b>design-system/tokens.md v1.3/v1.3.1</b> + <b>components.md v1.0</b>，本稿零新增 ·
+    登录后主界面沿用 <b>iter-1~5 基线</b>（本稿不重画、不改动）
+  </div>
+  <div class="badge">状态：已批准（2026-08-15 CEO 批准，tag design-iter-6）—— 第 9 节 7 项澄清定案已固化；主界面基线唯一增量（侧栏底栏登出入口）见 4.2</div>
+
+  <!-- 演示控制 -->
+  <div class="demo-ctl">
+    <b>演示控制：</b>
+    <span class="seg">
+      <button id="btnLight" class="on">浅色</button>
+      <button id="btnDark">暗色</button>
+    </span>
+    <span class="note">一键切换下方全部可翻转样件（「亮暗对照」锁定帧不随动）；选择写入 localStorage 刷新保持（REQ-017 机制演示）。1.1 / 2.1 样件可直接交互。</span>
+  </div>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">1</span>登录页（REQ-020）</h2>
+    <div class="sec-desc">
+      未登录用户到达的第一个页面（REQ-006：未登录只能看到登录页）。整页居中单卡布局：
+      品牌位（喵喵 logo 方案 C + 产品名）+ 表单卡片（360px）。表单口径取 components.md「表单模态」
+      （label 13px/500 · 输入 36px · <code>--r-md</code> · focus 主色描边 + 3px <code>--c-focus-ring</code>）。
+      公开注册无邀请码；「注册」为文字链接切换（spec 主流程 1：「可切换到注册」）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.1 默认态（可交互：登录⇄注册切换 · 空值校验 · 密码显隐）<span class="tag">居中卡片 · 右上主题入口（未登录可切主题）</span></div>
+      <div class="sim-row">
+        <b>状态载入：</b>
+        <label><input type="radio" name="lgState" value="default" checked> 默认</label>
+        <label><input type="radio" name="lgState" value="cred"> 用户名或密码错误</label>
+        <label><input type="radio" name="lgState" value="expire"> 登录已过期（redirect 进入）</label>
+        <label><input type="radio" name="lgState" value="ban"> 封禁占位（iter-8）</label>
+        <label><input type="radio" name="lgState" value="net"> 网络错误</label>
+        <label><input type="radio" name="lgState" value="loading"> 登录中</label>
+      </div>
+      <div class="stage">
+        <div class="tk auth-frame" id="loginFrameDemo">
+          <button class="auth-theme" id="authThemeBtn" title="切换主题（浅色/深色）"><svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M12 8.5A5.5 5.5 0 1 1 5.5 2 4.3 4.3 0 0 0 12 8.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></button>
+          <div class="auth-center">
+            <div class="auth-col">
+              <div class="auth-brand">
+                <svg viewBox="0 0 128 128" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+                <span class="name">喵喵</span>
+              </div>
+              <div class="auth-card">
+                <!-- 登录面板 -->
+                <div class="panel on" id="panelLogin">
+                  <div class="auth-title">登录</div>
+                  <div class="auth-sub">登录后继续你的对话</div>
+                  <div class="form-banner err" id="loginBanner" hidden><span class="b-ico">!</span><span id="loginBannerText"></span></div>
+                  <div class="field" id="lgUser">
+                    <label>用户名</label>
+                    <input type="text" id="lgUserInput" placeholder="请输入用户名" autocomplete="username" spellcheck="false">
+                    <div class="hint err">请输入用户名</div>
+                  </div>
+                  <div class="field" id="lgPass">
+                    <label>密码</label>
+                    <div class="key-row">
+                      <input type="password" id="lgPassInput" placeholder="请输入密码" autocomplete="current-password">
+                      <button class="key-eye" data-eye="lgPassInput" title="显示/隐藏密码"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M1.5 8S3.8 3.5 8 3.5 14.5 8 14.5 8 12.2 12.5 8 12.5 1.5 8 1.5 8z" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.2"/></svg></button>
+                    </div>
+                    <div class="hint err">请输入密码</div>
+                  </div>
+                  <button class="btn-auth" id="btnLogin">登录</button>
+                  <div class="auth-switch">还没有账号？<a id="gotoReg">注册</a></div>
+                </div>
+                <!-- 注册面板（2.1 详述，此处共用切换演示） -->
+                <div class="panel" id="panelRegister">
+                  <div class="auth-title">注册</div>
+                  <div class="auth-sub">公开注册，无需邀请码</div>
+                  <div class="form-banner err" id="regBanner" hidden><span class="b-ico">!</span><span id="regBannerText"></span></div>
+                  <div class="field" id="rgUser">
+                    <label>用户名</label>
+                    <input type="text" id="rgUserInput" placeholder="2~32 个字符" autocomplete="username" spellcheck="false">
+                    <div class="hint">2~32 个字符，支持中文、字母、数字、下划线、连字符</div>
+                    <div class="hint err" id="rgUserErr">请输入用户名</div>
+                  </div>
+                  <div class="field" id="rgPass">
+                    <label>密码</label>
+                    <div class="key-row">
+                      <input type="password" id="rgPassInput" placeholder="至少 8 位字符" autocomplete="new-password">
+                      <button class="key-eye" data-eye="rgPassInput" title="显示/隐藏密码"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M1.5 8S3.8 3.5 8 3.5 14.5 8 14.5 8 12.2 12.5 8 12.5 1.5 8 1.5 8z" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.2"/></svg></button>
+                    </div>
+                    <div class="hint">至少 8 位字符</div>
+                    <div class="hint err">密码至少 8 位字符</div>
+                  </div>
+                  <div class="field" id="rgPass2">
+                    <label>确认密码</label>
+                    <div class="key-row">
+                      <input type="password" id="rgPass2Input" placeholder="再次输入密码" autocomplete="new-password">
+                      <button class="key-eye" data-eye="rgPass2Input" title="显示/隐藏密码"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M1.5 8S3.8 3.5 8 3.5 14.5 8 14.5 8 12.2 12.5 8 12.5 1.5 8 1.5 8z" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.2"/></svg></button>
+                    </div>
+                    <div class="hint err">两次输入的密码不一致</div>
+                  </div>
+                  <button class="btn-auth" id="btnRegister">注册</button>
+                  <div class="auth-switch">已有账号？<a id="gotoLogin">登录</a></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>布局参数</b>：视口底 <code>--c-bg</code>；卡片 = <code>--c-surface</code> + 1px <code>--c-border</code> + <code>--r-lg</code> + <code>--shadow-1</code>，
+        宽 360px（<code>max-width: calc(100vw - 32px)</code>）、内边距 24px；品牌位 logo 40px（线宽 13，浅色描边 <code>--c-primary #3370FF</code> / 暗色 <code>#5C8DFF</code>，
+        沿 iter-5 已定夺的品牌蓝拆分口径）+ 产品名 17px/600；卡片标题 17px/600、副标题 13px <code>--c-text-3</code>；字段间距 20px。<br>
+        <b>主题入口</b>：右上角 32px icon-only ghost（components.md「主题切换入口」模式）——<b>未登录也允许切主题</b>（主题属浏览器本地偏好，存 localStorage，
+        不依赖登录态；否则暗色用户首次到达登录页会被强制亮色刺眼）。图标二态月亮/太阳，与 iter-5 顶栏入口共用同一 store 与存储 key，登录后设置页/顶栏状态一致。<br>
+        <b>交互</b>：用户名 autofocus；Enter 提交；「注册/登录」链接切换两面板（无路由跳转损耗，亦可实现为 <code>/login</code> ⇄ <code>/register</code> 两路由，T2 择一，
+        交互形态一致）；密码默认密文，行尾眼睛按钮显隐（沿用 iter-5 设置页 key-eye 模式）。<b>autocomplete</b> 标注
+        <code>username / current-password / new-password</code>，启用浏览器密码管理器。<br>
+        <b>本页无「忘记密码」入口</b>：产品无邮箱体系，放置链接即死链；找回路径 = 管理员重置，留待 iter-8 管理后台（REQ-025）承载（第 9 节定案 6，2026-08-15 CEO 定）。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.2 错误态全集（REQ-020 异常分支 + REQ-007 映射）<span class="tag">表单级 banner · 拒绝类=danger / 状态类=warning</span></div>
+      <div class="stage" style="display:flex;gap:20px;flex-wrap:wrap;">
+        <div class="tk" style="flex:1;min-width:300px;border-radius:var(--r-lg);border:1px solid var(--c-border);padding:16px;background:var(--c-bg);display:flex;flex-direction:column;gap:12px;">
+          <div style="font-size:12px;color:var(--c-text-3);">banner 在卡片内的位置（以「用户名或密码错误」为例）：</div>
+          <div style="background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--r-lg);padding:16px;">
+            <div class="auth-title" style="margin-bottom:12px;">登录</div>
+            <div class="form-banner err" style="margin-bottom:0;"><span class="b-ico">!</span><span>用户名或密码错误</span></div>
+            <div class="field" style="margin-bottom:0;"><label>用户名</label><input type="text" placeholder="请输入用户名"></div>
+          </div>
+        </div>
+        <div class="tk" style="flex:1.2;min-width:300px;border-radius:var(--r-lg);border:1px solid var(--c-border);padding:16px;background:var(--c-bg);display:flex;flex-direction:column;gap:10px;">
+          <div style="font-size:12px;color:var(--c-text-3);">全部 4 类登录页 banner（浅暗两态均令牌化，可用演示控制翻转）：</div>
+          <div class="form-banner err" style="margin:0;"><span class="b-ico">!</span><span>用户名或密码错误</span></div>
+          <div class="form-banner warn" style="margin:0;"><span class="b-ico">!</span><span>登录已过期，请重新登录</span></div>
+          <div class="form-banner warn" style="margin:0;"><span class="b-ico">!</span><span>账号已被封禁，无法使用。如有疑问请联系管理员</span></div>
+          <div class="form-banner err" style="margin:0;"><span class="b-ico">!</span><span>无法连接服务器，请检查网络后重试</span><button class="b-act">重试</button></div>
+          <div style="font-size:12px;color:var(--c-text-3);line-height:1.8;">
+            行内字段级错误（空值 / 注册校验）见 1.1 与 2.1：12px <code>--c-danger</code> 行内文案 + 危险描边，沿 components.md「表单模态」校验口径。
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>统一提示（spec 硬性口径）</b>：登录失败一律「<b>用户名或密码错误</b>」——<b>不区分</b>用户名不存在还是密码错误、不泄露账号是否存在（防账号枚举）；
+        后端统一返回 401 + 同一文案（T1 验收「错误登录统一用户名或密码错误」）。<br>
+        <b>色调语义（第 9 节定案 2，2026-08-15 CEO 定）</b>：<b>拒绝类</b>（凭证错误 / 网络失败）= <code>--c-danger-l</code> 底 + <code>--c-danger</code> 字；
+        <b>状态类</b>（登录已过期 / 封禁）= <code>--c-warning-l</code> 底 + <code>--c-warning</code> 字——非用户输入错误，用琥珀与红区分，降低「我输错了」的误导。
+        暗色自动映射（#361B18/#FF8073、#38290F/#EDA23B，对比度 6.5:1 / 6.6:1，tokens v1.3 计算表）。<br>
+        <b>封禁占位</b>：文案定稿「账号已被封禁，无法使用。如有疑问请联系管理员」（REQ-025 口径）；封禁能力 iter-8 落地，
+        本迭代后端不会返回此状态，<b>文案与 UI 槽位先行定稿</b>，T1 错误映射表预留 403 banned 项（第 3 节）。<br>
+        <b>网络/5xx</b>：banner 内嵌「重试」小按钮（24px，currentColor 描边），重试复用已填表单不清空——REQ-007「可重试错误提供重试」在认证页的落法。
+        「登录已过期」仅在使用中 401 跳转回来的 <code>/login?redirect=…</code> 场景显示（第 4 节）。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.3 加载态（登录中）<span class="tag">按钮 spinner + 防重复提交 · 3 秒验收的感知锚点</span></div>
+      <div class="stage" style="display:flex;gap:20px;flex-wrap:wrap;justify-content:center;">
+        <div class="tk" style="width:360px;max-width:100%;background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--r-lg);padding:24px;">
+          <div class="auth-title">登录</div>
+          <div class="auth-sub">登录后继续你的对话</div>
+          <div class="field"><label>用户名</label><input type="text" value="猫南北"></div>
+          <div class="field"><label>密码</label><div class="key-row"><input type="password" value="12345678"></div></div>
+          <button class="btn-auth loading"><span class="spin"></span>登录中…</button>
+          <div class="auth-switch">还没有账号？<a>注册</a></div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>形态</b>：提交后主按钮整宽保持实底主色，文字换「登录中…」+ 12px 白色 spinner（实底上的白字族元素，轨道白 35% 叠加）；
+        按钮 <code>disabled</code>（hover/active 态移除、cursor 默认）<b>防重复提交</b>；输入框保持可编辑但 Enter 不再触发。<br>
+        <b>口径</b>：正常网络下该态为亚秒级瞬时（验收「密码错误 3 秒内出统一提示」「注册 3 秒内进主界面」）；慢网时此态即用户感知锚点，不出现整页遮罩、不跳转、不丢输入。
+        注册页加载态同构（文字「注册中…」），不另画。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.4 亮暗锁定对照（登录页）<span class="tag">同一 DOM · 仅根节点令牌覆盖 · 走查方法=找亮色残留</span></div>
+      <div class="cols">
+        <div>
+          <div class="frame-cap">浅色（tokens v1.3 浅色值）</div>
+          <div class="tk force-light auth-frame" style="height:520px;">
+            <div class="auth-center">
+              <div class="auth-col">
+                <div class="auth-brand">
+                  <svg viewBox="0 0 128 128"><path fill="none" stroke="#3370FF" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+                  <span class="name">喵喵</span>
+                </div>
+                <div class="auth-card">
+                  <div class="auth-title">登录</div>
+                  <div class="auth-sub">登录后继续你的对话</div>
+                  <div class="field"><label>用户名</label><input type="text" placeholder="请输入用户名"></div>
+                  <div class="field"><label>密码</label><div class="key-row"><input type="password" placeholder="请输入密码"><button class="key-eye" title="显示/隐藏密码"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M1.5 8S3.8 3.5 8 3.5 14.5 8 14.5 8 12.2 12.5 8 12.5 1.5 8 1.5 8z" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.2"/></svg></button></div></div>
+                  <button class="btn-auth">登录</button>
+                  <div class="auth-switch">还没有账号？<a>注册</a></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="frame-cap">暗色（tokens v1.3 暗色值，同一 DOM 仅变量覆盖）</div>
+          <div class="tk force-dark auth-frame" style="height:520px;">
+            <div class="auth-center">
+              <div class="auth-col">
+                <div class="auth-brand">
+                  <svg viewBox="0 0 128 128"><path fill="none" stroke="#5C8DFF" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+                  <span class="name">喵喵</span>
+                </div>
+                <div class="auth-card">
+                  <div class="auth-title">登录</div>
+                  <div class="auth-sub">登录后继续你的对话</div>
+                  <div class="field"><label>用户名</label><input type="text" placeholder="请输入用户名"></div>
+                  <div class="field"><label>密码</label><div class="key-row"><input type="password" placeholder="请输入密码"><button class="key-eye" title="显示/隐藏密码"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M1.5 8S3.8 3.5 8 3.5 14.5 8 14.5 8 12.2 12.5 8 12.5 1.5 8 1.5 8z" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.2"/></svg></button></div></div>
+                  <button class="btn-auth">登录</button>
+                  <div class="auth-switch">还没有账号？<a>注册</a></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>暗色取值</b>：页面底 <code>#131417</code> / 卡片 <code>#1E2026</code> / 描边 <code>#33363E</code>；正文 <code>#E6EAF0</code>（surface 上 13.5:1）；
+        副标题与占位 <code>--c-text-3 #808896</code>（4.6:1）；主按钮实底 <code>#3370FF</code> 不变（白字 4.3:1 与浅色一致）；品牌描边前景蓝 <code>#5C8DFF</code>。
+        全部为 tokens v1.3 既有值，两帧同一 DOM——暗色帧内任何肉眼发白块即为漏改裸色值（与 iter-5 走查方法一致）。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">2</span>注册页（REQ-020）</h2>
+    <div class="sec-desc">
+      与登录页同壳（品牌位 + 卡片 + 登录⇄注册切换），三字段：用户名 / 密码 / 确认密码。<b>公开注册、无邀请码字段</b>。
+      密码强度按 spec 最简口径：<b>最短 8 位</b>（CHG-004 定稿），无复杂度要求。注册成功<b>不落中间页，直接自动登录进主界面</b>
+      （spec 主流程 3；验收「3 秒内进入主界面」）。校验分两层：前端拦截（空值/规则/两次不一致）+ 服务端错误（用户名已占用等）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.1 默认态 + 前端校验（可交互：点「注册」触发校验）<span class="tag">规则提示常驻 · 错误行内 · 补正即时消除</span></div>
+      <div class="stage" style="display:flex;gap:20px;flex-wrap:wrap;justify-content:center;">
+        <div class="tk" style="width:360px;max-width:100%;background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--r-lg);padding:24px;">
+          <div class="auth-title">注册</div>
+          <div class="auth-sub">公开注册，无需邀请码</div>
+          <div class="field">
+            <label>用户名</label>
+            <input type="text" placeholder="2~32 个字符">
+            <div class="hint">2~32 个字符，支持中文、字母、数字、下划线、连字符</div>
+          </div>
+          <div class="field">
+            <label>密码</label>
+            <div class="key-row">
+              <input type="password" placeholder="至少 8 位字符">
+              <button class="key-eye" title="显示/隐藏密码"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M1.5 8S3.8 3.5 8 3.5 14.5 8 14.5 8 12.2 12.5 8 12.5 1.5 8 1.5 8z" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.2"/></svg></button>
+            </div>
+            <div class="hint">至少 8 位字符</div>
+          </div>
+          <div class="field">
+            <label>确认密码</label>
+            <div class="key-row">
+              <input type="password" placeholder="再次输入密码">
+              <button class="key-eye" title="显示/隐藏密码"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M1.5 8S3.8 3.5 8 3.5 14.5 8 14.5 8 12.2 12.5 8 12.5 1.5 8 1.5 8z" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.2"/></svg></button>
+            </div>
+          </div>
+          <button class="btn-auth">注册</button>
+          <div class="auth-switch">已有账号？<a>登录</a></div>
+        </div>
+        <div class="tk" style="width:360px;max-width:100%;background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--r-lg);padding:24px;">
+          <div class="auth-title">注册</div>
+          <div class="auth-sub">前端校验错误态（三项拦截同时示意）</div>
+          <div class="field invalid">
+            <label>用户名</label>
+            <input type="text" value="a">
+            <div class="hint">2~32 个字符，支持中文、字母、数字、下划线、连字符</div>
+            <div class="hint err">用户名需 2~32 个字符，仅支持中文、字母、数字、下划线、连字符</div>
+          </div>
+          <div class="field invalid">
+            <label>密码</label>
+            <div class="key-row"><input type="password" value="1234567"></div>
+            <div class="hint">至少 8 位字符</div>
+            <div class="hint err">密码至少 8 位字符</div>
+          </div>
+          <div class="field invalid">
+            <label>确认密码</label>
+            <div class="key-row"><input type="password" value="12345678"></div>
+            <div class="hint err">两次输入的密码不一致</div>
+          </div>
+          <button class="btn-auth">注册</button>
+          <div class="auth-switch">已有账号？<a>登录</a></div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>规则提示常驻</b>：用户名/密码字段下方 12px <code>--c-text-3</code> hint <b>输入前即可见</b>（不藏到出错才现），降低试错成本。<br>
+        <b>前端拦截（spec 异常分支逐条）</b>：用户名规则不符 / 密码不足 8 位 / 两次不一致 —— 均不发出请求，行内 12px <code>--c-danger</code>
+        错误文案 + 危险描边（components.md「表单模态」：必填缺失不入库）；补正后即时消除（input 事件清除该字段 invalid）。<br>
+        <b>用户名规则（第 9 节定案 1，2026-08-15 CEO 定；同步写入 spec REQ-020，由需求分析师落盘）</b>：2~32 字符；允许 中文 / 字母 / 数字 / <code>_</code> / <code>-</code>；禁空格与其他符号；
+        唯一性检查大小写不敏感（避免 <code>Cat</code>/<code>cat</code> 视觉混淆重复）。前端 regex 与后端 Pydantic 校验<b>同一规则、同一组边界测试值</b>（T1/T2 共用）。
+        不做输入时实时查重（无独立查重端点，避免每键一请求）；占用错误在提交后由服务端返回（2.2）。<br>
+        <b>密码上限</b>：服务端设上限 128 字符（防滥用）；前端不设复杂度要求（spec 最简口径）。<b>确认密码不做「密码强度计」</b>——最简口径下仅长度校验，视觉零负担。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.2 服务端错误态 + 极端内容<span class="tag">用户名已占用=字段行内 · 限频占位 · 超长输入与长文案不溢出</span></div>
+      <div class="stage" style="display:flex;gap:20px;flex-wrap:wrap;justify-content:center;">
+        <div class="tk" style="width:360px;max-width:100%;background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--r-lg);padding:24px;">
+          <div class="auth-title">注册</div>
+          <div class="auth-sub">提交后：用户名已存在（服务端 400）</div>
+          <div class="field invalid">
+            <label>用户名</label>
+            <input type="text" value="猫南北">
+            <div class="hint">2~32 个字符，支持中文、字母、数字、下划线、连字符</div>
+            <div class="hint err">该用户名已被占用，请换一个试试</div>
+          </div>
+          <div class="field">
+            <label>密码</label>
+            <div class="key-row"><input type="password" value="12345678"></div>
+            <div class="hint">至少 8 位字符</div>
+          </div>
+          <div class="field">
+            <label>确认密码</label>
+            <div class="key-row"><input type="password" value="12345678"></div>
+          </div>
+          <button class="btn-auth">注册</button>
+          <div class="auth-switch">已有账号？<a>登录</a></div>
+        </div>
+        <div class="tk" style="width:360px;max-width:100%;background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--r-lg);padding:24px;display:flex;flex-direction:column;gap:12px;">
+          <div style="font-size:12px;color:var(--c-text-3);">限频占位 banner（REQ-024，iter-7/8 才会返回）：</div>
+          <div class="form-banner err" style="margin:0;"><span class="b-ico">!</span><span>注册过于频繁，请明日再试</span></div>
+          <div style="font-size:12px;color:var(--c-text-3);">极端内容：32 字符上限用户名 + 长文案 banner 换行：</div>
+          <div class="field">
+            <label>用户名</label>
+            <input type="text" value="一个达到三十二个字符上限的中文用户名示例零一零三" style="font-size:14px;">
+          </div>
+          <div class="form-banner err" style="margin:0;"><span class="b-ico">!</span><span>无法连接服务器：请检查网络连接或服务是否可用后重试（ERR_NETWORK_DEMO_LONG_TEXT）</span></div>
+          <div style="font-size:12px;color:var(--c-text-3);line-height:1.8;">输入超宽时框内横向滚动（<code>overflow</code> 跟随浏览器默认行为）、不撑破卡片；banner 文案自动换行、按钮不被挤出。</div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>用户名已占用</b>：服务端返回后<b>落在用户名字段行内</b>（非表单 banner——错误明确指向单一字段），文案「该用户名已被占用，请换一个试试」；
+        密码字段保持已填不清空（用户只改用户名即可重提）。T1 验收「重复用户名返回『用户名已存在』且用户数不增」——前端文案口径与之对应。<br>
+        <b>限频占位</b>：REQ-024 注册限频（同 IP 每日阈值）归 iter-7/8，<b>本迭代后端不限频、不会返回此错误</b>；文案与 banner 槽位先行定稿，
+        保证错误映射表（第 3 节）完整、T1 预留 429 项，届时零 UI 改动接入。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.3 亮暗锁定对照（注册页）<span class="tag">同一 DOM · 仅根节点令牌覆盖</span></div>
+      <div class="cols">
+        <div>
+          <div class="frame-cap">浅色</div>
+          <div class="tk force-light" style="width:100%;background:var(--c-bg);border:1px solid var(--c-border);border-radius:var(--r-lg);padding:32px 16px;">
+            <div style="width:360px;max-width:100%;margin:0 auto;">
+              <div class="auth-brand">
+                <svg viewBox="0 0 128 128"><path fill="none" stroke="#3370FF" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+                <span class="name">喵喵</span>
+              </div>
+              <div class="auth-card">
+                <div class="auth-title">注册</div>
+                <div class="auth-sub">公开注册，无需邀请码</div>
+                <div class="field"><label>用户名</label><input type="text" placeholder="2~32 个字符"><div class="hint">2~32 个字符，支持中文、字母、数字、下划线、连字符</div></div>
+                <div class="field"><label>密码</label><div class="key-row"><input type="password" placeholder="至少 8 位字符"></div><div class="hint">至少 8 位字符</div></div>
+                <div class="field"><label>确认密码</label><div class="key-row"><input type="password" placeholder="再次输入密码"></div></div>
+                <button class="btn-auth">注册</button>
+                <div class="auth-switch">已有账号？<a>登录</a></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="frame-cap">暗色（同一 DOM 仅变量覆盖）</div>
+          <div class="tk force-dark" style="width:100%;background:var(--c-bg);border:1px solid var(--c-border);border-radius:var(--r-lg);padding:32px 16px;">
+            <div style="width:360px;max-width:100%;margin:0 auto;">
+              <div class="auth-brand">
+                <svg viewBox="0 0 128 128"><path fill="none" stroke="#5C8DFF" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+                <span class="name">喵喵</span>
+              </div>
+              <div class="auth-card">
+                <div class="auth-title">注册</div>
+                <div class="auth-sub">公开注册，无需邀请码</div>
+                <div class="field"><label>用户名</label><input type="text" placeholder="2~32 个字符"><div class="hint">2~32 个字符，支持中文、字母、数字、下划线、连字符</div></div>
+                <div class="field"><label>密码</label><div class="key-row"><input type="password" placeholder="至少 8 位字符"></div><div class="hint">至少 8 位字符</div></div>
+                <div class="field"><label>确认密码</label><div class="key-row"><input type="password" placeholder="再次输入密码"></div></div>
+                <button class="btn-auth">注册</button>
+                <div class="auth-switch">已有账号？<a>登录</a></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        注册页与登录页共用全部组件与令牌（仅多一个字段），暗色走查口径同 1.4：hint <code>#808896</code>（4.6:1）、卡片 <code>#1E2026</code>、页面底 <code>#131417</code>，
+        主按钮实底两模式同值 <code>#3370FF</code>。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">3</span>认证错误映射表（REQ-007 体系在登录/注册页的落法，T1/T2 对照）</h2>
+    <div class="sec-desc">
+      REQ-007 要求错误「区分化、人话、有下一步」。认证类错误六种场景的文案、色调与落点在此一次定稿，
+      T1（后端错误码）与 T2（前端映射）按此实现；iter-7/8 新增的错误（限频/封禁）已预留行，届时零 UI 变更接入。
+    </div>
+    <div class="spec">
+      <table>
+        <tr><th>场景（HTTP / 错误码）</th><th>用户文案（定稿）</th><th>呈现位置与色调</th><th>迭代归属</th></tr>
+        <tr><td>登录凭证错误（401 wrong_credentials）</td><td>用户名或密码错误</td><td>表单 banner · danger（<b>不区分</b>哪项错、不泄露账号是否存在）</td><td>iter-6（T1/T2）</td></tr>
+        <tr><td>用户名为空 / 密码为空（前端拦截）</td><td>请输入用户名 / 请输入密码</td><td>字段行内 12px · danger 描边</td><td>iter-6（T2）</td></tr>
+        <tr><td>注册用户名已占用（400 username_taken）</td><td>该用户名已被占用，请换一个试试</td><td>用户名字段行内 · danger</td><td>iter-6（T1/T2）</td></tr>
+        <tr><td>注册规则不符（用户名规则 / 密码 &lt;8 位 / 两次不一致，前端拦截）</td><td>见 2.1 三条行内文案</td><td>对应字段行内 · danger，不发出请求</td><td>iter-6（T2）</td></tr>
+        <tr><td>使用中 token 失效（401 token_invalid）</td><td>登录已过期，请重新登录</td><td>跳转 <code>/login?redirect=…</code> 后表单 banner · warning</td><td>iter-6（T1/T2）</td></tr>
+        <tr><td>账号被封禁（403 banned）</td><td>账号已被封禁，无法使用。如有疑问请联系管理员</td><td>登录表单 banner · warning</td><td><b>占位</b>，REQ-025 iter-8 返回</td></tr>
+        <tr><td>注册限频（429 rate_limited）</td><td>注册过于频繁，请明日再试</td><td>注册表单 banner · danger</td><td><b>占位</b>，REQ-024 iter-7/8 返回</td></tr>
+        <tr><td>网络失败 / 5xx</td><td>无法连接服务器，请检查网络后重试</td><td>表单 banner · danger + 内嵌「重试」按钮（复用已填内容）</td><td>iter-6（T2）</td></tr>
+      </table>
+      <div class="ann">
+        <b>映射原则</b>：字段级错误（能定位到单一输入）走行内；表单级/会话级错误（凭证、封禁、限频、网络）走 banner。
+        全部文案无技术性报错堆栈暴露（REQ-007 验收口径）；错误出现时效 ≤ 3 秒（不含网络层自身超时等待）。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">4</span>未登录应用框架说明（REQ-006 门禁 · REQ-020 路由守卫与回跳）</h2>
+    <div class="sec-desc">
+      spec REQ-006 改写条款：「<b>必须登录后才能使用：未登录只能看到登录页</b>，本地不再产生新的会话数据」；
+      REQ-020 异常分支：「会话 token 过期/无效：受保护请求返回 401，前端跳转登录页；登录后回到之前的页面」。
+      本节为应用框架说明（CHG-004 影响评估要求随 T0 交付）——<b>主界面本身沿用 iter-1~5 基线，本稿不重画</b>；
+      唯一一处基线增量 = 侧栏底栏登出入口（4.2，第 9 节定案 5，2026-08-15 CEO 批准）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.1 路由流转示意<span class="tag">vue-router beforeEach 守卫 · redirect 回跳 · 401 闭环</span></div>
+      <div class="stage">
+        <div class="tk" style="border-radius:var(--r-md);padding:4px;">
+          <div class="flow">
+            <div class="flow-box">
+              <div class="fb-tag">① 未登录访客</div>
+              <div class="fb-title">访问任意功能路由</div>
+              <div class="fb-desc"><code>/</code> · <code>/c/:id</code> · <code>/settings</code> … 一律被路由守卫拦截（无有效会话）</div>
+            </div>
+            <div class="flow-arrow">
+              <svg width="28" height="12" viewBox="0 0 28 12"><path d="M0 6h22M18 1l6 5-6 5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span>重定向<br><code style="font-family:'SF Mono',Menlo,Consolas,monospace">/login?redirect=原路由</code></span>
+            </div>
+            <div class="flow-box">
+              <div class="fb-tag">② 登录页（本稿第 1/2 节）</div>
+              <div class="fb-title">唯一可见页面</div>
+              <div class="fb-desc">登录成功，或注册成功后<b>自动登录</b>（无中间页，3 秒内）</div>
+            </div>
+            <div class="flow-arrow">
+              <svg width="28" height="12" viewBox="0 0 28 12"><path d="M0 6h22M18 1l6 5-6 5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span>登录成功<br>回跳 redirect 原路由</span>
+            </div>
+            <div class="flow-box hollow">
+              <div class="fb-tag">③ 主界面</div>
+              <div class="fb-title">iter-1~5 基线（不重画）</div>
+              <div class="fb-desc">侧栏/消息/输入区/设置页等沿用既有基线；会话数据登录后由服务端加载（T3）</div>
+            </div>
+          </div>
+          <div class="flow-back">
+            <b>401 闭环（使用中失效）：</b>③ 中任意请求返回 401（token 过期/改密使失效）→ 跳 <code style="font-family:'SF Mono',Menlo,Consolas,monospace">/login?redirect=当前路由</code>，
+            登录页顶部显示 warning banner「登录已过期，请重新登录」→ 重新登录后回跳原路由继续，未发出的输入不丢失。
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>守卫规则（T2 实现口径）</b>：vue-router <code>beforeEach</code>——未登录（无有效会话）访问任何功能路由 → <code>replace</code> 到
+        <code>/login?redirect=…</code>；<b>已登录访问 <code>/login</code> → 直接 replace 到主界面</b>（已登录不再看登录页）；
+        守卫判定依据「会话是否有效」（应用启动时调 <code>/api/me</code> 探测 + 请求中 401 兜底，具体由 T1/T2 定，设计不约束实现）。<br>
+        <b>redirect 安全</b>：redirect 参数<b>仅接受站内相对路径</b>（拒绝外站 URL 与协议相对地址，防 open redirect），非法值回退到 <code>/</code>。<br>
+        <b>未登录零写入（REQ-006 验收子集）</b>：未登录状态下浏览器 IndexedDB <b>不产生任何新的会话数据写入</b>（旧版本遗留数据原样保留，
+        迁移入口 iter-8）。<br>
+        <b>登录成功即终点</b>：登录/注册成功无中间确认页、无欢迎页——直接回跳原路由或进入主界面（最快路径）。
+        <b>登出</b>：入口 = 侧栏底栏最小扩展（4.2，第 9 节定案 5，2026-08-15 CEO 批准的 iter-1~5 基线唯一增量）；登出后回到 ①（跳登录页）。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.2 主界面基线增量：侧栏底栏登出入口（第 9 节定案 5，2026-08-15 CEO 批准）<span class="tag">iter-6 对 iter-1~5 主界面基线的唯一一处增量 · 结构示意（可演示翻转亮暗）</span></div>
+      <div class="stage">
+        <div class="tk sb-demo">
+          <div style="padding:16px 16px 8px;display:flex;align-items:center;gap:8px;">
+            <svg viewBox="0 0 128 128" width="24" height="24" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+            <span style="font-size:15px;font-weight:600;color:var(--c-text-1);">喵喵</span>
+          </div>
+          <div style="padding:4px 8px 12px;display:flex;flex-direction:column;gap:2px;">
+            <div class="it on">帮我写一封请假邮件，理由是家里…</div>
+            <div class="it">流式请求的代码示例</div>
+          </div>
+          <div class="sb-ft">
+            <span class="ft-user" title="猫南北">猫南北</span>
+            <span class="ft-sp"></span>
+            <span class="ft-profile">GLM · 已配置</span>
+            <span class="api-dot"></span>
+            <button class="btn-logout" title="登出" aria-label="登出"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 17l5-5-5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 12H9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>增量范围（iter-1~5 主界面基线唯一一处改动，2026-08-15 CEO 批准）</b>：仅侧栏底栏内部——左端新增<b>用户名</b>
+        （13px/500 <code>--c-text-2</code>，超长 ellipsis + title 显示全名），右端新增<b>登出 icon 按钮</b>（26px icon-only ghost，
+        components.md「图标按钮」口径：hover <code>--c-hover-bg</code> 底 + <code>--c-text-1</code>，<code>title/aria-label</code>「登出」）；
+        既有「当前档案名 · 已配置 + 状态点」（iter-5 定夺 6）保留居中。底栏高度 56px、border-top、左右 16px 内距均不动。<br>
+        <b>用户名来源</b> = 登录账号用户名（本产品无昵称体系）；点击用户名无动作（账号管理 REQ-021 归 iter-8，届时再挂入口）。<br>
+        <b>登出交互</b>：点击直接登出，<b>无确认弹窗</b>（非破坏性操作——重新登录即完整恢复云端数据）；登出 = 后端会话失效 + 清 cookie（第 5 节），
+        前端跳转登录页。<b>组件建议</b>：侧栏底栏组件增用户名渲染与 <code>logout()</code>（调 <code>/api/logout</code> → 跳 <code>/login</code>）。<br>
+        <b>边界</b>：除本条外，侧栏列表 / 消息区 / 输入区 / 设置页 / 模态 / toast 等主界面设计零改动（iter-1~5 基线原样）。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">5</span>HttpOnly Cookie 与防 CSRF 技术注记（T1 开发对齐）</h2>
+    <div class="sec-desc">
+      token 传递方式已定案（2026-08-15 CEO 定）：<b>HttpOnly Cookie，同源部署前提，前端不做 token 管理</b>。
+      本节为设计基线随附的技术说明——设计层的结论是<b>用户基本无感</b>：无授权弹窗、无跨站跳转、无 token 相关 UI；
+      用户唯一感知点 = 会话过期后操作收到 401 → 跳登录页（第 4 节 401 闭环）。具体实现以 T1 技术说明为准，此处为设计侧建议基线。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">5.1 设计层用户感知对照<span class="tag">HttpOnly Cookie 方案下用户看到什么</span></div>
+      <table>
+        <tr><th>场景</th><th>用户感知（设计结论）</th></tr>
+        <tr><td>登录成功后</td><td>无感知——浏览器静默保存会话 cookie，直接进入主界面（第 4 节）</td></tr>
+        <tr><td>刷新 / 关闭浏览器重开（有效期内）</td><td>无感知——同源请求自动携带 cookie，保持登录态（REQ-020 验收「刷新页面仍保持登录态」）</td></tr>
+        <tr><td>会话过期 / token 失效后操作</td><td><b>唯一感知点</b>——收到 401 跳登录页 + warning banner「登录已过期，请重新登录」，登录后回跳原路由</td></tr>
+        <tr><td>跨站站点伪造请求（CSRF 攻击面）</td><td>无感知且无入口——SameSite 阻断跨站携带 cookie（见 5.2），界面无任何相关提示</td></tr>
+        <tr><td>登出</td><td>会话失效 + 清除 cookie，跳回登录页（入口 = 侧栏底栏，见 4.2 定案 5）</td></tr>
+      </table>
+      <div class="ann">
+        <b>前端零 token 管理（定案口径）</b>：前端代码不读取、不解析、不存储任何 token（HttpOnly 对 JS 不可见；不用 localStorage 存 token，
+        降低 XSS 取 token 面）；所有请求同源相对路径（<code>/api/…</code>），凭证由浏览器自动携带。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">5.2 后端 SameSite 策略建议（写入设计基线供 T1 对齐）<span class="tag">最终以 T1 技术说明为准</span></div>
+      <div class="stage">
+        <div class="tk">
+          <div class="codeblk">
+            <div class="code-body">Set-Cookie: session=&lt;opaque-id&gt;; HttpOnly; SameSite=Lax; Path=/
+# 生产启用 HTTPS 后追加 Secure（云部署为 CHG-004「后续待定」，本地 Compose 阶段不加）
+# 开发环境：Vite dev server 以 proxy 将 /api 转发至 backend 容器 —— 前后端始终同源（iter-6 风险清单口径）</div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>SameSite=Lax 理由</b>：同源请求与普通站内导航自动携带 cookie（登录态延续不受影响）；<b>跨站 POST 不携带</b>——
+        经典 CSRF（外部站点伪造表单/请求 POST 本站写接口）因 cookie 缺席被服务端 401 拒绝，配合「写操作仅 POST/PUT/DELETE + JSON body」
+        （Lax 下跨站顶层 GET 导航虽携带 cookie，但读接口无副作用），基本免疫 CSRF，<b>无需引入 CSRF token 或校验 Origin 的额外复杂度</b>。
+        若 T1 评估后认为需要更强的 Origin/Referer 白名单校验作为纵深防御，属实现增强，不改变设计层「用户无感」结论。<br>
+        <b>同源部署前提（定案）</b>：docker-compose 单入口（前端构建产物 + <code>backend/</code>），开发期 Vite proxy——两端点永不同源跨域，
+        规避跨域 credentials 配置问题；iter-7 全链路 Compose 沿用此前提。<br>
+        <b>登出语义</b>：后端使会话失效（服务端会话记录删除/标记，T1 验收「登出后 401」）+ 下发过期 cookie 清除；前端仅跳转登录页，不做本地清理动作。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">6</span>移动端窄屏（≤480px 断点）</h2>
+    <div class="sec-desc">
+      登录页是移动端最常到达的页面（分享链接/扫码直达）。既往口径：spec 非功能「兼容」条款写明「移动端响应式布局为 P1 目标，MVP 不承诺」——
+      第 9 节定案 3（2026-08-15 CEO 定）：<b>仅登录/注册两页承诺 ≤480px 窄屏可用，作为正式兼容性承诺</b>（同步写入 spec 兼容条款，由需求分析师落盘）；
+      主界面移动适配维持 P1 不承诺、不另画样件。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">6.1 窄屏断点效果（375px：登录·浅色 / 注册·暗色）<span class="tag">@media (max-width:480px) · 卡片全宽 · 16px 输入字号防 iOS 缩放</span></div>
+      <div class="stage" style="display:flex;gap:24px;flex-wrap:wrap;justify-content:center;">
+        <div>
+          <div class="frame-cap">登录 · 浅色 · 375px 视口</div>
+          <div class="tk force-light phone" style="height:600px;">
+            <button class="auth-theme" title="切换主题"><svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M12 8.5A5.5 5.5 0 1 1 5.5 2 4.3 4.3 0 0 0 12 8.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></button>
+            <div class="auth-center" style="padding:16px;">
+              <div class="auth-col">
+                <div class="auth-brand">
+                  <svg viewBox="0 0 128 128"><path fill="none" stroke="#3370FF" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+                  <span class="name">喵喵</span>
+                </div>
+                <div class="auth-card" style="padding:20px 16px;">
+                  <div class="auth-title">登录</div>
+                  <div class="auth-sub">登录后继续你的对话</div>
+                  <div class="field"><label>用户名</label><input type="text" placeholder="请输入用户名"></div>
+                  <div class="field"><label>密码</label><div class="key-row"><input type="password" placeholder="请输入密码"></div></div>
+                  <button class="btn-auth">登录</button>
+                  <div class="auth-switch">还没有账号？<a>注册</a></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="frame-cap">注册 · 暗色 · 375px 视口（横屏/输入法弹出时内容可滚动）</div>
+          <div class="tk force-dark phone" style="height:600px;">
+            <div class="auth-center" style="padding:16px;">
+              <div class="auth-col">
+                <div class="auth-brand">
+                  <svg viewBox="0 0 128 128"><path fill="none" stroke="#5C8DFF" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+                  <span class="name">喵喵</span>
+                </div>
+                <div class="auth-card" style="padding:20px 16px;">
+                  <div class="auth-title">注册</div>
+                  <div class="auth-sub">公开注册，无需邀请码</div>
+                  <div class="field"><label>用户名</label><input type="text" placeholder="2~32 个字符"><div class="hint">2~32 个字符，支持中文、字母、数字、下划线、连字符</div></div>
+                  <div class="field"><label>密码</label><div class="key-row"><input type="password" placeholder="至少 8 位字符"></div><div class="hint">至少 8 位字符</div></div>
+                  <div class="field"><label>确认密码</label><div class="key-row"><input type="password" placeholder="再次输入密码"></div></div>
+                  <button class="btn-auth">注册</button>
+                  <div class="auth-switch">已有账号？<a>登录</a></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>断点行为（<code>@media (max-width: 480px)</code>）</b>：卡片 <code>max-width: calc(100vw - 32px)</code>（左右各 16px 留白）、内边距收窄至
+        20px 16px；品牌位与卡片居中列不变——桌面态即移动态的等比收窄，无布局切换成本。<br>
+        <b>触控口径</b>：输入 36px 高 + 16px 字号（防 iOS 聚焦缩放，沿 iter-5 表单既定值）；主按钮整宽 36px；眼睛按钮 24px 热区偏小但贴输入框右缘、
+        有 6px 内距容差，接受（与桌面同组件，不为移动单独放大）。<b>竖屏输入法弹出</b>：卡片容器 <code>overflow-y: auto</code> 可滚动，确认按钮始终可达。<br>
+        <b>边界</b>：主界面（侧栏会话列表等）的移动端适配<b>不在本稿范围</b>（定案 3：spec 兼容条款更新为「仅登录/注册页承诺 ≤480px」，主界面维持 P1 不承诺）。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">7</span>T0 验收对照 + 状态走查清单（完整走查，不抽查）</h2>
+    <div class="sec-desc">上半表对照 plans/iter-6.md T0 验收标准逐条落点；下半表为亮/暗两态走查清单（REQ-017 已基线，暗色为本稿必验项），QA 与视觉走查逐条打勾取证。</div>
+
+    <div class="spec">
+      <div class="spec-title">7.1 T0 验收标准对照（plans/iter-6.md 原文）</div>
+      <table>
+        <tr><th>T0 验收标准（原文）</th><th>本稿落点</th><th>状态</th></tr>
+        <tr><td>登录/注册原型</td><td>第 1 节（登录：默认/错误/加载/亮暗/窄屏）、第 2 节（注册：默认/校验/服务端错误/亮暗/窄屏）</td><td>☑ 已覆盖</td></tr>
+        <tr><td>应用框架说明（未登录只见登录页、登录后进主界面）</td><td>第 4 节（路由流转示意 + 守卫规则 + 401 闭环；主界面沿用 iter-1~5 基线不重画）</td><td>☑ 已覆盖</td></tr>
+        <tr><td>token 传递方式已定案 HttpOnly Cookie；防 CSRF 措施随设计基线说明；前端不做 token 管理</td><td>第 5 节（用户感知对照 + SameSite=Lax 策略建议 + 前端零 token 管理口径）</td><td>☑ 已覆盖</td></tr>
+        <tr><td>经 CEO 批准并打 design-iter-6 tag</td><td>已批准（2026-08-15 CEO 批准 + 第 9 节 7 项澄清全部定案）；tag 由主会话打</td><td>☑ 已批准</td></tr>
+      </table>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">7.2 状态走查清单</div>
+      <table>
+        <tr><th style="width:44px">序号</th><th>需求</th><th>触点</th><th>状态组合</th><th>期望表现（=验收口径）</th><th>样件</th></tr>
+        <tr><td>1</td><td>REQ-020</td><td>登录页</td><td>默认态</td><td>品牌位 + 用户名/密码 + 登录按钮 + 「注册」切换入口；公开无邀请码</td><td>1.1</td></tr>
+        <tr><td>2</td><td>REQ-020</td><td>登录页</td><td>空值提交</td><td>行内「请输入用户名/密码」，不发出请求</td><td>1.1（可交互）</td></tr>
+        <tr><td>3</td><td>REQ-020</td><td>登录页</td><td>凭证错误</td><td>统一「用户名或密码错误」banner，不区分哪项错、不泄露账号存在性；3 秒内出现</td><td>1.2</td></tr>
+        <tr><td>4</td><td>REQ-020×025</td><td>登录页</td><td>封禁（占位）</td><td>warning banner「账号已被封禁…」；iter-8 返回 403 时零 UI 改动接入</td><td>1.2</td></tr>
+        <tr><td>5</td><td>REQ-020×007</td><td>登录页</td><td>网络/5xx</td><td>danger banner + 内嵌「重试」，已填内容不清空</td><td>1.2</td></tr>
+        <tr><td>6</td><td>REQ-020</td><td>登录页</td><td>加载态</td><td>按钮「登录中…」+ spinner + disabled 防重复提交；无整页遮罩、不丢输入</td><td>1.3</td></tr>
+        <tr><td>7</td><td>REQ-017</td><td>登录页</td><td>主题入口</td><td>未登录可切主题（右上 32px ghost，localStorage 持久化，与登录后入口同状态）</td><td>1.1</td></tr>
+        <tr><td>8</td><td>REQ-017</td><td>登录页</td><td>暗色</td><td>全套暗色令牌，无亮色残留；正文/提示对比度 ≥4.5:1（tokens v1.3 计算值）</td><td>1.4</td></tr>
+        <tr><td>9</td><td>REQ-020</td><td>注册页</td><td>默认态</td><td>用户名/密码/确认密码 + 注册按钮 + 「登录」切换；无邀请码；规则 hint 常驻</td><td>2.1</td></tr>
+        <tr><td>10</td><td>REQ-020</td><td>注册页</td><td>用户名规则不符</td><td>前端拦截，行内错误，不提交（规则=第 9 节定案 1：2~32 字符、中文/字母/数字/_/-、唯一性大小写不敏感）</td><td>2.1（可交互）</td></tr>
+        <tr><td>11</td><td>REQ-020</td><td>注册页</td><td>密码不足 8 位</td><td>前端拦截，行内「密码至少 8 位字符」</td><td>2.1（可交互）</td></tr>
+        <tr><td>12</td><td>REQ-020</td><td>注册页</td><td>两次密码不一致</td><td>前端拦截，行内提示</td><td>2.1（可交互）</td></tr>
+        <tr><td>13</td><td>REQ-020</td><td>注册页</td><td>用户名已占用</td><td>服务端 400 → 用户名字段行内「该用户名已被占用」；密码已填内容保留</td><td>2.2</td></tr>
+        <tr><td>14</td><td>REQ-024 联动</td><td>注册页</td><td>注册限频（占位）</td><td>banner「注册过于频繁，请明日再试」；iter-7/8 返回 429 时零 UI 改动接入</td><td>2.2</td></tr>
+        <tr><td>15</td><td>REQ-020</td><td>注册页</td><td>注册成功</td><td>自动登录直接进主界面（无中间页），3 秒内；刷新保持登录态</td><td>2.1 注 + 第 4 节</td></tr>
+        <tr><td>16</td><td>REQ-017</td><td>注册页</td><td>暗色</td><td>同 8，双帧锁定对照</td><td>2.3</td></tr>
+        <tr><td>17</td><td>REQ-007</td><td>映射表</td><td>认证错误全集</td><td>8 类场景文案/色调/落点一次定稿，无技术堆栈暴露</td><td>第 3 节</td></tr>
+        <tr><td>18</td><td>REQ-006/020</td><td>路由守卫</td><td>未登录访问</td><td>任意功能路由 → /login?redirect=原路由；已登录访问 /login → 直接进主界面</td><td>第 4 节</td></tr>
+        <tr><td>19</td><td>REQ-020</td><td>路由守卫</td><td>登录回跳</td><td>登录/注册成功回跳 redirect 原路由；redirect 仅站内相对路径（防 open redirect）</td><td>第 4 节</td></tr>
+        <tr><td>20</td><td>REQ-020</td><td>401 闭环</td><td>使用中 token 失效</td><td>401 → 跳登录 + warning「登录已过期」banner → 登录后回跳，输入不丢失</td><td>第 4 节 + 1.2</td></tr>
+        <tr><td>21</td><td>REQ-006</td><td>数据</td><td>未登录零写入</td><td>未登录 IndexedDB 不产生新的会话数据写入（旧数据只读保留，迁移 iter-8）</td><td>第 4 节注</td></tr>
+        <tr><td>22</td><td>REQ-006</td><td>主界面</td><td>基线不动</td><td>登录后主界面沿用 iter-1~5 基线；唯一增量 = 侧栏底栏登出入口（4.2，定案 5），其余零改动</td><td>第 4 节 / 4.2</td></tr>
+        <tr><td>23</td><td>非功能·安全</td><td>token</td><td>HttpOnly Cookie 定案</td><td>前端不读/不存/不解析 token；全部请求同源相对路径；SameSite=Lax 建议入基线</td><td>第 5 节</td></tr>
+        <tr><td>24</td><td>非功能·安全</td><td>表单</td><td>密码处理</td><td>全程 password type（眼睛显隐为唯一明文出口）；密码不进 URL/日志；autocomplete 标注正确</td><td>1.1 / 2.1 注</td></tr>
+        <tr><td>25</td><td>移动端</td><td>登录/注册页</td><td>≤480px 窄屏</td><td>卡片全宽（100vw-32px）、16px 输入字号防 iOS 缩放、内容可滚动、按钮可达</td><td>第 6 节</td></tr>
+        <tr><td>26</td><td>极端内容</td><td>表单</td><td>超长输入/长文案</td><td>32 字符用户名框内滚动不撑破卡片；banner 长文案换行、按钮不被挤出</td><td>2.2</td></tr>
+        <tr><td>27</td><td>REQ-020</td><td>侧栏底栏</td><td>登出入口（定案 5）</td><td>用户名 + 登出 icon（26px ghost，hover 灰底）；点击直接登出（无确认）→ 后端失效会话 + 清 cookie → 跳登录页；iter-1~5 主界面基线唯一增量</td><td>4.2</td></tr>
+      </table>
+      <div class="ann">共 <b>27</b> 条。「可交互」样件在本页可直接操作复核；行为类（守卫/401/写入/持久化）由 T2/T3 自动化用例或手工走查取证。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">8</span>令牌与组件使用说明</h2>
+    <div class="sec-desc">本稿设计决策原则：只组合既有令牌与 components.md v1.0 组件模式，<b>零新增令牌</b>。</div>
+    <table>
+      <tr><th>项</th><th>结论</th></tr>
+      <tr>
+        <td>色值</td>
+        <td>全部取自 tokens.md v1.3/v1.3.1（浅色 + 暗色 + 前景/实底拆分族）。本稿零新增色值、零裸色值（实底按钮白字与实底上白色 spinner
+        为既有「实底族配白字」既定组合；品牌 logo 描边 = 前景主色两态值，iter-5 已定夺）。无需 design-system 变更。</td>
+      </tr>
+      <tr>
+        <td>组件模式</td>
+        <td>表单字段/校验 = components.md「表单模态」；密码显隐 = iter-5 key-eye 图标按钮；主题入口 = components.md「主题切换入口」（32px icon-only ghost）；
+        主按钮 = 既有 btn-primary（实底主色 36px/13px/600）；toast/代码块/文字链接色均沿用基线。<b>新增「形态」仅一项</b>：表单级提示条
+        form-banner（认证页错误聚合位）——为既有 danger-l/danger 与 warning-l/warning 令牌的新组合方式，不产生新色值；
+        按 components.md 维护口径建议基线后补登记该模式（组织级资产沉淀，走 components.md 增补，无需新增令牌批准）。</td>
+      </tr>
+      <tr>
+        <td>字号/间距/圆角/阴影/动效</td>
+        <td>全部在 tokens 既定值域内（卡片 24px 内边距、字段距 20px、标题 17px、hint 12px、过渡 .15s ease、按压 scale .98）。</td>
+      </tr>
+    </table>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">9</span>澄清定案（2026-08-15 CEO 定，7 项全部定案）</h2>
+    <div class="sec-desc">沿 iter-1~5 固化模式：设计师暂定方案落样件 → CEO 定夺 → 本节固化为决策记录，开发按定案实现。定案 1、3 需同步写入 spec（由需求分析师落盘）；定案 5 为主界面基线唯一增量（结构示意见 4.2）。</div>
+
+    <div class="spec" style="border-color:#3370FF;background:#F0F4FF;">
+      <div class="spec-title" style="color:#1F2329;">定案记录（CEO，2026-08-15，7 项全部定案）</div>
+      <div class="ann" style="color:#646A73;">
+        <b>1 用户名规则——按暂定定案</b>：2~32 字符、中文/字母/数字/下划线/连字符、唯一性大小写不敏感；同步写入 spec REQ-020（由需求分析师落盘）；<br>
+        <b>2 错误色调语义——按暂定定案</b>：拒绝类=红（danger）/ 状态类=琥珀（warning）；<br>
+        <b>3 移动适配——定案为正式兼容性承诺</b>：仅登录/注册两页承诺 ≤480px 可用；同步写入 spec 兼容条款（由需求分析师落盘）；<br>
+        <b>4 登录成功反馈——按暂定定案</b>：无 toast，直接进主界面；<br>
+        <b>5 登出入口——CEO 批准最小扩展</b>：侧栏底栏用户名 + 登出 icon，为 iter-1~5 主界面基线唯一一处增量（结构示意见 4.2）；<br>
+        <b>6 忘记密码——按暂定定案</b>：不放链接，找回留 iter-8 管理后台；<br>
+        <b>7 密码显隐——按暂定定案</b>：提供眼睛按钮。
+      </div>
+    </div>
+
+    <table>
+      <tr><th style="width:60px">编号</th><th>问题</th><th>定案内容（2026-08-15 CEO 定）</th></tr>
+      <tr>
+        <td>1</td>
+        <td>用户名规则 spec 未定义（REQ-020 仅定了密码最短 8 位），前后端需要同一条规则</td>
+        <td><b>已定案：2~32 个字符；允许中文/字母/数字/下划线/连字符；禁空格与其他符号；唯一性大小写不敏感</b>。前端 regex 与后端 Pydantic 共用同一规则与同一组边界测试值。同步写入 spec REQ-020（由需求分析师落盘）。</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td>错误提示色调语义：封禁/过期/限频用红还是琥珀？</td>
+        <td><b>已定案：拒绝类=红（凭证错误、已占用、限频、网络）；状态类=琥珀（登录已过期、封禁）</b>——非用户输入错误用琥珀，避免「我输错了」的误导。</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td>登录/注册页移动适配是否作为正式承诺？（spec 非功能「兼容」现写「移动端 P1 不承诺」）</td>
+        <td><b>已定案：仅登录/注册两页承诺 ≤480px 窄屏可用，作为正式兼容性承诺</b>（本稿第 6 节，登录页是移动端最常到达页面）；主界面移动适配维持 P1 不承诺。spec 兼容条款按此更新（由需求分析师落盘）。</td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td>登录/注册成功的反馈：直接进主界面，还是加「欢迎回来」toast？</td>
+        <td><b>已定案：不加 toast，直接进</b>——最快路径，利于「3 秒内进入主界面」验收；主界面本身加载会话列表即是「已登录」的强反馈。</td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td>登出入口在哪承载？（T1 有登出 API，但主界面基线本稿不动）</td>
+        <td><b>已定案：CEO 批准最小扩展——侧栏底栏加用户名 + 登出 icon 按钮</b>（结构示意与参数见 4.2，26px ghost、底栏 56px 结构不动）；这是 iter-1~5 主界面基线在本迭代的唯一一处增量，T2 按此实现。</td>
+      </tr>
+      <tr>
+        <td>6</td>
+        <td>「忘记密码」口径：spec 无邮箱体系下无法自助找回</td>
+        <td><b>已定案：登录页不放「忘记密码」链接</b>（避免死链）；找回 = 管理员重置，留待 iter-8 管理后台（REQ-025）承载。</td>
+      </tr>
+      <tr>
+        <td>7</td>
+        <td>密码输入是否提供明文显隐切换？</td>
+        <td><b>已定案：提供</b>（眼睛 icon 按钮，沿用 iter-5 设置页 key-eye 模式；登录/注册全部密码字段同样提供）。</td>
+      </tr>
+    </table>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">10</span>基线声明</h2>
+    <div class="sec-desc">
+      本稿为 <b>design-iter-6 已批准基线（2026-08-15 CEO 批准；tag design-iter-6 由主会话打）</b>：登录页 / 注册页 / 认证错误映射 /
+      未登录应用框架说明 / HttpOnly Cookie 防 CSRF 注记 / 移动窄屏，共六部分，对应 iter-6.md T0 全部交付点；
+      第 9 节 7 项澄清已全部定案并固化为决策记录。全部色值取自公司 design-system tokens.md v1.3/v1.3.1，零新增令牌；
+      组件模式沿用 components.md v1.0 与 iter-1~5 基线；主界面除 4.2 侧栏底栏登出入口（定案 5 批准的唯一增量）外零改动。
+      定案 1、3 的 spec 同步（REQ-020 用户名规则 / 兼容条款移动端口径）由需求分析师落盘。T1/T2/T3 按本稿与定案开发。
+    </div>
+  </section>
+
+</div>
+
+<script>
+/* ============================================================
+   演示交互（文档功能件）：主题切换持久化 / 登录⇄注册切换 /
+   登录状态载入 / 表单校验 / 密码显隐
+   ============================================================ */
+(function () {
+  var SUN = '<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="2.6" stroke="currentColor" stroke-width="1.3"/><path d="M7 1.2v1.6M7 11.2v1.6M1.2 7h1.6M11.2 7h1.6M2.9 2.9l1.2 1.2M9.9 9.9l1.2 1.2M11.1 2.9L9.9 4.1M4.1 9.9l-1.2 1.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+  var MOON = '<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M12 8.5A5.5 5.5 0 1 1 5.5 2 4.3 4.3 0 0 0 12 8.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>';
+  var KEY = 'mm-demo-theme';
+
+  var flippables = document.querySelectorAll('.tk:not(.force-light):not(.force-dark)');
+  var btnLight = document.getElementById('btnLight');
+  var btnDark = document.getElementById('btnDark');
+  var authThemeBtn = document.getElementById('authThemeBtn');
+
+  function applyTheme(t) {
+    flippables.forEach(function (f) { f.classList.toggle('dark', t === 'dark'); });
+    btnLight.classList.toggle('on', t === 'light');
+    btnDark.classList.toggle('on', t === 'dark');
+    if (authThemeBtn) authThemeBtn.innerHTML = t === 'dark' ? SUN : MOON;
+    try { localStorage.setItem(KEY, t); } catch (e) {}
+  }
+  var saved = 'light';
+  try { saved = localStorage.getItem(KEY) || 'light'; } catch (e) {}
+  applyTheme(saved);
+  btnLight.addEventListener('click', function () { applyTheme('light'); });
+  btnDark.addEventListener('click', function () { applyTheme('dark'); });
+  if (authThemeBtn) authThemeBtn.addEventListener('click', function () {
+    applyTheme(btnDark.classList.contains('on') ? 'light' : 'dark');
+  });
+
+  /* 页面级 toast（文档反馈） */
+  function toast(text) {
+    var host = document.getElementById('toastHost');
+    var el = document.createElement('div');
+    el.className = 'toast';
+    el.textContent = text;
+    host.appendChild(el);
+    setTimeout(function () { host.removeChild(el); }, 3000);
+  }
+
+  /* ---- 登录 ⇄ 注册 面板切换 ---- */
+  var panelLogin = document.getElementById('panelLogin');
+  var panelRegister = document.getElementById('panelRegister');
+  function showPanel(which) {
+    panelLogin.classList.toggle('on', which === 'login');
+    panelRegister.classList.toggle('on', which === 'register');
+    resetLoginDemo();
+    resetRegisterDemo();
+  }
+  document.getElementById('gotoReg').addEventListener('click', function () { showPanel('register'); });
+  document.getElementById('gotoLogin').addEventListener('click', function () { showPanel('login'); });
+
+  /* ---- 密码显隐（data-eye 指向对应 input id） ---- */
+  document.querySelectorAll('.key-eye[data-eye]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var input = document.getElementById(btn.getAttribute('data-eye'));
+      if (input) input.type = input.type === 'password' ? 'text' : 'password';
+    });
+  });
+
+  /* ---- 登录卡片：状态载入 + 提交演示 ---- */
+  var loginBanner = document.getElementById('loginBanner');
+  var loginBannerText = document.getElementById('loginBannerText');
+  var btnLogin = document.getElementById('btnLogin');
+  var lgUser = document.getElementById('lgUser');
+  var lgPass = document.getElementById('lgPass');
+  var lgUserInput = document.getElementById('lgUserInput');
+  var lgPassInput = document.getElementById('lgPassInput');
+  var LOGIN_SPINNER_HTML = btnLogin.innerHTML;
+
+  function setLoginButton(loading) {
+    if (loading) {
+      btnLogin.classList.add('loading');
+      btnLogin.innerHTML = '<span class="spin"></span>登录中…';
+    } else {
+      btnLogin.classList.remove('loading');
+      btnLogin.innerHTML = LOGIN_SPINNER_HTML;
+    }
+  }
+  function showLoginBanner(text, tone) {
+    loginBanner.querySelectorAll('.b-act').forEach(function (b) { b.remove(); });
+    loginBannerText.textContent = text;
+    loginBanner.className = 'form-banner ' + (tone || 'err');
+    loginBanner.hidden = false;
+  }
+  function hideLoginBanner() { loginBanner.hidden = true; }
+  function resetLoginDemo() {
+    hideLoginBanner();
+    setLoginButton(false);
+    lgUser.classList.remove('invalid');
+    lgPass.classList.remove('invalid');
+  }
+  /* banner 与「重试」按钮的文档级演示（真实实现由 T2 绑定） */
+  var STATES = {
+    default:  function () { resetLoginDemo(); },
+    cred:     function () { showLoginBanner('用户名或密码错误', 'err'); setLoginButton(false); },
+    expire:   function () { showLoginBanner('登录已过期，请重新登录', 'warn'); setLoginButton(false); },
+    ban:      function () { showLoginBanner('账号已被封禁，无法使用。如有疑问请联系管理员', 'warn'); setLoginButton(false); },
+    net:      function () {
+      showLoginBanner('无法连接服务器，请检查网络后重试', 'err');
+      var act = document.createElement('button');
+      act.className = 'b-act'; act.textContent = '重试';
+      act.addEventListener('click', function () { toast('演示：重试（复用已填表单）'); });
+      loginBanner.appendChild(act);
+      setLoginButton(false);
+    },
+    loading:  function () { hideLoginBanner(); setLoginButton(true); }
+  };
+  document.querySelectorAll('input[name="lgState"]').forEach(function (r) {
+    r.addEventListener('change', function () { STATES[r.value](); });
+  });
+  lgUserInput.addEventListener('input', function () { lgUser.classList.remove('invalid'); });
+  lgPassInput.addEventListener('input', function () { lgPass.classList.remove('invalid'); });
+  btnLogin.addEventListener('click', function () {
+    if (btnLogin.classList.contains('loading')) return;
+    var empty = false;
+    if (!lgUserInput.value.trim()) { lgUser.classList.add('invalid'); empty = true; }
+    if (!lgPassInput.value) { lgPass.classList.add('invalid'); empty = true; }
+    if (empty) { hideLoginBanner(); return; }
+    hideLoginBanner();
+    setLoginButton(true);
+    setTimeout(function () {
+      setLoginButton(false);
+      toast('演示：登录成功 → 回跳原路由进入主界面（第 4 节框架；本页为设计稿不实际跳转）');
+    }, 1200);
+  });
+
+  /* ---- 注册卡片：前端校验演示 ---- */
+  var rgUser = document.getElementById('rgUser');
+  var rgPass = document.getElementById('rgPass');
+  var rgPass2 = document.getElementById('rgPass2');
+  var rgUserInput = document.getElementById('rgUserInput');
+  var rgPassInput = document.getElementById('rgPassInput');
+  var rgPass2Input = document.getElementById('rgPass2Input');
+  var rgUserErr = document.getElementById('rgUserErr');
+  var btnRegister = document.getElementById('btnRegister');
+  var regBanner = document.getElementById('regBanner');
+  var regBannerText = document.getElementById('regBannerText');
+  var REGISTER_SPINNER_HTML = btnRegister.innerHTML;
+  var USERNAME_RE = /^[一-龥A-Za-z0-9_-]{2,32}$/;
+
+  function setRegisterButton(loading) {
+    if (loading) {
+      btnRegister.classList.add('loading');
+      btnRegister.innerHTML = '<span class="spin"></span>注册中…';
+    } else {
+      btnRegister.classList.remove('loading');
+      btnRegister.innerHTML = REGISTER_SPINNER_HTML;
+    }
+  }
+  function resetRegisterDemo() {
+    regBanner.hidden = true;
+    setRegisterButton(false);
+    [rgUser, rgPass, rgPass2].forEach(function (f) { f.classList.remove('invalid'); });
+  }
+  rgUserInput.addEventListener('input', function () { rgUser.classList.remove('invalid'); });
+  rgPassInput.addEventListener('input', function () { rgPass.classList.remove('invalid'); rgPass2.classList.remove('invalid'); });
+  rgPass2Input.addEventListener('input', function () { rgPass2.classList.remove('invalid'); });
+  btnRegister.addEventListener('click', function () {
+    if (btnRegister.classList.contains('loading')) return;
+    regBanner.hidden = true;
+    var ok = true;
+    var u = rgUserInput.value.trim();
+    if (!u) { rgUserErr.textContent = '请输入用户名'; rgUser.classList.add('invalid'); ok = false; }
+    else if (!USERNAME_RE.test(u)) { rgUserErr.textContent = '用户名需 2~32 个字符，仅支持中文、字母、数字、下划线、连字符'; rgUser.classList.add('invalid'); ok = false; }
+    if (rgPassInput.value.length < 8) { rgPass.classList.add('invalid'); ok = false; }
+    if (!rgPass2Input.value || rgPass2Input.value !== rgPassInput.value) { rgPass2.classList.add('invalid'); ok = false; }
+    if (!ok) { toast('演示：前端拦截（spec 异常分支：不提交）'); return; }
+    setRegisterButton(true);
+    setTimeout(function () {
+      setRegisterButton(false);
+      toast('演示：注册成功并自动登录 → 进入主界面（3 秒内；本页为设计稿不实际跳转）');
+    }, 1200);
+  });
+})();
+</script>
+</body>
+</html>

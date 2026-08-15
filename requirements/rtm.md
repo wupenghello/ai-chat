@@ -11,7 +11,7 @@
 | REQ-003 | 新建会话（生成中新建 = 中断并标注） | P0 | design/iter-1（已基线） | stores/sessions.ts, TheSidebar | sessions.spec | 已验证 | iter-1 |
 | REQ-004 | 查看历史会话并切换（CHG-001：切换不中断，后台继续生成） | P0 | design/iter-1（已基线） | stores/sessions.ts, SessionListItem | sessions.spec（CHG-001 用例） | 已验证 | iter-1 |
 | REQ-005 | 删除会话 | P0 | design/iter-1（已基线） | TheSidebar + ConfirmModal | sessions.spec | 已验证 | iter-1 |
-| REQ-006 | 会话本地持久化与恢复（IndexedDB） | P0 | 不涉及（数据层） | db/idb.ts, stores/sessions.ts | sessions.spec + 浏览器实测（修复 Proxy 克隆缺陷后端到端通过） | 已验证（基线 v3 改写后：数据层换源随 iter-6 T3——服务端为唯一持久层，idb 迁移源角色不变，换源后按新验收口径复验） | iter-1（改写落地 iter-6 T3） |
+| REQ-006 | 会话本地持久化与恢复（IndexedDB） | P0 | design/iter-6（已基线，2026-08-15 CEO 批准——未登录门禁/路由守卫部分；数据层本身不涉及设计稿） | db/idb.ts, stores/sessions.ts | sessions.spec + 浏览器实测（修复 Proxy 克隆缺陷后端到端通过） | 已验证（基线 v3 改写后：数据层换源随 iter-6 T3——服务端为唯一持久层，idb 迁移源角色不变，换源后按新验收口径复验） | iter-1（改写落地 iter-6 T3） |
 | REQ-007 | 调用异常与降级提示（401 引导至设置页） | P0 | design/iter-1（已基线） | api/client.ts, ErrorBubble, AppToast | client.spec / sessions.spec + 浏览器实测（未配置引导、429 原因透传） | 已验证 | iter-1 |
 | REQ-008 | 系统提示词设置 | P1（CEO 已确认降级） | design/iter-2（已基线） | stores/settings.ts, SettingsForm, api/client.ts buildContext | settings.spec / sessions.spec + 走查（plans/iter-2-verify.md 24 条） | 已验证（"回复只用英文"端到端以请求体单测取证：system 恒居首位） | iter-2 |
 | REQ-009 | 会话自动命名 | P1 | design/iter-3（已基线） | stores/sessions.ts（titleOf 省略号 + renamed） | sessions-naming.spec | 已验证 | iter-3 |
@@ -25,7 +25,7 @@
 | REQ-017 | 暗色主题 | P2 | design/iter-5（已基线） | App.vue 令牌根 [data-theme=dark] 覆盖, composables/useTheme, 顶栏主题按钮 + SettingsForm 外观 segmented | 浏览器实测（暗色 #131417/#1E2026/#E6EAF0 命中令牌、切换即变、刷新保持）+ 全组件 token 化走查 | 已验证 | iter-5 |
 | REQ-018 | 多供应商档案一键切换（REQ-014 增强） | P2 | design/iter-5（已基线） | stores/settings（profiles + 旧格式迁移 + setActiveProfile/removeProfile）, SettingsForm 档案列表/模态, TheSidebar 当前档案标签 | settings.spec（4 档案用例）/ settings-form.spec（4 用例）+ 浏览器实测（迁移/添加/切换/删除边界） | 已验证（**GLM 真实流式按 DEF-002 CEO 决策 2026-08-15 不补验、接受部分达成**——多档案切换性由配置/协议层与单测承载，参照 REQ-014 行注记） | iter-5 |
 | REQ-019 | 版本切换（编辑/重生成后切换新旧分支） | P1 | design/iter-4（已同步） | stores/sessions.ts（toggleVersion + branches + forkId） | sessions.spec（版本切换用例）+ MessageBubble.spec | 已验证 | iter-4 |
-| REQ-020 | 注册与登录（用户名+密码，会话 token）〔CHG-004〕 | P0（CEO 已确认） | 待设计师产出（登录/注册原型，iter-6 T0） | 待排期：backend/（FastAPI，T1）+ 登录页与路由守卫（T2）；token 传递方式已定案 HttpOnly Cookie | 待设计 | 未开始（已列入 iter-6，计划批准 2026-08-15） | iter-6（T0/T1/T2） |
+| REQ-020 | 注册与登录（用户名+密码，会话 token；用户名规则 2~32 字符/大小写不敏感唯一）〔CHG-004〕 | P0（CEO 已确认） | design/iter-6（已基线，2026-08-15 CEO 批准） | 待排期：backend/（FastAPI，T1）+ 登录页与路由守卫（T2）；token 传递方式已定案 HttpOnly Cookie | 待设计 | 未开始（已列入 iter-6，计划批准 2026-08-15） | iter-6（T0/T1/T2） |
 | REQ-021 | 账号管理（改密码、注销/删号）〔CHG-004〕 | P1（CEO 已确认） | 待设计师产出（账号管理原型） | 待排期 | 待设计 | 未开始（基线 v3；排期 iter-8） | iter-8 |
 | REQ-022 | 服务端会话云存储与多设备同步（LWW + 一次性本地迁移，REQ-006 承接）〔CHG-004〕 | P0（CEO 已确认） | 迁移入口（首次登录提示，待设计） | 待排期：存储核心 iter-6 T3（backend/ sessions API + db/idb 换源）；断网重试/LWW 细项 iter-7；迁移入口 iter-8 | 待设计 | 未开始（存储核心已列入 iter-6，计划批准 2026-08-15） | iter-6 起（T3 核心；细项 iter-7/8） |
 | REQ-023 | API 密钥服务端代管与流式代理（双模式：统一 key / 自填 key 解锁高配额）〔CHG-004〕 | P0（CEO 已确认） | 高级设置待重设计（随 REQ-014） | 待排期（FastAPI 代理层 + api/client.ts 切换；iter-6 骨架已预留 proxy 模块位） | 待设计 | 未开始（基线 v3；排期 iter-7 主线；iter-6 内对话为直连上游过渡态） | iter-7 |
