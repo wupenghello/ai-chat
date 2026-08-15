@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-chat · iter-3 设计稿（已基线 design-iter-3，2026-08-15 CEO 批准）</title>
+<!--
+  ============================================================
+  ai-chat 迭代 3 正式设计稿（设计稿即页面骨架，开发对照实现）
+  依据：requirements/spec.md（req-baseline-v1，本稿覆盖 REQ-009 / REQ-011 / REQ-012 / REQ-013）
+        plans/iter-3.md（T0：4 个 UI 触点，Σ9，M=2 / L=1 / S=2）
+        design/iter-1/index.html（已基线 design-iter-1，本稿全部令牌与其一致；
+                               代码块深底 #23272E/#2B303A 为其「P1 预留」定稿值，iter-3 直接启用，非新增）
+        design/iter-2/index.html（结构范式：触点分节 → 状态走查清单 → 新增令牌建议 → 待澄清 → 基线声明）
+  状态：已基线 design-iter-3（2026-08-15 CEO 批准，6 项待澄清同日逐条定夺）
+  零外部依赖，直接双击打开
+  ============================================================
+-->
+<style>
+/* ============================================================
+   设计令牌：与 design/iter-1/index.html 基线值一致；唯一新增
+   --c-success-on-dark #4CC38A（深底成功反馈绿，CEO 批准 2026-08-15，见待澄清 1）
+   色板 / 字号 / 圆角 / 阴影 / 间距 / 动效定义见 iter-1 稿第 1 节令牌表，
+   源码内令牌注释保留以便开发对照。
+   ============================================================ */
+:root {
+  --c-bg: #F5F6F7; --c-surface: #FFFFFF; --c-border: #E5E6EB;
+  --c-text-1: #1F2329; --c-text-2: #646A73; --c-text-3: #8F959E;
+  --c-primary: #3370FF; --c-primary-h: #2E5FDF; --c-primary-a: #2860D8; --c-primary-l: #F0F4FF;
+  --c-danger: #D93025; --c-danger-l: #FDECEA; --c-success: #1A9E5C; --c-success-on-dark: #4CC38A;
+  --c-warn: #B45309; --c-warn-l: #FFF7E8;
+  --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-full: 999px;
+  --shadow-1: 0 1px 2px rgba(31,35,41,.06);
+  --shadow-2: 0 4px 16px rgba(31,35,41,.10);
+  --shadow-3: 0 12px 40px rgba(31,35,41,.16);
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-size: 14px; line-height: 1.6; color: var(--c-text-1);
+  background: var(--c-bg); padding: 40px 32px 80px;
+}
+.page { max-width: 960px; margin: 0 auto; }
+h1 { font-size: 20px; font-weight: 600; }
+.sub { font-size: 13px; color: var(--c-text-3); margin: 4px 0 8px; }
+.sub b { color: var(--c-text-2); }
+.badge {
+  display: inline-block; padding: 1px 10px; border-radius: var(--r-full);
+  font-size: 12px; font-weight: 500; background: var(--c-warn-l); color: var(--c-warn);
+  margin-bottom: 32px;
+}
+section { margin-bottom: 48px; }
+h2 { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+h2 .no { color: var(--c-primary); margin-right: 4px; }
+.sec-desc { font-size: 13px; color: var(--c-text-3); margin-bottom: 16px; }
+
+table { width: 100%; border-collapse: collapse; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-md); overflow: hidden; font-size: 13px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--c-border); vertical-align: top; }
+th { color: var(--c-text-3); font-weight: 500; background: #FAFBFC; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+td code, li code, .ann code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; background: #F2F3F5; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
+
+.spec { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); padding: 24px; box-shadow: var(--shadow-1); margin-bottom: 16px; }
+.spec-title { font-size: 13px; font-weight: 600; color: var(--c-text-2); margin-bottom: 12px; }
+.spec-title .tag { font-weight: 400; color: var(--c-text-3); margin-left: 8px; }
+.stage { border: 1px dashed var(--c-border); border-radius: var(--r-md); padding: 16px; background: var(--c-bg); }
+.stage.white { background: var(--c-surface); }
+.ann { font-size: 12px; color: var(--c-text-3); margin-top: 8px; line-height: 1.8; }
+.ann b { color: var(--c-text-2); font-weight: 600; }
+
+/* ============================================================
+   产品组件样式（复用 iter-1 基线样式，本稿新增部分单独注释）
+   ============================================================ */
+
+/* ---- 会话列表项（复用 iter-1，触点二三新增重命名） ---- */
+.session-item {
+  position: relative; display: flex; flex-direction: column; justify-content: center;
+  min-height: 48px; padding: 6px 32px 6px 10px;
+  border-radius: var(--r-md); cursor: pointer; transition: background .15s ease;
+}
+.session-item:hover { background: #F2F3F5; }
+.session-item.active { background: var(--c-primary-l); }
+.session-title { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session-item.active .session-title { color: var(--c-primary-h); }
+.session-meta { font-size: 12px; color: var(--c-text-3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session-del {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  width: 24px; height: 24px; border-radius: var(--r-sm);
+  display: none; align-items: center; justify-content: center; color: var(--c-text-3);
+}
+.session-item:hover .session-del { display: flex; }
+.session-del:hover { background: var(--c-danger-l); color: var(--c-danger); }
+.tagpill { display: inline-block; padding: 0 6px; height: 18px; line-height: 18px; border-radius: var(--r-full); font-size: 12px; font-weight: 500; }
+.tag-interrupted { background: var(--c-warn-l); color: var(--c-warn); }
+
+/* ★ 触点二新增：标题行（flex 容纳重命名铅笔图标）+ 编辑态输入框
+   仅组合既有令牌：主色 #3370FF、描边 #E5E6EB、焦点环 rgba(51,112,255,.12)、圆角 6px */
+.session-title-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.session-title-row .session-title { flex: 1; min-width: 0; }
+.session-rename {
+  width: 20px; height: 20px; border-radius: var(--r-sm);
+  display: none; align-items: center; justify-content: center; color: var(--c-text-3); flex-shrink: 0;
+}
+.session-item:hover .session-rename { display: flex; }
+.session-rename:hover { background: var(--c-primary-l); color: var(--c-primary-h); }
+.session-edit-input {
+  width: 100%; height: 26px; padding: 0 8px;
+  font-size: 13px; font-weight: 500; line-height: 26px;
+  border: 1px solid var(--c-primary); border-radius: var(--r-sm); outline: none;
+  color: var(--c-text-1); background: var(--c-surface); font-family: inherit;
+  transition: box-shadow .15s ease;
+}
+.session-edit-input:focus { border-color: var(--c-primary); box-shadow: 0 0 0 3px rgba(51,112,255,.12); }
+
+/* ---- 消息气泡（复用 iter-1） ---- */
+.msg { display: flex; gap: 12px; margin-bottom: 24px; }
+.msg-avatar { width: 28px; height: 28px; border-radius: var(--r-full); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; }
+.msg-ai .msg-avatar { background: var(--c-primary-l); color: var(--c-primary-h); }
+.msg-user { flex-direction: row-reverse; }
+.msg-user .msg-avatar { background: #E8EBF2; color: var(--c-text-2); }
+.msg-body { max-width: calc(100% - 80px); min-width: 0; }
+.msg-role { font-size: 12px; color: var(--c-text-3); margin-bottom: 4px; }
+.msg-user .msg-role { text-align: right; }
+.bubble-ai { font-size: 15px; line-height: 1.75; word-break: break-word; }
+.bubble-user { background: var(--c-primary); color: #fff; font-size: 15px; line-height: 1.7; padding: 10px 14px; border-radius: var(--r-lg); border-top-right-radius: 4px; white-space: pre-wrap; word-break: break-word; }
+.cursor { display: inline-block; width: 2px; height: 1em; background: var(--c-primary); vertical-align: -2px; margin-left: 2px; animation: blink .8s step-end infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.msg-status-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.status-generating { font-size: 12px; color: var(--c-text-3); display: flex; align-items: center; gap: 6px; }
+.spinner { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--c-border); border-top-color: var(--c-primary); animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ★ 触点一：Markdown 富文本渲染（改造 iter-1 的 .bubble-ai 纯文本渲染）
+   全部使用既有令牌：文字三级色、描边 #E5E6EB、表头 #FAFBFC、行内代码底 #F2F3F5、主色链接 #3370FF */
+.md { font-size: 15px; line-height: 1.75; color: var(--c-text-1); }
+.md p { margin: 0 0 8px; }
+.md p:last-child { margin-bottom: 0; }
+.md h1, .md h2, .md h3, .md h4 { font-weight: 600; color: var(--c-text-1); margin: 16px 0 8px; line-height: 1.4; }
+.md h1 { font-size: 20px; }
+.md h2 { font-size: 18px; }
+.md h3 { font-size: 16px; }
+.md h4 { font-size: 15px; }
+.md ul, .md ol { margin: 0 0 8px; padding-left: 24px; }
+.md li { margin: 2px 0; }
+.md li::marker { color: var(--c-text-3); }
+.md blockquote { border-left: 3px solid var(--c-border); padding: 2px 12px; color: var(--c-text-2); margin: 8px 0; }
+.md a { color: var(--c-primary); text-decoration: none; }
+.md a:hover { text-decoration: underline; }
+.md hr { border: none; border-top: 1px solid var(--c-border); margin: 12px 0; }
+.md strong { font-weight: 600; }
+.md code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; background: #F2F3F5; padding: 1px 6px; border-radius: 4px; color: var(--c-text-1); white-space: normal; word-break: break-all; }
+.md table { border-collapse: collapse; margin: 8px 0; width: 100%; font-size: 14px; }
+.md th, .md td { border: 1px solid var(--c-border); padding: 6px 10px; text-align: left; vertical-align: top; }
+.md th { background: #FAFBFC; font-weight: 500; color: var(--c-text-2); }
+.md td { color: var(--c-text-1); }
+.md .table-wrap { overflow-x: auto; margin: 8px 0; }
+
+/* ★ 触点一：代码块（启用 iter-1「P1 预留」深底 #23272E/#2B303A，非新增）
+   头部 = 语言标签 + 复制按钮；主体 = pre 等宽。 */
+.code-block { position: relative; margin: 12px 0; }
+.code-head { display: flex; align-items: center; justify-content: space-between; background: #23272E; color: #9AA4B2; font-size: 12px; padding: 6px 12px; border-radius: var(--r-lg) var(--r-lg) 0 0; }
+.code-lang { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; letter-spacing: .2px; }
+.code-block pre { background: #2B303A; color: #E6EAF0; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; line-height: 1.6; padding: 12px 16px; border-radius: 0 0 var(--r-lg) var(--r-lg); overflow-x: auto; white-space: pre; }
+.code-copy {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 24px; padding: 0 8px; border: none; border-radius: var(--r-sm);
+  background: transparent; cursor: pointer;
+  color: #9AA4B2; font-size: 12px; font-weight: 500; font-family: inherit;
+  transition: color .15s ease, background .15s ease;
+}
+.code-copy:hover { color: #E6EAF0; background: rgba(255,255,255,.12); }
+.code-copy.copied { color: var(--c-success-on-dark); } /* ★ 新增令牌：深底成功反馈绿 #4CC38A（CEO 批准 2026-08-15，待澄清 1） */
+
+/* ---- 顶栏（触点四导出入口） ---- */
+.main-header-demo { height: 56px; display: flex; align-items: center; gap: 12px; padding: 0 24px; border-bottom: 1px solid var(--c-border); background: var(--c-surface); border-radius: var(--r-md) var(--r-md) 0 0; }
+.main-header-demo .t { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.main-header-demo .s { font-size: 12px; color: var(--c-text-3); }
+.btn-ghost { height: 32px; padding: 0 12px; border: 1px solid var(--c-border); border-radius: var(--r-md); font-size: 13px; color: var(--c-text-2); background: var(--c-surface); display: inline-flex; align-items: center; gap: 5px; cursor: pointer; transition: border-color .15s ease, color .15s ease, background .15s ease; }
+.btn-ghost:hover { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-l); }
+
+/* ---- Toast（复用 iter-1） ---- */
+.toast { display: inline-flex; align-items: center; gap: 8px; background: #23272E; color: #fff; font-size: 13px; padding: 10px 16px; border-radius: var(--r-md); box-shadow: var(--shadow-2); }
+
+/* ---- 导出文件样例（触点四） ---- */
+.export-sample { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; line-height: 1.7; color: #E6EAF0; background: #23272E; border-radius: var(--r-md); padding: 16px 20px; overflow-x: auto; white-space: pre; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>ai-chat · iter-3 设计稿</h1>
+  <div class="sub">
+    依据：<b>req-baseline-v1</b>（本稿覆盖 REQ-009 会话自动命名 / REQ-011 Markdown 渲染与代码复制 / REQ-012 会话重命名 / REQ-013 导出会话）·
+    <b>plans/iter-3.md</b> T0（4 个 UI 触点，Σ9）·
+    基础：<b>design/iter-1/index.html</b>（已基线，全部令牌复用；代码块深底为 iter-1「P1 预留」值，本稿启用，非新增）
+  </div>
+  <div class="badge">状态：已基线（design-iter-3 tag，CEO 批准 2026-08-15；6 项待澄清同日逐条定夺）</div>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">1</span>触点一：消息区 · Markdown 渲染与代码块复制（REQ-011）</h2>
+    <div class="sec-desc">
+      AI 回复气泡 <code>.bubble-ai</code> 由 iter-1 的纯文本渲染（<code>white-space: pre-wrap</code>）改造为
+      <b>Markdown 富文本渲染</b>。渲染库建议 <code>markdown-it</code> + <code>DOMPurify</code> 净化
+      （T2 首步做选型评估，见 plans/iter-3.md 风险清单；本稿不锁定具体库名，只定视觉与安全要求）。
+      改造对象：<code>MessageBubble.vue</code>；纯文本回复按普通段落渲染，不报错（REQ-011 异常分支）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.1 Markdown 富文本渲染总览<span class="tag">标题 / 列表 / 表格 / 行内代码 / 引用 / 链接</span></div>
+      <div class="stage white" style="max-width:760px;margin:0 auto;">
+        <div class="msg msg-ai">
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body">
+            <div class="msg-role">AI</div>
+            <div class="bubble-ai md">
+              <h3>这是三级标题</h3>
+              <p>正文段落支持 <strong>加粗</strong> 与 <em>斜体</em>，以及行内代码 <code>const x = 1</code> 与<a href="#">链接</a>。</p>
+              <ul>
+                <li>无序列表第一项</li>
+                <li>无序列表第二项，内容较长时自动换行不溢出容器</li>
+              </ul>
+              <ol>
+                <li>有序列表第一项</li>
+                <li>有序列表第二项</li>
+              </ol>
+              <blockquote>这是引用块，用于区分引文与正文。</blockquote>
+              <div class="table-wrap">
+                <table>
+                  <tr><th>参数</th><th>说明</th></tr>
+                  <tr><td>baseUrl</td><td>接口地址</td></tr>
+                  <tr><td>model</td><td>模型名</td></tr>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        标题 <b>h1 20px / h2 18px / h3 16px / h4 15px</b>，600 字重，行高 1.4，段前 16px 段后 8px；
+        列表缩进 <b>24px</b>，序号/圆点用 <code>::marker</code> 着 <code>#8F959E</code>；
+        行内代码 <b>13px 等宽</b> + 灰底 <code>#F2F3F5</code> + 圆角 4px；
+        表格 <b>描边 #E5E6EB + 表头灰底 #FAFBFC</b>（与设计稿说明表格同源），14px，宽表外层 <code>.table-wrap</code> 横向滚动；
+        引用块 3px 左侧描边 + 次级文字 <code>#646A73</code>；链接主色 <code>#3370FF</code>。
+        全部为既有令牌，<b>零新增</b>。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.2 代码块 + 语言标签 + 复制按钮<span class="tag">深底 · 三态反馈</span></div>
+      <div class="stage white" style="max-width:760px;margin:0 auto;">
+        <div class="msg msg-ai">
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body">
+            <div class="msg-role">AI</div>
+            <div class="bubble-ai md">
+              <p>流式读取示例：</p>
+              <div class="code-block">
+                <div class="code-head">
+                  <span class="code-lang">javascript</span>
+                  <button class="code-copy" type="button">
+                    <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="4.5" y="4.5" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M2.5 9.5v-6a1 1 0 0 1 1-1h6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+                    复制
+                  </button>
+                </div>
+                <pre><code>const reader = res.body.getReader();
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+}</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        代码块启用 iter-1「P1 预留」深底：头部 <code>#23272E</code>（圆角上 12px）+ 主体 <code>#2B303A</code>（圆角下 12px），
+        主体文字 <code>#E6EAF0</code> 13px 等宽 1.6 行高，<b>横向滚动不撑破气泡</b>。<br>
+        头部左 = 语言标签（围栏语言，无语言时显示 <code>code</code>）；右 = 「复制」按钮。<br>
+        <b>复制按钮三态</b>：默认 = 文字 <code>#9AA4B2</code>（头部文字色）+ 复制图标；
+        hover = 文字 <code>#E6EAF0</code> + 浅底 <code>rgba(255,255,255,.12)</code>（复用 iter-1 Toast 动作 hover 值）；
+        点击后 = 「已复制」+ 对勾，<b>1.5s 后恢复</b>为「复制」（反馈色 = 深底成功绿 <code>#4CC38A</code>，见待澄清 1）。
+        复制内容 = 代码块原文（<b>不含语言标签、不含围栏符号 ```</b>），写入系统剪贴板，逐字一致（REQ-011 验收）。
+      </div>
+      <div class="stage white" style="max-width:760px;margin:12px auto 0;display:flex;gap:20px;align-items:center;flex-wrap:wrap;">
+        <span style="font-size:12px;color:var(--c-text-3)">默认：</span>
+        <button class="code-copy" type="button" style="color:#9AA4B2"><svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="4.5" y="4.5" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M2.5 9.5v-6a1 1 0 0 1 1-1h6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>复制</button>
+        <span style="font-size:12px;color:var(--c-text-3)">hover：</span>
+        <button class="code-copy" type="button" style="color:#E6EAF0;background:rgba(255,255,255,.12)"><svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="4.5" y="4.5" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M2.5 9.5v-6a1 1 0 0 1 1-1h6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>复制</button>
+        <span style="font-size:12px;color:var(--c-text-3)">已复制：</span>
+        <button class="code-copy copied" type="button"><svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2.5 7.5l3 3 6-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>已复制</button>
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.3 安全：XSS 净化（AI 输出视为不可信）<span class="tag">DOMPurify · 恶意输入不执行</span></div>
+      <div class="stage white" style="max-width:760px;margin:0 auto;">
+        <div class="msg msg-ai">
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body">
+            <div class="msg-role">AI</div>
+            <div class="bubble-ai md">
+              <p>以下是一段看起来无害的回复，但如果模型被诱导输出 HTML，净化器会剥离危险标签与事件属性：</p>
+              <p>&lt;script&gt;alert('xss')&lt;/script&gt;</p>
+              <p>危险标签与事件属性（onerror/onclick 等）在净化后不保留，仅剩转义文本，脚本不会执行。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>渲染管线（给开发，T2 验收）</b>：<code>markdown-it 渲染 → 输出 HTML 字符串 → DOMPurify.sanitize() → 挂载 v-html</code>。
+        AI 输出一律视为<b>不可信输入</b>；净化后剥离 <code>&lt;script&gt;</code>、事件属性、<code>javascript:</code> 协议链接等，
+        仅保留白名单标签（p/h1-h4/ul/ol/li/blockquote/code/pre/table/thead/tbody/tr/th/td/a/strong/em/hr/br）。
+        渲染库若开启 <code>html:false</code> 可进一步降低注入面（标记为 T2 选型评估项）。
+        这是<b>数据/安全层要求</b>，界面无专属视觉，验收走「恶意 HTML/脚本被净化不执行」用例（REQ-011 + 走查清单第 9 条）。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.4 极端内容<span class="tag">超长代码 / 纯文本回复 / 流式增量渲染</span></div>
+      <div class="stage white" style="max-width:760px;margin:0 auto;">
+        <div class="msg msg-ai">
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body">
+            <div class="msg-role">AI</div>
+            <div class="bubble-ai md">
+              <p>纯文本回复按普通段落渲染，不出错：</p>
+              <p>你好小明！已经记住了。后续每轮请求都会携带本会话最近 20 轮的上下文，你可以接着问我「我叫什么」试试。</p>
+              <div class="code-block">
+                <div class="code-head"><span class="code-lang">bash</span><button class="code-copy" type="button"><svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="4.5" y="4.5" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M2.5 9.5v-6a1 1 0 0 1 1-1h6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>复制</button></div>
+                <pre><code>npm run dev -- --host 0.0.0.0
+# 这是一行非常非常长的注释，用于验证代码块在内容超出容器宽度时出现横向滚动条，而不是把气泡撑破导致页面布局错乱</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        纯文本回复：无任何 Markdown 语法时按普通段落渲染（<code>.md p</code>），与 iter-1 直排视觉一致，不报错。<br>
+        超长代码：<code>pre</code> 横向滚动（<code>overflow-x: auto</code>），气泡不撑破。<br>
+        <b>流式增量渲染（关键技术风险）</b>：生成中逐块渲染 Markdown，<b>历史已渲染消息不得重排闪烁</b>（REQ-001 验收延续）；
+        代码围栏 ``` 在流式未闭合时先按普通段落/预占渲染，流结束时补全为代码块（避免「半块闪烁」，见走查清单第 10 条）。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">2</span>触点二：会话列表 · 重命名（REQ-012）</h2>
+    <div class="sec-desc">
+      在 iter-1 会话列表项 <code>SessionListItem.vue</code> 上新增行内重命名。<b>入口定稿：双击标题进入编辑</b>；
+      悬停时标题右侧出现铅笔图标作为可发现性补充（与双击等价，桌面优先）。回车保存、Esc 取消、失焦保存（已定稿，见待澄清 3）。
+      复用 store 既有更新方法，持久化自动生效。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.1 默认态 + 悬停态<span class="tag">双击提示 · 铅笔图标</span></div>
+      <div class="stage" style="display:flex;justify-content:center;">
+        <div class="sidebar-demo" style="width:264px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--r-lg);padding:8px;box-shadow:var(--shadow-1);">
+          <div class="session-list" style="padding:8px;">
+            <div class="list-label" style="font-size:12px;color:var(--c-text-3);font-weight:500;padding:8px 8px 4px;">历史会话（按最近活跃排序）</div>
+            <div class="session-item active" style="cursor:default;">
+              <div class="session-title-row">
+                <div class="session-title">帮我写一封请假邮件，理由是家里…</div>
+                <div class="session-rename" style="display:flex;" title="重命名"><svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M8.5 2.5l3 3L4 13H1v-3l7.5-7.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg></div>
+              </div>
+              <div class="session-meta">内容摘要 · 14:32</div>
+              <div class="session-del" style="display:flex;" title="删除会话"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 3.5h10M5.5 3.5V2h3v1.5M3.5 3.5l.6 8.5h5.8l.6-8.5M5.8 6v3.5M8.2 6v3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></div>
+            </div>
+            <div class="session-item">
+              <div class="session-title-row">
+                <div class="session-title">流式请求的代码示例</div>
+                <div class="session-rename" title="重命名"><svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M8.5 2.5l3 3L4 13H1v-3l7.5-7.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg></div>
+              </div>
+              <div class="session-meta"><span class="tagpill tag-interrupted">生成中断</span> 给我一个用 JS 实… · 12:08</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        标题行改为 <code>flex</code>：标题占满剩余宽度（超长省略号），右侧 20px 铅笔图标仅在 <b>hover 时显示</b>（与删除按钮同规则）。
+        铅笔图标 hover 浅蓝底 <code>#F0F4FF</code> + 主色 <code>#2E5FDF</code>。<br>
+        <b>交互提示</b>：双击标题进入编辑（主入口）；铅笔图标单击 = 进入编辑（辅助入口，桌面可发现性）；两者等价。
+        列表项整体仍可单击切换会话（双击与单击冲突：<b>双击的第一击视为选中，第二击进入编辑</b>，需在实现层区分，见待澄清 2）。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.2 行内编辑态<span class="tag">输入框 · 聚焦态 · 回车/Esc</span></div>
+      <div class="stage" style="display:flex;justify-content:center;">
+        <div class="sidebar-demo" style="width:264px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--r-lg);padding:8px;box-shadow:var(--shadow-1);">
+          <div class="session-list" style="padding:8px;">
+            <div class="list-label" style="font-size:12px;color:var(--c-text-3);font-weight:500;padding:8px 8px 4px;">历史会话（按最近活跃排序）</div>
+            <div class="session-item active">
+              <input class="session-edit-input" value="帮我写一封请假邮件，理由是家里有事" spellcheck="false" autocomplete="off">
+              <div class="session-meta">内容摘要 · 14:32</div>
+            </div>
+            <div class="session-item">
+              <div class="session-title">流式请求的代码示例</div>
+              <div class="session-meta"><span class="tagpill tag-interrupted">生成中断</span> 给我一个用 JS 实… · 12:08</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        编辑态：标题位置替换为<b>输入框</b>（高 26px，13px/500，内边距 0 8px，圆角 <b>6px</b>），
+        <b>默认即主色描边 <code>#3370FF</code> 表示「正在编辑」</b>，focus 时加 3px <code>rgba(51,112,255,.12)</code> 光晕（复用 iter-1 输入框 focus 环）。
+        列表项底保持当前态（选中 = <code>#F0F4FF</code>）；编辑时<b>其他列表项不变</b>。<br>
+        <b>键盘</b>：<b>Enter = 保存</b>（trim 后非空才写，空则恢复原标题）；<b>Esc = 取消</b>（恢复原标题，退出编辑）。
+        <b>失焦 = 保存</b>（已定稿，见待澄清 3）；输入框内文本超长时按输入框滚动，不撑破列表项。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.3 空标题处理 + 持久化<span class="tag">REQ-012 边界</span></div>
+      <div class="stage white" style="max-width:760px;margin:0 auto;">
+        <div class="session-item active" style="max-width:264px;">
+          <input class="session-edit-input" value="   " spellcheck="false">
+          <div class="session-meta">内容摘要 · 14:32</div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>空标题（trim 后为空）</b>：回车或失焦保存时<b>不写入空标题</b>，恢复原标题（不产生无标题会话）；可配合 Esc 语义理解为「空 = 放弃本次改动」。
+        不弹错误提示（空标题不是危险操作，静默恢复即可）。<br>
+        <b>持久化</b>：保存写入 store 现有更新方法 → IndexedDB（REQ-006），<b>刷新后新标题仍生效</b>（REQ-012 验收）。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">3</span>触点三：会话列表 · 自动命名（REQ-009）</h2>
+    <div class="sec-desc">
+      多为数据层逻辑（<code>stores/sessions.ts</code>），界面主要是列表项标题的<b>展示态</b> + 与手动重命名（REQ-012）的<b>冲突规则</b>。
+      <code>SessionListItem.vue</code> 已展示 <code>title</code>，本触点<b>无 UI 改动</b>（plans/iter-3.md T1 判定）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">3.1 标题展示态：初始 → 自动命名 → 手动重命名<span class="tag">REQ-009 主流程</span></div>
+      <div class="stage" style="display:flex;justify-content:center;">
+        <div class="sidebar-demo" style="width:264px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--r-lg);padding:8px;box-shadow:var(--shadow-1);">
+          <div class="session-list" style="padding:8px;">
+            <div class="list-label" style="font-size:12px;color:var(--c-text-3);font-weight:500;padding:8px 8px 4px;">历史会话（按最近活跃排序）</div>
+            <div class="session-item active">
+              <div class="session-title">帮我写一封请假邮件，理由是家里…</div>
+              <div class="session-meta">自动命名 · 14:32</div>
+            </div>
+            <div class="session-item">
+              <div class="session-title">请假邮件（重要）</div>
+              <div class="session-meta">手动重命名 · 14:20</div>
+            </div>
+            <div class="session-item">
+              <div class="session-title">新会话</div>
+              <div class="session-meta">未发送消息 · 14:10</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>初始标题</b>：新建会话标题 = <b>「新会话」</b>（列表 meta 行已有时间可区分多个空会话；已定稿「新会话」，见待澄清 4）。<br>
+        <b>自动命名</b>：用户发出<b>首条消息</b>后，标题更新为该消息 <b>trim 后前 20 字</b>；超过 20 字追加省略号 <code>…</code>（如「帮我写一封请假邮件，理由是家里…」）。
+        发送为空已被 REQ-001 拦截，不会触发（REQ-009 异常分支）。<br>
+        <b>手动重命名</b>：REQ-012 改名后标题原样展示（如「请假邮件（重要）」）。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">3.2 自动命名与手动重命名的冲突规则<span class="tag">数据层 · 手动优先</span></div>
+      <div class="stage white">
+        <div style="font-size:13px;color:var(--c-text-2);line-height:2;">
+          规则（写入 <code>stores/sessions.ts</code>，plans/iter-3.md 风险清单已定）：<br>
+          1. 会话新增字段 <code>renamed: boolean = false</code>（或 <code>titleEditedAt</code> 标记）。<br>
+          2. 首条用户消息后：<b>仅当 <code>renamed === false</code></b> 才用前 20 字自动命名并保持标记不变。<br>
+          3. 用户手动重命名（REQ-012 回车保存）：写入标题并置 <code>renamed = true</code>。此后自动命名<b>不再覆盖</b>该标题。<br>
+          4. 手动改回为空/取消（Esc）不改变 <code>renamed</code> 标记。
+        </div>
+      </div>
+      <div class="ann">
+        冲突验收（plans/iter-3.md T1）：<b>手动改名后不再被自动命名覆盖</b>。这是数据层逻辑，界面无专属视觉，
+        验收走「改名 → 继续发送消息 → 标题不变」用例（走查清单第 19 条）。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">4</span>触点四：会话导出（REQ-013）</h2>
+    <div class="sec-desc">
+      导出<b>当前查看的会话</b>为 Markdown 文本文件（<code>.md</code>）。<b>入口定稿：顶栏标题右侧「导出」次级按钮</b>
+      （导出对象是当前会话，顶栏是当前会话标题栏，语义最直接；不与列表项删除/重命名图标堆叠）。格式区分用户/AI。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.1 导出入口<span class="tag">顶栏 · 次级按钮 · 下载触发</span></div>
+      <div class="stage white">
+        <div class="main-header-demo" style="border-radius:var(--r-lg);">
+          <div style="flex:1;min-width:0;">
+            <div class="t">帮我写一封请假邮件，理由是家里有事</div>
+            <div class="s">模型：glm-5.3 · 已配置密钥</div>
+          </div>
+          <button class="btn-ghost">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v7M4.5 6.5L7 9l2.5-2.5M2.5 11.5h9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            导出
+          </button>
+          <div class="btn-ghost" style="cursor:default;">设置</div>
+        </div>
+      </div>
+      <div class="ann">
+        入口 = 顶栏标题右侧「导出」<b>次级按钮</b>（32px，描边样式 <code>.btn-ghost</code>，下载图标 + 文案），位于「设置」按钮左侧。
+        hover 态复用 iter-1：主色描边 + 主色字 + 浅蓝底 <code>#F0F4FF</code>。<br>
+        <b>触发</b>：点击 → 遍历当前会话全部消息 → 组装 Markdown → <code>Blob</code> + <code>a[download]</code> 触发浏览器下载；
+        不弹模态、不弹 toast（浏览器下载行为已可感知）。建议实现 <code>src/utils/export.ts</code> + <code>ExportButton.vue</code>。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.2 导出文件格式<span class="tag">Markdown · 区分用户/AI · 元信息头</span></div>
+      <div class="stage">
+        <div class="export-sample"># 帮我写一封请假邮件，理由是家里有事
+
+&gt; 导出时间：2026-08-15 14:32
+&gt; 模型：glm-5.3 · 共 2 轮消息
+
+## 用户
+帮我写一封请假邮件，理由是家里有事
+
+## AI
+好的，以下是请假邮件草稿：
+
+**主题：请假申请**
+
+尊敬的领导：
+因家里有事，特申请请假一天，望批准。</div>
+      </div>
+      <div class="ann">
+        <b>文件结构</b>：一级标题 = 会话标题；元信息引用块（导出时间 / 模型 / 轮数，可省略）；每轮消息用
+        <code>## 用户</code> / <code>## AI</code> 小节区分（REQ-013 验收「区分用户/AI」）。<br>
+        <b>AI 消息原文</b>：导出<b>原始 Markdown 源码</b>（非渲染后 HTML），保证可被普通文本编辑器打开（REQ-013 验收）。<br>
+        <b>文件名</b>：<code>{会话标题}_{YYYYMMDD}_{HHmm}.md</code>；标题中的非法字符（<code>/ \ : * ? " &lt; &gt; |</code>）替换为下划线 <code>_</code>，超长标题截前 40 字。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.3 边界态<span class="tag">空会话 · 特殊字符 · 长标题</span></div>
+      <div class="stage" style="display:flex;justify-content:center;">
+        <div class="toast">当前会话暂无消息，未生成文件</div>
+      </div>
+      <div class="ann">
+        <b>空会话（无任何消息）</b>：点击导出 → 不生成文件，弹 toast「当前会话暂无消息，未生成文件」（普通 3s 自动消失）。
+        已定稿不生成文件，见待澄清 5。<br>
+        <b>特殊字符/长标题</b>：文件名非法字符替换为 <code>_</code>，长标题截前 40 字（不影响文件内一级标题原文）。
+        <b>单轮/多轮</b>：遍历消息数组按序输出，用户与 AI 成对、逐字保留（含 Markdown 与代码块原文）。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">5</span>状态走查清单（完整走查，不抽查）</h2>
+    <div class="sec-desc">对齐 process/testing.md 完整走查要求。每条为一次走查，√ = 本稿已给出定稿视觉；QA 与视觉走查逐条打勾取证。</div>
+    <table>
+      <tr><th style="width:44px">序号</th><th>需求</th><th>触点</th><th>状态组合</th><th>期望表现（= 验收口径）</th><th style="width:52px">视觉</th><th>样件</th></tr>
+      <!-- REQ-011 -->
+      <tr><td>1</td><td>REQ-011</td><td>消息气泡</td><td>纯文本回复</td><td>按普通段落渲染，无报错，与 iter-1 直排视觉一致</td><td>√</td><td>1.4</td></tr>
+      <tr><td>2</td><td>REQ-011</td><td>消息气泡</td><td>标题 h1~h4</td><td>按 20/18/16/15px、600 字重渲染，结构与语法对应</td><td>√</td><td>1.1</td></tr>
+      <tr><td>3</td><td>REQ-011</td><td>消息气泡</td><td>无序 / 有序列表</td><td>24px 缩进 + 圆点/序号，多行不溢出容器</td><td>√</td><td>1.1</td></tr>
+      <tr><td>4</td><td>REQ-011</td><td>消息气泡</td><td>行内代码</td><td>13px 等宽 + #F2F3F5 底 + 4px 圆角</td><td>√</td><td>1.1</td></tr>
+      <tr><td>5</td><td>REQ-011</td><td>消息气泡</td><td>表格</td><td>描边 #E5E6EB + 表头 #FAFBFC；宽表横向滚动不撑破</td><td>√</td><td>1.1</td></tr>
+      <tr><td>6</td><td>REQ-011</td><td>消息气泡</td><td>代码块 + 语言标签</td><td>深底 #23272E 头部（语言标签）+ #2B303A 主体；无语言显示 code</td><td>√</td><td>1.2</td></tr>
+      <tr><td>7</td><td>REQ-011</td><td>代码块</td><td>复制按钮默认 / hover 态</td><td>默认 #9AA4B2；hover #E6EAF0 + rgba(255,255,255,.12) 浅底</td><td>√</td><td>1.2</td></tr>
+      <tr><td>8</td><td>REQ-011</td><td>代码块</td><td>点击复制 × 反馈 + 剪贴板</td><td>变「已复制」1.5s 恢复；剪贴板与代码原文逐字一致（不含语言/围栏）</td><td>√</td><td>1.2</td></tr>
+      <tr><td>9</td><td>REQ-011</td><td>数据/安全层</td><td>恶意 HTML/脚本输入</td><td>DOMPurify 净化后不执行；script/事件属性/javascript: 被剥离</td><td>—（行为）</td><td>1.3</td></tr>
+      <tr><td>10</td><td>REQ-011 × REQ-001</td><td>消息气泡</td><td>流式生成中 Markdown 增量渲染</td><td>逐块渲染不闪烁；未闭合代码围栏流结束时补全，历史消息不重排</td><td>√（行为）</td><td>1.4 注</td></tr>
+      <tr><td>11</td><td>REQ-011</td><td>代码块</td><td>超长代码行</td><td>pre 横向滚动，气泡不撑破</td><td>√</td><td>1.4</td></tr>
+      <!-- REQ-012 -->
+      <tr><td>12</td><td>REQ-012</td><td>会话列表</td><td>双击标题进入编辑</td><td>标题替换为输入框，默认主色描边；第一击选中、第二击进入编辑</td><td>√</td><td>2.1 / 2.2</td></tr>
+      <tr><td>13</td><td>REQ-012</td><td>会话列表</td><td>编辑态 focus</td><td>主色描边 + 3px rgba(51,112,255,.12) 光晕，同 iter-1 输入框</td><td>√</td><td>2.2 注</td></tr>
+      <tr><td>14</td><td>REQ-012</td><td>会话列表</td><td>回车保存</td><td>trim 后非空 → 标题更新并退出编辑、写入 IndexedDB</td><td>√（行为）</td><td>2.2</td></tr>
+      <tr><td>15</td><td>REQ-012</td><td>会话列表</td><td>Esc 取消</td><td>恢复原标题、退出编辑，不改动标题</td><td>√（行为）</td><td>2.2</td></tr>
+      <tr><td>16</td><td>REQ-012</td><td>会话列表</td><td>失焦（blur）</td><td>按保存处理（已定稿）；恢复或保存见待澄清 3</td><td>√（行为）</td><td>2.2 注</td></tr>
+      <tr><td>17</td><td>REQ-012</td><td>会话列表</td><td>空标题（trim 空）保存</td><td>不写入空标题，恢复原标题，不产生无标题会话</td><td>√</td><td>2.3</td></tr>
+      <tr><td>18</td><td>REQ-012</td><td>会话列表</td><td>重命名后持久化</td><td>刷新后新标题仍生效</td><td>√（行为）</td><td>2.2 注</td></tr>
+      <!-- REQ-009 -->
+      <tr><td>19</td><td>REQ-009</td><td>会话列表</td><td>新建会话初始标题</td><td>显示「新会话」（meta 行显示时间）</td><td>√</td><td>3.1</td></tr>
+      <tr><td>20</td><td>REQ-009</td><td>会话列表</td><td>首条消息后自动命名</td><td>标题 = 首条消息 trim 后前 20 字，超 20 字加省略号</td><td>√</td><td>3.1</td></tr>
+      <tr><td>21</td><td>REQ-009</td><td>数据层</td><td>并发多会话命名对应</td><td>各会话标题与各自首条消息内容一一对应</td><td>√（行为）</td><td>3.2 注</td></tr>
+      <tr><td>22</td><td>REQ-009 × REQ-012</td><td>数据层</td><td>手动重命名后不再被自动命名覆盖</td><td>改名后继续发送消息，标题不变</td><td>√（行为）</td><td>3.2</td></tr>
+      <!-- REQ-013 -->
+      <tr><td>23</td><td>REQ-013</td><td>顶栏</td><td>导出入口可见</td><td>顶栏标题右侧「导出」次级按钮（32px，下载图标 + 文案）</td><td>√</td><td>4.1</td></tr>
+      <tr><td>24</td><td>REQ-013</td><td>顶栏</td><td>点击导出触发下载</td><td>生成 .md 文件并触发浏览器下载，不弹模态/toast</td><td>√（行为）</td><td>4.1</td></tr>
+      <tr><td>25</td><td>REQ-013</td><td>导出文件</td><td>内容区分用户/AI + 全量</td><td>含该会话全部消息，「## 用户 / ## AI」区分，逐字一致</td><td>√（行为）</td><td>4.2</td></tr>
+      <tr><td>26</td><td>REQ-013</td><td>导出文件</td><td>文件可打开</td><td>普通文本编辑器可打开；AI 消息为 Markdown 源码</td><td>√（行为）</td><td>4.2</td></tr>
+      <tr><td>27</td><td>REQ-013</td><td>顶栏</td><td>空会话导出</td><td>不生成文件，toast「当前会话暂无消息，未生成文件」（已定稿，见待澄清 5）</td><td>√</td><td>4.3</td></tr>
+      <tr><td>28</td><td>REQ-013</td><td>导出文件</td><td>特殊字符/长标题文件名</td><td>非法字符替换 _；超长截前 40 字；文件内标题保留原文</td><td>√（行为）</td><td>4.2 注</td></tr>
+    </table>
+    <div class="ann">共 <b>28</b> 条。第 9/10/14/15/16/18/21/22/24/25/26/28 条为行为断言，由 T1 自动化用例或手工走查取证，视觉部分对照样件打勾。</div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">6</span>新增令牌建议</h2>
+    <div class="sec-desc">对照 iter-1 基线令牌表逐项核对（颜色 / 字号 / 圆角 / 阴影 / 间距 / 动效）。</div>
+    <table>
+      <tr><th>项</th><th>结论</th></tr>
+      <tr>
+        <td>代码块深底与文字</td>
+        <td><code>#23272E</code>（头部）/ <code>#2B303A</code>（主体）/ <code>#9AA4B2</code>（头部文字）/ <code>#E6EAF0</code>（主体文字）
+        均为 <b>iter-1 基线「P1 预留」定稿值</b>（见 iter-1 第 1 节令牌表色板注释 + 4.7 样件），iter-3 为<b>启用预留，非新增令牌</b>。
+        建议 T2 落地时将其正式 token 化为 <code>--c-code-head / --c-code-bg / --c-code-head-text / --c-code-text</code>（仅命名沉淀，值不变）。</td>
+      </tr>
+      <tr>
+        <td>Markdown 富文本 / 重命名编辑态 / 导出按钮</td>
+        <td>全部复用既有令牌：文字三级色、描边 <code>#E5E6EB</code>、表头 <code>#FAFBFC</code>、行内代码底 <code>#F2F3F5</code>、
+        主色 <code>#3370FF/#2E5FDF</code>、焦点环 <code>rgba(51,112,255,.12)</code>、复制按钮 hover 浅底 <code>rgba(255,255,255,.12)</code>（复用 iter-1 Toast 动作 hover）。<b>零新增</b>。</td>
+      </tr>
+      <tr>
+        <td>新增令牌（1 项，CEO 已批准）</td>
+        <td><b>深底成功反馈绿 <code>#4CC38A</code></b>：代码块头部深底 <code>#23272E</code> 上「已复制」反馈色，对比度约 7.1:1（WCAG AA 满足）。
+        CEO 批准（2026-08-15，待澄清 1），已落入本稿 <code>:root</code> 的 <code>--c-success-on-dark</code>；后续沉淀进 design-system <code>tokens.md</code>（iter-3 复盘时）。</td>
+      </tr>
+    </table>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">7</span>待澄清（CEO 已逐条定夺，2026-08-15）</h2>
+    <div class="sec-desc">本稿 6 项设计决策已由 CEO 于 2026-08-15 逐条定夺，均按设计师暂定方案（其中 1 项新增令牌 <code>#4CC38A</code> 同时批准）。</div>
+    <table>
+      <tr><th style="width:60px">编号</th><th>问题</th><th>CEO 决定（2026-08-15）</th></tr>
+      <tr>
+        <td>1</td>
+        <td>代码块「已复制」反馈色：深底 <code>#23272E</code> 上既有成功绿 <code>#1A9E5C</code> 对比度不足（约 2.6:1）。</td>
+        <td>✅ 新增<b>深底成功反馈绿 <code>#4CC38A</code></b>（约 7.1:1）用于「已复制」对勾与文字，1.5s 后恢复；沉淀进 design-system <code>tokens.md</code>（iter-3 复盘时）。</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td>REQ-012 重命名入口：spec 写「双击/菜单」，未定死。列表项同时承担「单击切换 / 双击重命名 / 删除」，双击与单击存在冲突。</td>
+        <td>✅ 入口定稿为<b>双击标题进入编辑</b>（第一击选中、第二击进入编辑），hover 铅笔图标作辅助入口；<b>不做悬停「更多」菜单</b>（避免图标堆叠）。</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td>REQ-012 编辑中失焦（blur）行为：spec 只写「回车保存 / Esc 取消」，未覆盖「点击别处离开」。</td>
+        <td>✅ 失焦 = <b>保存</b>（trim 空则恢复原标题）。</td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td>REQ-009 初始标题形式：spec 写「新会话」或「时间戳」二选一。</td>
+        <td>✅ 初始标题 = <b>「新会话」</b>（meta 行已显示时间可区分多个空会话）。</td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td>REQ-013 空会话导出行为：spec 未定义「无任何消息的会话」导出。</td>
+        <td>✅ 空会话点击导出 = <b>不生成文件</b>，toast「当前会话暂无消息，未生成文件」。</td>
+      </tr>
+      <tr>
+        <td>6</td>
+        <td>REQ-013 导出入口位置：spec 未定「列表项菜单 / 会话标题旁按钮」。</td>
+        <td>✅ 入口定稿为<b>顶栏标题右侧「导出」次级按钮</b>（导出对象=当前会话）；不做列表项导出图标。</td>
+      </tr>
+    </table>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">8</span>基线声明</h2>
+    <div class="sec-desc">
+      本稿令牌与 <code>design/iter-1/index.html</code>（design-iter-1 基线）一致，代码块深底为 iter-1「P1 预留」值的启用（非新增）；
+      唯一新增令牌为「深底成功反馈绿 <code>#4CC38A</code>」（第 6 节，CEO 已批准）。
+      第 7 节 6 项待澄清已由 CEO 于 <b>2026-08-15 逐条定夺</b>（均按暂定方案），设计稿<b>已获 CEO 批准基线（design-iter-3 tag）</b>。
+      开发（T1 自动命名 / T2 Markdown 渲染 / T3 重命名 / T4 导出）自 tag 后解锁（plans/iter-3.md 任务表约定）。
+    </div>
+  </section>
+
+</div>
+</body>
+</html>
