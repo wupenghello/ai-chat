@@ -420,7 +420,6 @@ function clearPrompt() {
   background: var(--c-primary-solid-h);
   border-color: var(--c-primary-h);
 }
-</style>
 
 /* REQ-017 外观 segmented（design-iter-5 触点一） */
 .theme-seg {
@@ -564,3 +563,4 @@ function clearPrompt() {
   font-size: 16px;
   color: var(--c-text-1);
 }
+</style>
