@@ -12,7 +12,7 @@ app/
   security.py   bcrypt 哈希 / 会话 token
   routers/
     auth.py       REQ-020：注册/登录/登出/me（HttpOnly Cookie, SameSite=Lax）
-    sessions.py   REQ-022：iter-6 T3 实现（当前为模块占位）
+    sessions.py   REQ-022：会话 CRUD（GET 列表 / PUT 整档 LWW / DELETE 幂等，复合主键归属隔离）
     proxy.py      REQ-023：iter-7 实现；现有 /api/dev/sse-echo 为 SSE 形态验证
 tests/          pytest（临时 SQLite，每测试独立库）
 ```
