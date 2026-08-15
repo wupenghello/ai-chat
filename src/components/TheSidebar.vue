@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useSessionsStore, type Session } from '../stores/sessions'
 import { useSettingsStore } from '../stores/settings'
+import { useAuthStore } from '../stores/auth'
 import { matchSession, type SearchHit } from '../utils/search'
 import BrandMark from './BrandMark.vue'
 import SessionListItem from './SessionListItem.vue'
@@ -9,7 +10,8 @@ import ConfirmModal from './ConfirmModal.vue'
 
 const sessions = useSessionsStore()
 const settings = useSettingsStore()
-const emit = defineEmits<{ openSettings: []; chat: [] }>()
+const auth = useAuthStore()
+const emit = defineEmits<{ openSettings: []; chat: []; logout: [] }>()
 
 const pendingDelete = ref<Session | null>(null)
 
@@ -90,6 +92,8 @@ const filtered = computed<Array<{ session: Session; hit: SearchHit | null }>>(()
     </ul>
 
     <div class="footer">
+      <!-- design-iter-6 §4.2 基线增量（iter-1~5 主界面唯一增量）：左端用户名 + 右端登出入口 -->
+      <span class="footer-user" :title="auth.user?.username">{{ auth.user?.username ?? '未登录' }}</span>
       <button class="settings-btn" @click="emit('openSettings')">
         <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
           <path
@@ -101,6 +105,14 @@ const filtered = computed<Array<{ session: Session; hit: SearchHit | null }>>(()
       </button>
       <span class="profile-tag" :title="settings.activeProfile?.name">{{ settings.activeProfile?.name ?? '未配置' }}</span>
       <span class="api-dot" :class="settings.isConfigured ? 'ok' : 'bad'" :title="settings.isConfigured ? 'API 已配置' : 'API 未配置'" />
+      <button class="logout-btn" type="button" title="登出" aria-label="登出" @click="emit('logout')">
+        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+          <path
+            fill="currentColor"
+            d="M10 3a1 1 0 0 1 0 2H6a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h4a1 1 0 0 1 0 2H6a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3h4Zm7.3 4.3a1 1 0 0 1 1.4 0l3.5 3.5a1 1 0 0 1 0 1.4l-3.5 3.5a1 1 0 0 1-1.4-1.4l1.8-1.8H9a1 1 0 0 1 0-2h10.1l-1.8-1.8a1 1 0 0 1 0-1.4Z"
+          />
+        </svg>
+      </button>
     </div>
 
     <ConfirmModal
@@ -222,9 +234,35 @@ const filtered = computed<Array<{ session: Session; hit: SearchHit | null }>>(()
 .footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   border-top: 1px solid var(--c-border);
   padding-top: 12px;
+}
+.footer-user {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--c-text-1);
+}
+.logout-btn {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--c-text-3);
+  cursor: pointer;
+}
+.logout-btn:hover {
+  background: var(--c-hover-bg);
+  color: var(--c-text-1);
 }
 .settings-btn {
   display: flex;

@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { useSessionsStore } from './stores/sessions'
 import { useSettingsStore } from './stores/settings'
 import { useToastStore } from './stores/toast'
+import { useAuthStore } from './stores/auth'
 import { exportSession } from './utils/export'
 import { useTheme } from './composables/useTheme'
 import TheSidebar from './components/TheSidebar.vue'
@@ -18,8 +19,14 @@ const sessions = useSessionsStore()
 const { theme, toggleTheme } = useTheme()
 const settings = useSettingsStore()
 const toast = useToastStore()
+const auth = useAuthStore()
 
 const view = ref<'chat' | 'settings'>('chat')
+
+/** REQ-020 登出（design-iter-6 §4.2）：直接登出无确认；跳转由 Root 的登录态监听完成 */
+async function logout() {
+  await auth.logout()
+}
 
 onMounted(() => {
   void sessions.init().catch(() => {
@@ -60,7 +67,7 @@ function editMessage(id: string, text: string) {
 
 <template>
   <div class="app">
-    <TheSidebar @open-settings="openSettings" @chat="view = 'chat'" />
+    <TheSidebar @open-settings="openSettings" @chat="view = 'chat'" @logout="logout" />
 
     <main class="main">
       <SettingsForm v-if="view === 'settings'" />
