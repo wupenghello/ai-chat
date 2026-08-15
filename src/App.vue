@@ -92,7 +92,6 @@ function exportCurrent() {
             <div class="composer-col">
               <ComposerBox
                 :generating="sessions.isGenerating(sessions.activeId)"
-                hint="AI 正在生成，Enter 暂不可发送…"
                 @send="send"
                 @stop="sessions.stopGeneration()"
               />

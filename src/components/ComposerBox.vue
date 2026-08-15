@@ -43,49 +43,52 @@ function onKey(e: KeyboardEvent) {
       v-model="text"
       rows="1"
       class="ta"
-      :placeholder="
-        generating ? hint ?? 'AI 正在生成，Enter 暂不可发送…' : '输入消息，Enter 发送，Shift+Enter 换行'
-      "
+      placeholder="输入消息，Enter 发送，Shift+Enter 换行"
       @keydown="onKey"
       @input="autosize"
     />
-    <!-- REQ-010：生成中发送按钮原位切换为停止按钮；输入框保持可输入（草稿不丢），Enter 不发送 -->
-    <button v-if="generating" class="stop" aria-label="停止生成" @click="onStop">
-      <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
-        <rect width="10" height="10" rx="1.5" fill="currentColor" />
-      </svg>
-      停止
-    </button>
-    <button v-else class="send" :disabled="!canSend" aria-label="发送" @click="submit">
-      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-        <path fill="currentColor" d="M3 20.5 22 12 3 3.5 3 10l13 2-13 2z" />
-      </svg>
-    </button>
+    <div class="composer-bar">
+      <span class="composer-hint">{{
+        generating ? (hint ?? 'AI 回复生成中，发送暂不可用…') : 'Enter 发送 · Shift+Enter 换行'
+      }}</span>
+      <!-- REQ-010：生成中发送按钮原位切换为停止按钮；输入框保持可输入（草稿不丢），Enter 不发送 -->
+      <button v-if="generating" class="stop" aria-label="停止生成" @click="onStop">
+        <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
+          <rect width="10" height="10" rx="1.5" fill="currentColor" />
+        </svg>
+        停止
+      </button>
+      <button v-else class="send" :disabled="!canSend" aria-label="发送" @click="submit">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+          <path fill="currentColor" d="M3 20.5 22 12 3 3.5 3 10l13 2-13 2z" />
+        </svg>
+      </button>
+    </div>
   </div>
 </template>
 
 <style scoped>
+/* DEF-011：回基线设计稿 iter-1 4.6 节——textarea 在上 + 底部操作栏两行结构 */
 .composer {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
   background: var(--c-surface);
   border: 1px solid var(--c-border);
   border-radius: 12px;
-  padding: 10px 10px 10px 16px;
+  padding: 12px 12px 8px;
+  box-shadow: 0 1px 2px rgba(31, 35, 41, 0.06);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .composer:focus-within {
   border-color: var(--c-primary);
-  box-shadow: 3px 3px 0 rgba(51, 112, 255, 0.12);
+  box-shadow: 0 0 0 3px rgba(51, 112, 255, 0.12);
 }
 .ta {
-  flex: 1;
+  width: 100%;
+  display: block;
   border: none;
   outline: none;
   resize: none;
   background: transparent;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.6;
   color: var(--c-text-1);
   max-height: 160px;
@@ -93,6 +96,17 @@ function onKey(e: KeyboardEvent) {
 }
 .ta::placeholder {
   color: var(--c-text-3);
+}
+.composer-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.composer-hint {
+  font-size: 12px;
+  color: var(--c-text-3);
+  margin-right: auto;
 }
 .send {
   flex: none;
