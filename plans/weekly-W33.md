@@ -104,20 +104,20 @@ iter-3 计划当日完成，无延期。容量 Σ=9 全部交付（≤10 上限�
   - 依赖核对：新增 markdown-it/dompurify 为纯前端运行时依赖，不偏离"纯前端直连"架构
   - 导出核对：文件名 sanitize + Blob 下载，空会话短路返回 false
   - 无新发现缺陷；62/62 测试与 28 条走查为旁证
-  - **CEO 过目确认：待 CEO 过目**（G4 前置条件）
+  - **CEO 过目确认：2026-08-15，已过目确认**（G4 前置条件满足；NCR-iter5-004 整改落痕）
 - **iter-4（本次执行，NCR-iter4-001 整改）**：范围 `2c3a243..HEAD`（生产代码：sessions store / idb、ComposerBox、MessageBubble、MessageList、TheSidebar、SessionListItem、App，测试 4 文件），重点审 CHG-003 数据层。发现与结论：
   - 版本分支核对：branches 归档/互换均 JSON 深拷贝——无响应式代理入 IndexedDB（DEF-003 同类风险规避）、无引用环（新旧分支互指仅经 forkId 字符串而非对象引用）、persist 可序列化
   - toggleVersion 核对：findIndex 按 forkId 定位分支头，仅分支首消息携带 forkId，定位无歧义；互换后两侧 forkId/forkIndex 保留，可反复切换（单测往返断言）
   - 竞态核对：generation 纪元（编辑中断时递增）确保旧 generate 的 finally 不清掉新控制器；epoch 不匹配时仅跳过清理、persist 照常执行，无状态丢失路径
   - XSS 核对：搜索高亮用 segments 文本插值渲染（非 v-html），标题/命中片段不可注入
   - 无新发现缺陷；79/79 测试与 28 条走查为旁证
-  - **CEO 过目确认：待 CEO 过目**（G4 前置条件）
+  - **CEO 过目确认：2026-08-15，已过目确认**（NCR-iter4-001/004 整改落痕）
 - **iter-5（本次执行）**：范围 `8da31fe..HEAD`（生产代码：settings store、App.vue 令牌根、useTheme、SettingsForm/TheSidebar 等 11 组件 token 化、测试 2 文件）。发现与结论：
   - 档案数据核对：旧格式迁移幂等（profiles 为空才迁移、activeProfileId 一致性守卫）；removeProfile 当前生效双保险（UI 禁用 + store 拒绝）；save() 兼容路径无档案时创建首个并自动生效
   - 主题核对：useTheme 单例 + localStorage try/catch（隐私模式降级本次会话）；切换只动根 data-theme，组件零感知
   - token 化核对：残留裸色值仅「实底白字」与「深底白色叠层」两类（走查留档口径）；--c-danger 命名族与 v1.3 文档一致
   - **风险如实说明**：CSS 类改动 vitest 不覆盖——DEF-012 两根因均漏过测试；修复后以 computed style 断言走查补齐（iter-5-verify.md），建议流程改进入复盘
-  - **CEO 过目确认：待 CEO 过目**（G4 前置条件）
+  - **CEO 过目确认：2026-08-15，已过目确认**（NCR-iter5-004 整改落痕）
 
 
 ## QA 审计与 NCR 处置（iter-2）
@@ -132,7 +132,7 @@ iter-3 计划当日完成，无延期。容量 Σ=9 全部交付（≤10 上限�
 
 | 编号 | 内容 | 处置 | 状态 |
 |------|------|------|------|
-| NCR-iter4-001 | 周报无 iter-4 章节 + Code Review 缺失 | 整改：本版周报补 iter-4 全部内容 + 全量 Code Review 记录（重点 CHG-003 数据层，见 Code Review 节） | 待 CEO 过目 |
+| NCR-iter4-001 | 周报无 iter-4 章节 + Code Review 缺失 | 整改：本版周报补 iter-4 全部内容 + 全量 Code Review 记录（重点 CHG-003 数据层，见 Code Review 节；CEO 过目确认 2026-08-15） | 已关闭 |
 | NCR-iter4-002 | 视觉走查记录缺失 | 整改：补 plans/iter-4-verify.md（28 条，DOM 实测 + 单测，含偏差登记与 NCR 观察项 5 整改口径） | 已整改，待 QA 复查 |
 | NCR-iter4-003 | RTM REQ-019 设计列标「待同步」 | 整改：改「已同步」；RTM 头测试数 76→79 同步修正 | 已整改 |
 | NCR-iter4-004 | DEF-011 处置记录失真 | 整改：追加 CHG-003 覆盖说明，中间态 DOM 数据（712px/686px 等）标注作废、关联 CHG-003 | 已整改 |
@@ -149,6 +149,6 @@ iter-3 计划当日完成，无延期。容量 Σ=9 全部交付（≤10 上限�
 
 ## 下周计划
 
-- iter-5 复盘 + G4 关闭（QA 5 NCR 已整改，Code Review 待 CEO 过目）→ v0.4.0 发布（待 CEO 决策）
+- iter-5 复盘 + G4 关闭（QA 5 NCR 已整改，Code Review 已过目 2026-08-15）→ v0.4.0 发布（CEO 已批准 2026-08-15）
 - 基线 v2 需求（REQ-001~019）全部达成；后续新能力走需求变更（暂缓池：账号/RAG/联网搜索/用量统计等）
 - iter-6 候选：useTheme 单测补齐（QA 观察项 4）、令牌自引用扫描脚本化进提交门禁（观察项 3）
