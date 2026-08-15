@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { useSessionsStore } from './stores/sessions'
 import { useSettingsStore } from './stores/settings'
 import { useToastStore } from './stores/toast'
+import { exportSession } from './utils/export'
 import TheSidebar from './components/TheSidebar.vue'
 import MessageList from './components/MessageList.vue'
 import ComposerBox from './components/ComposerBox.vue'
@@ -35,6 +36,17 @@ async function send(text: string) {
   }
   await sessions.send(text)
 }
+
+/** REQ-013：导出当前会话为 Markdown 文件；空会话不生成，toast 提示 */
+function exportCurrent() {
+  const session = sessions.active
+  if (!session) return
+  if (session.messages.length === 0) {
+    toast.push('当前会话暂无消息，未生成文件')
+    return
+  }
+  exportSession(session, settings.config.model)
+}
 </script>
 
 <template>
@@ -46,6 +58,25 @@ async function send(text: string) {
 
       <template v-else>
         <div class="chat">
+          <header v-if="sessions.active" class="chat-header">
+            <div class="chat-title">
+              <span class="title-text">{{ sessions.active.title }}</span>
+              <span class="title-sub">模型：{{ settings.config.model ?? '未设置' }}</span>
+            </div>
+            <button class="export-btn" title="导出会话" @click="exportCurrent">
+              <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true">
+                <path
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M7 2v7M4.5 6.5L7 9l2.5-2.5M2.5 11.5h9"
+                />
+              </svg>
+              导出
+            </button>
+          </header>
           <EmptyState
             v-if="!sessions.active || sessions.active.messages.length === 0"
             :variant="sessions.sessions.length === 0 ? 'no-session' : 'empty-session'"
@@ -91,6 +122,7 @@ async function send(text: string) {
   --c-error: #d93025;
   --c-warning: #b45309;
   --c-success: #1a9e5c;
+  --c-success-on-dark: #4cc38a;
 }
 
 * {
@@ -123,6 +155,54 @@ body {
   height: 100%;
   display: flex;
   flex-direction: column;
+}
+/* REQ-013：顶栏（会话标题 + 导出入口），对齐 design/iter-3 触点四 */
+.chat-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--c-border);
+  background: var(--c-surface);
+}
+.chat-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.title-text {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--c-text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.title-sub {
+  font-size: 12px;
+  color: var(--c-text-3);
+}
+.export-btn {
+  flex: none;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--c-text-2);
+  background: var(--c-surface);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.export-btn:hover {
+  border-color: var(--c-primary);
+  color: var(--c-primary);
+  background: var(--c-primary-l);
 }
 .composer-row {
   flex: none;

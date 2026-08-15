@@ -8,7 +8,7 @@ export interface PersistedMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
-  status: 'done' | 'generating' | 'interrupted' | 'error'
+  status: 'done' | 'generating' | 'interrupted' | 'stopped' | 'error'
   error?: { kind: string; message: string }
 }
 
@@ -18,6 +18,8 @@ export interface PersistedSession {
   createdAt: number
   updatedAt: number
   messages: PersistedMessage[]
+  /** REQ-009 × REQ-012：手动改名后置 true，自动命名不再覆盖 */
+  renamed?: boolean
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null

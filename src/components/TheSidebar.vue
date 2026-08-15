@@ -39,6 +39,7 @@ function onNew() {
         :active="s.id === sessions.activeId"
         @select="sessions.switchTo(s.id); emit('chat')"
         @remove="pendingDelete = s"
+        @rename="(title) => sessions.renameSession(s.id, title)"
       />
     </ul>
 

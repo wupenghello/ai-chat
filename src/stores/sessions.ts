@@ -18,12 +18,18 @@ export interface Session extends PersistedSession {
   messages: Message[]
   /** REQ-004：损坏会话灰化展示，不可进入 */
   corrupted?: boolean
+  /** REQ-009 × REQ-012：手动改名后置 true，自动命名不再覆盖 */
+  renamed?: boolean
 }
 
 const uid = () =>
   typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `id-${Date.now()}-${Math.random()}`
 
-const titleOf = (text: string) => (text.trim().slice(0, 20) || '新会话')
+const titleOf = (text: string) => {
+  const t = text.trim()
+  if (!t) return '新会话'
+  return t.length > 20 ? `${t.slice(0, 20)}…` : t
+}
 
 /** 会话内可作为上下文的消息：用户消息 + 有内容的 ai 回复（错误/空回复不进上下文） */
 function toContext(messages: Message[]): ChatMessage[] {
@@ -91,6 +97,7 @@ export const useSessionsStore = defineStore('sessions', {
         createdAt: Date.now(),
         updatedAt: Date.now(),
         messages: [],
+        renamed: false,
       }
       this.sessions.unshift(s)
       this.activeId = s.id
@@ -103,6 +110,18 @@ export const useSessionsStore = defineStore('sessions', {
       if (!target || target.corrupted) return
       // CHG-001：切换不中断生成，目标会话在后台继续流式更新
       this.activeId = id
+    },
+
+    /** REQ-012：手动重命名。空标题 no-op（UI 恢复原标题）；非空写入并置 renamed 防自动命名覆盖 */
+    renameSession(id: string, title: string) {
+      const session = this.sessions.find((s) => s.id === id)
+      if (!session || session.corrupted) return
+      const trimmed = title.trim()
+      if (!trimmed) return
+      session.title = trimmed
+      session.renamed = true
+      session.updatedAt = Date.now()
+      void this.persist(session)
     },
 
     async removeSession(id: string) {
@@ -125,7 +144,7 @@ export const useSessionsStore = defineStore('sessions', {
       }
       if (this.controllers[session.id]) return true // 该会话已在生成中，忽略重复发送
 
-      if (session.messages.length === 0) session.title = titleOf(text)
+      if (session.messages.length === 0 && !session.renamed) session.title = titleOf(text)
       const userMsg: Message = { id: uid(), role: 'user', content: text, status: 'done' }
       const aiMsg: Message = { id: uid(), role: 'assistant', content: '', status: 'generating' }
       session.messages.push(userMsg, aiMsg)
