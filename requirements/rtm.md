@@ -20,6 +20,10 @@
 | REQ-012 | 会话重命名 | P2 | design/iter-3（已基线） | SessionListItem.vue, stores/sessions.ts（renameSession） | SessionListItem.spec / sessions-naming.spec | 已验证 | iter-3 |
 | REQ-013 | 导出会话 | P2 | design/iter-3（已基线） | utils/export.ts, App.vue（顶栏导出） | export.spec | 已验证 | iter-3 |
 | REQ-014 | API 供应商与密钥可配置（OpenAI 兼容，DeepSeek/GLM） | P0 | design/iter-1（已基线） | stores/settings.ts, SettingsForm | settings.spec / settings-form.spec + 浏览器实测 | 已验证（DeepSeek 实测通过；**GLM 部分按 CEO 决策 2026-08-15 不补验、接受部分达成**——不充值，见 defects.md DEF-002） | iter-1 |
+| REQ-015 | 消息编辑与重新生成（regenerate） | P1 | （待产出） | （待实现） | （待测试） | 未开始 |  |
+| REQ-016 | 会话搜索 | P2 | （待产出） | （待实现） | （待测试） | 未开始 |  |
+| REQ-017 | 暗色主题 | P2 | （待产出） | （待实现） | （待测试） | 未开始 |  |
+| REQ-018 | 多供应商档案一键切换（REQ-014 增强） | P2 | （待产出） | （待实现） | （待测试） | 未开始 |  |
 
 ## 状态定义
 
