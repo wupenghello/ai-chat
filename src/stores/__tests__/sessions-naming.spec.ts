@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
-vi.mock('../../db/idb', () => ({
+vi.mock('../../db/persistence', () => ({
   loadSessions: vi.fn(async () => []),
-  saveSession: vi.fn(),
-  deleteSession: vi.fn(),
+  saveSession: vi.fn(async () => {}),
+  deleteSession: vi.fn(async () => {}),
 }))
 
 vi.mock('../../api/client', async (importOriginal) => ({
@@ -44,7 +44,7 @@ describe('会话自动命名（REQ-009，iter-3 T1）', () => {
 
 describe('会话重命名（REQ-012，iter-3 T3）', () => {
   it('renameSession：写入标题、置 renamed、持久化', async () => {
-    const { saveSession } = await import('../../db/idb')
+    const { saveSession } = await import('../../db/persistence')
     const sessions = useSessionsStore()
     const id = sessions.createSession()
     sessions.renameSession(id, '请假邮件（重要）')

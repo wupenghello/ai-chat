@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
-vi.mock('../../db/idb', () => ({
+vi.mock('../../db/persistence', () => ({
   loadSessions: vi.fn(async () => []),
-  saveSession: vi.fn(),
-  deleteSession: vi.fn(),
+  saveSession: vi.fn(async () => {}),
+  deleteSession: vi.fn(async () => {}),
 }))
 
 vi.mock('../../api/client', async (importOriginal) => ({
@@ -188,7 +188,7 @@ describe('会话管理（REQ-003/004/005）', () => {
   })
 
   it('恢复时 generating 消息回标 interrupted（REQ-006）', async () => {
-    const { loadSessions } = await import('../../db/idb')
+    const { loadSessions } = await import('../../db/persistence')
     vi.mocked(loadSessions).mockResolvedValueOnce([
       {
         id: 's1',

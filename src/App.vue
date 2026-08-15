@@ -30,8 +30,8 @@ async function logout() {
 
 onMounted(() => {
   void sessions.init().catch(() => {
-    // IndexedDB 不可用（隐私模式等）：降级为纯内存会话，提示用户
-    toast.push('本地存储不可用，会话将不会保存')
+    // 服务端会话加载失败（网络/后端不可用）：降级为空会话继续可用，已加载页内更改将无法保存
+    toast.push('会话加载失败，请检查网络')
   })
 })
 

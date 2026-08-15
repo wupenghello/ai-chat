@@ -12,10 +12,10 @@ import { flushPromises, mount } from '@vue/test-utils'
 import App from '../App.vue'
 import { useSettingsStore } from '../stores/settings'
 
-vi.mock('../db/idb', () => ({
+vi.mock('../db/persistence', () => ({
   loadSessions: vi.fn(async () => []),
-  saveSession: vi.fn(),
-  deleteSession: vi.fn(),
+  saveSession: vi.fn(async () => {}),
+  deleteSession: vi.fn(async () => {}),
 }))
 
 vi.mock('../api/client', async (importOriginal) => ({

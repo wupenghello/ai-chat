@@ -1,4 +1,8 @@
-/** REQ-006：IndexedDB 持久化（只被 stores 调用；测试中整体 mock） */
+/**
+ * REQ-006（CHG-004 改写）：IndexedDB 持久化 —— 自 iter-6 T3 起不再作为运行时存储，
+ * 仅保留为 v0.4.0 及以前本地数据的一次性迁移源（「导入本地会话到云端」入口 iter-8）。
+ * 运行时读写已切至 db/persistence.ts（服务端，REQ-022）。
+ */
 
 const DB_NAME = 'ai-chat'
 const STORE = 'sessions'

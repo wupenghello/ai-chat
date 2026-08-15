@@ -1,8 +1,9 @@
 import { defineStore } from 'pinia'
 import { buildContext, streamChat, type ChatMessage } from '../api/client'
 import { useSettingsStore } from './settings'
-import * as db from '../db/idb'
-import type { PersistedSession } from '../db/idb'
+import { useToastStore } from './toast'
+import * as db from '../db/persistence'
+import type { PersistedSession } from '../db/persistence'
 
 export type MessageStatus = 'done' | 'generating' | 'interrupted' | 'stopped' | 'error'
 
@@ -82,8 +83,10 @@ export const useSessionsStore = defineStore('sessions', {
 
     persist(session: Session) {
       const { corrupted: _c, ...clean } = session
-      // Pinia 的 reactive Proxy 无法被 IndexedDB 结构化克隆，深拷贝为普通对象
-      return db.saveSession(JSON.parse(JSON.stringify(clean)))
+      // 深拷贝为普通对象后整档 PUT 服务端（LWW）；失败提示——断网重试为 iter-7 细项
+      return db
+        .saveSession(JSON.parse(JSON.stringify(clean)))
+        .catch(() => useToastStore().push('会话保存失败，更改未同步'))
     },
 
     /** 中断指定会话的生成并标注（REQ-003：仅"新建会话"使用；CHG-001 后切换不再调用） */
@@ -138,7 +141,7 @@ export const useSessionsStore = defineStore('sessions', {
       this.abortSession(id) // 被删会话若有后台生成，一并终止
       this.sessions = this.sessions.filter((s) => s.id !== id)
       if (this.activeId === id) this.activeId = this.sessions[0]?.id ?? null
-      await db.deleteSession(id)
+      await db.deleteSession(id).catch(() => useToastStore().push('会话删除未同步'))
     },
 
     /** 发送一条消息并流式生成回复。返回 false 表示未配置（UI 负责引导设置页） */

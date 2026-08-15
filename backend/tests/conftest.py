@@ -18,6 +18,24 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
 
 
 @pytest.fixture
+def client_factory(tmp_path: Path):
+    """同一应用（同一库）产出多个独立 TestClient——多用户归属隔离测试用。
+    TestClient 必须经 with 触发 lifespan（建库迁移），退出时统一清理。"""
+    settings = Settings(db_path=str(tmp_path / "test.db"))
+    app = create_app(settings)
+    created: list[TestClient] = []
+
+    def make() -> TestClient:
+        c = TestClient(app)
+        created.append(c.__enter__())
+        return c
+
+    yield make
+    for c in created:
+        c.__exit__(None, None, None)
+
+
+@pytest.fixture
 def db_conn(client: TestClient) -> Iterator[object]:
     """直连测试库，供「库内无密码明文」等验收断言使用。"""
     conn = connect(client.app.state.db_path)  # type: ignore[attr-defined]

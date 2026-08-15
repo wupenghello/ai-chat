@@ -35,7 +35,8 @@ function extractMessage(body: unknown, fallback: string): string {
   return fallback
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+/** 通用请求（backend API 各模块复用；401 统一走失效跳转） */
+export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   let res: Response
   try {
     res = await fetch(path, {

@@ -11,7 +11,7 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 MIGRATIONS: dict[int, str] = {
     1: """
@@ -31,6 +31,18 @@ MIGRATIONS: dict[int, str] = {
         expires_at TEXT    NOT NULL
     );
     CREATE INDEX idx_auth_sessions_user ON auth_sessions(user_id);
+    """,
+    # iter-6 T3（REQ-022 核心）：会话整档 JSON 存储，PUT 即 LWW 覆盖；
+    # 复合主键 (user_id, id)——客户端生成的 id 只在用户内唯一，跨用户天然隔离
+    2: """
+    CREATE TABLE chat_sessions (
+        id         TEXT    NOT NULL,
+        user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        data       TEXT    NOT NULL,                -- PersistedSession JSON 原样存取（逐字恢复）
+        updated_at REAL    NOT NULL,                -- 取自会话数据，列表排序依据
+        PRIMARY KEY (user_id, id)
+    );
+    CREATE INDEX idx_chat_sessions_user ON chat_sessions(user_id, updated_at);
     """,
 }
 
