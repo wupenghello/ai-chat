@@ -24,6 +24,7 @@
 | REQ-016 | 会话搜索 | P2 | design/iter-4（已基线） | utils/search.ts, TheSidebar（搜索框）, SessionListItem（高亮/片段） | search.spec（5 用例）+ 浏览器实测（命中/空态/清除） | 已验证 | iter-4 |
 | REQ-017 | 暗色主题 | P2 | （待产出） | （待实现） | （待测试） | 未开始 |  |
 | REQ-018 | 多供应商档案一键切换（REQ-014 增强） | P2 | （待产出） | （待实现） | （待测试） | 未开始 |  |
+| REQ-019 | 版本切换（编辑/重生成后切换新旧分支） | P1 | design/iter-4（待同步） | stores/sessions.ts（toggleVersion + branches + forkId） | sessions.spec（版本切换用例）+ MessageBubble.spec | 已验证 | iter-4 |
 
 ## 状态定义
 
