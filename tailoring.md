@@ -13,7 +13,7 @@
 | 设计（design.md） | 适用 | 有 UI 的项目不可裁剪；视觉走查保留，遵循 design-system/ 规范 |
 | 计划（planning.md） | 适用 | |
 | 开发（development.md） | 适用 | |
-| 测试（testing.md） | 适用 | 项目类型：纯前端（调用第三方 API）。最低要求：核心交互（会话管理、上下文记忆、流式输出）有自动化测试；第三方 API 用 mock 覆盖，不依赖真实服务跑测试 |
+| 测试（testing.md） | 适用 | 项目类型：前端 + 服务端（iter-6 起，CHG-004）。前端：核心交互（会话管理、上下文记忆、流式输出）有自动化测试；第三方 API 用 mock 覆盖。服务端（backend/，FastAPI）：pytest 覆盖核心路径与关键异常分支，一键检查 `cd backend && make check`（ruff + pytest，uv lockfile 固定依赖） |
 | 发布（release.md） | 适用 | |
 | 复盘（retrospective.md） | 适用 | |
 | 供应商管理 | 裁剪 | 无外包/采购类供应商。第三方 AI API 作为外部技术依赖记录在立项书约束中，在设计与测试中考虑其可用性风险，达成"外部依赖受控"的流程目的 |
@@ -24,3 +24,4 @@
 |------|---------|------|
 | 2026-08-15 | 测试裁剪补充：iter-2 增加集成路径自动化用例（"发送消息→不刷新页面流式渲染"、"生成中切换会话后台继续"），弥补单测只覆盖逻辑、集成路径靠人试的缺口 | iter-1 复盘：Pinia 响应式代理真 bug（发消息不刷新不显示）由 CEO 试用发现，27 个单测未拦住。属本项目测试策略特例，不动公司制度（改进项 C，CEO 批准） |
 | 2026-08-15 | 缺陷编号前缀用 DEF（制度模板示例为 BUG-001 起） | 项目沿用 DEF 前缀已 9 条，回改造成登记混乱；QA 审计 NCR-001 处置，CEO 批准"保留 DEF，写入 tailoring"。前缀不影响"唯一编号 + 可追溯"的流程目的 |
+| 2026-08-15 | 项目类型由纯前端扩展为前端+服务端（CHG-004）：后端 Python/FastAPI 落 `backend/`（monorepo，CEO 拍板），依赖管理 uv（uv.lock），lint 用 ruff（development.md §5「eslint/prettier 或等价物」的 Python 等价物） | 架构变更落地工具链登记；一键检查 make check 达成 testing.md「服务端」最低要求，流程目的不变 |
