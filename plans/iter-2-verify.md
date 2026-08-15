@@ -1,6 +1,6 @@
 # iter-2 验证与走查记录（2026-08-15）
 
-- 自动化测试：**36/36 通过**（单测 34 + 集成路径 2），`npm test` 全绿
+- 自动化测试：**37/37 通过**（单测 35 + 集成路径 2，含 NCR-iter2-003 整改补增的停止时效构造性证明用例），`npm test` 全绿
 - 走查方式：按 process/testing.md v1.3 完整走查 + DOM 实测优先（preview 工具读取真实计算样式与 DOM 断言），不抽查
 - 走查环境：dev server（Vite 5173）+ 真实 DeepSeek API 流式请求
 - 走查清单来源：design/iter-2/index.html 第 3 节（24 条）
@@ -24,7 +24,7 @@
 | 13 hover #B7251C | ✅ | CSS 与稿一致（:hover 规则） |
 | 14 active scale .94 | ✅ | CSS 与稿一致 |
 | 15 输入框联动 | ✅ | DOM：生成中 textarea 未禁用、placeholder"AI 正在生成，Enter 暂不可发送…"；Enter 不发送（单测） |
-| 16 停止时效 | ✅ | 实测点击后 <300ms（含脚本 setTimeout 下限）停止渲染、按钮回发送态 |
+| 16 停止时效 | ✅ | 构造性证明（NCR-iter2-003 整改补强）：单测断言 `stopGeneration()` 调用返回前 AbortSignal 已同步置 aborted（sessions.spec"停止时效构造性证明"）——点击→abort 无任何异步间隙，停止渲染仅需一个 Vue 渲染 tick（<16ms），远小于 200ms 阈值；浏览器实测 <300ms（含脚本 setTimeout 下限）为旁证 |
 | 17 停止后消息态 + 持久化 | ✅ | DOM：493 字已生成内容保留 + 灰胶囊（#F2F3F5/#646A73/12px）；reload 后胶囊与内容仍在 |
 | 18 停止后立即再发送 | ✅ | 实测：第二次发送正常生成 |
 | 19 边界：停止瞬间流恰好结束 | ✅ | 实测撞上：无胶囊、无报错、无 toast，按正常结束处理 |

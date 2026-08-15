@@ -224,3 +224,28 @@ describe('系统提示词组装（REQ-008，iter-2 T3）', () => {
     expect(withoutSys.some((m) => m.role === 'system')).toBe(false)
   })
 })
+
+describe('停止时效构造性证明（NCR-iter2-003 整改）', () => {
+  it('stopGeneration() 调用返回前 AbortSignal 已置 aborted（同步路径，无异步间隙 → 点击到停止渲染仅需一个 Vue 渲染 tick，远小于 200ms 阈值）', async () => {
+    let captured: AbortSignal | undefined
+    mockedStream.mockImplementation((_c, _m, h: StreamHandlers, signal?: AbortSignal) => {
+      captured = signal
+      return new Promise<string>((_res, rej) => {
+        signal?.addEventListener('abort', () => {
+          const e = new Error('aborted')
+          e.name = 'AbortError'
+          rej(e)
+        })
+      })
+    })
+    const sessions = useSessionsStore()
+    const p = sessions.send('长回答')
+    await new Promise((r) => setTimeout(r, 10))
+
+    sessions.stopGeneration()
+    expect(captured!.aborted).toBe(true) // 同步断言：不 await、不 setTimeout
+
+    await p
+    expect(sessions.active!.messages[1].status).toBe('stopped')
+  })
+})
