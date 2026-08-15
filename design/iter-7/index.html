@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-chat · iter-7 设计稿（REQ-014 密钥双模式 · REQ-018 档案迁服务端 · REQ-007 经代理错误映射，已批准基线）</title>
+<!--
+  ============================================================
+  ai-chat 迭代 7 正式设计稿（设计稿即页面骨架，开发对照实现；已批准基线）
+  依据：plans/iter-7.md T0（验收：设计稿经 CEO 批准并打 design-iter-7 tag，含 §7.x 走查清单——v1.4.4 硬要求，
+        本稿首次执行；T0 阶段 4 项技术定夺随基线批准由 CEO 拍板：① 统一 key 存放与环境变量口径 ② 自填 key
+        服务端受保护存储形式 ③ 上游错误经代理透传的 REQ-007 文案映射表 ④ 存量本地档案上云方式）
+        requirements/spec.md（req-baseline-v3：REQ-014 双模式改写——默认统一 key 零配置 / 高级设置自填存服务端
+        解锁更高配额；REQ-018 档案迁服务端、一键切换交互保留；REQ-023 流式代理端点；REQ-007 错误提示体系；
+        REQ-024 配额（iter-8 占位联动）；非功能「安全/性能」条款）
+        company design-system/tokens.md v1.3/v1.3.1 + components.md v1.0 —— 本稿只用既有令牌（见第 6 节）
+        design/iter-5（档案列表/添加与编辑模态/生成中切换/空态与极端态基线——交互沿用不重画，仅引用）
+        design/iter-6（错误映射表与 §7.x 走查清单格式范例；「无法连接服务器」等既定文案沿用；spec 兼容条款
+        「仅登录/注册页承诺 ≤480px」CEO 定案引用）
+        品牌约束（CEO 既定）：主色飞书蓝 #3370FF（暗色前景 #5C8DFF）
+  状态：已批准（2026-08-16 CEO 批准基线，第 8 节 4 项技术定夺全部按建议方案定案）→ tag design-iter-7
+        由主会话打（设计师不打 tag、不 commit）
+  可交互：右上「演示控制」一键亮/暗（写入 localStorage）；1.1 密钥配置区可交互——「设为当前」进入自填模式、
+          「回退统一密钥」回退、勾选「模拟生成中」看 CHG-002 语义 toast。零外部依赖，直接双击打开。
+  ============================================================
+-->
+<style>
+/* ============================================================
+   一、文档外壳（说明页自身，浅色固定，不随演示切换；色值 = tokens 浅色原值，沿 iter-5/6 惯例）
+   ============================================================ */
+:root { --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-full: 999px; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-size: 14px; line-height: 1.6; color: #1F2329; background: #F5F6F7; padding: 40px 32px 80px;
+}
+.page { max-width: 1100px; margin: 0 auto; }
+h1 { font-size: 20px; font-weight: 600; }
+.sub { font-size: 13px; color: #8F959E; margin: 4px 0 8px; }
+.sub b { color: #646A73; }
+.badge {
+  display: inline-block; padding: 1px 10px; border-radius: var(--r-full);
+  font-size: 12px; font-weight: 500; background: #FFF7E8; color: #B45309; margin-bottom: 32px;
+}
+section { margin-bottom: 48px; }
+h2 { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+h2 .no { color: #3370FF; margin-right: 4px; }
+.sec-desc { font-size: 13px; color: #8F959E; margin-bottom: 16px; }
+.sec-desc b { color: #646A73; }
+
+table { width: 100%; border-collapse: collapse; background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-md); overflow: hidden; font-size: 13px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #E5E6EB; vertical-align: top; }
+th { color: #8F959E; font-weight: 500; background: #FAFBFC; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+td code, li code, .ann code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; background: #F2F3F5; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
+
+.spec { background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-lg); padding: 24px; box-shadow: 0 1px 2px rgba(31,35,41,.06); margin-bottom: 16px; }
+.spec-title { font-size: 13px; font-weight: 600; color: #646A73; margin-bottom: 12px; }
+.spec-title .tag { font-weight: 400; color: #8F959E; margin-left: 8px; }
+.stage { border: 1px dashed #E5E6EB; border-radius: var(--r-md); padding: 16px; background: #F5F6F7; }
+.ann { font-size: 12px; color: #8F959E; margin-top: 8px; line-height: 1.8; }
+.ann b { color: #646A73; font-weight: 600; }
+
+/* ============================================================
+   二、演示令牌作用域 .tk（组件全部引用 var()，同 src 范式；浅色 = tokens v1.3 浅色值，暗色 = v1.3 暗色值，零自造）
+   ============================================================ */
+.tk {
+  --c-bg: #F5F6F7; --c-surface: #FFFFFF; --c-border: #E5E6EB;
+  --c-text-1: #1F2329; --c-text-2: #646A73; --c-text-3: #8F959E;
+  --c-primary: #3370FF; --c-primary-h: #2E5FDF; --c-primary-a: #2860D8; --c-primary-l: #F0F4FF;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #2E5FDF; --c-primary-solid-a: #2860D8;
+  --c-danger: #D93025; --c-danger-l: #FDECEA; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #1A9E5C; --c-success-on-dark: #4CC38A;
+  --c-warning: #B45309; --c-warning-l: #FFF7E8;
+  --c-hover-bg: #F2F3F5; --c-disabled-bg: #C9CFDB; --c-subtle-bg: #FAFBFC;
+  --c-mask: rgba(31,35,41,.4); --c-focus-ring: rgba(51,112,255,.12);
+  --shadow-1: 0 1px 2px rgba(31,35,41,.06);
+  --shadow-2: 0 4px 16px rgba(31,35,41,.10);
+  --shadow-3: 0 12px 40px rgba(31,35,41,.16);
+  color: var(--c-text-1);
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+.tk.dark {
+  --c-bg: #131417; --c-surface: #1E2026; --c-border: #33363E;
+  --c-text-1: #E6EAF0; --c-text-2: #A2A9B6; --c-text-3: #808896;
+  --c-primary: #5C8DFF; --c-primary-h: #7AA4FF; --c-primary-a: #4C84FF; --c-primary-l: #1D2740;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #4C84FF; --c-primary-solid-a: #3D78FF;
+  --c-danger: #FF8073; --c-danger-l: #361B18; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #4CC38A;
+  --c-warning: #EDA23B; --c-warning-l: #38290F;
+  --c-hover-bg: #262930; --c-disabled-bg: #3D414A; --c-subtle-bg: #24272E;
+  --c-mask: rgba(0,0,0,.55); --c-focus-ring: rgba(92,141,255,.25);
+  --shadow-1: 0 1px 2px rgba(0,0,0,.4);
+  --shadow-2: 0 4px 16px rgba(0,0,0,.45);
+  --shadow-3: 0 12px 40px rgba(0,0,0,.6);
+}
+.tk.force-dark {
+  --c-bg: #131417; --c-surface: #1E2026; --c-border: #33363E;
+  --c-text-1: #E6EAF0; --c-text-2: #A2A9B6; --c-text-3: #808896;
+  --c-primary: #5C8DFF; --c-primary-h: #7AA4FF; --c-primary-a: #4C84FF; --c-primary-l: #1D2740;
+  --c-primary-solid-h: #4C84FF; --c-primary-solid-a: #3D78FF;
+  --c-danger: #FF8073; --c-danger-l: #361B18; --c-success: #4CC38A;
+  --c-warning: #EDA23B; --c-warning-l: #38290F;
+  --c-hover-bg: #262930; --c-disabled-bg: #3D414A; --c-subtle-bg: #24272E;
+  --c-mask: rgba(0,0,0,.55); --c-focus-ring: rgba(92,141,255,.25);
+  --shadow-1: 0 1px 2px rgba(0,0,0,.4);
+}
+
+/* ============================================================
+   三、产品组件样式
+   3a. 设置页骨架 + 档案列表 + 模态 + 错误气泡（沿用 iter-5 基线形态，仅令牌引用）
+   3b. 密钥模式卡（本稿新 UI，全部既有令牌组合）
+   ============================================================ */
+
+/* ---- 演示控制条（文档功能件，非产品组件） ---- */
+.demo-ctl {
+  position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 12px;
+  background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-md);
+  padding: 10px 16px; margin-bottom: 32px; box-shadow: 0 1px 2px rgba(31,35,41,.06);
+  font-size: 13px; color: #646A73; flex-wrap: wrap;
+}
+.demo-ctl .seg { display: inline-flex; border: 1px solid #E5E6EB; border-radius: var(--r-md); overflow: hidden; }
+.demo-ctl .seg button {
+  height: 30px; padding: 0 14px; border: none; background: #FFFFFF; color: #646A73;
+  font-size: 13px; cursor: pointer; transition: background .15s ease, color .15s ease;
+}
+.demo-ctl .seg button.on { background: #3370FF; color: #fff; font-weight: 600; }
+.demo-ctl .note { font-size: 12px; color: #8F959E; }
+
+/* ---- 设置页骨架（iter-2/5 基线：表单 max-width 420px） ---- */
+.settings-pane { border-radius: var(--r-lg); border: 1px solid var(--c-border); background: var(--c-bg); padding: 24px 20px; }
+.settings-form { max-width: 420px; margin: 0 auto; }
+.settings-section-label { font-size: 13px; font-weight: 600; color: var(--c-text-2); padding: 20px 0 12px; border-top: 1px solid var(--c-border); margin-top: 20px; }
+.settings-section-label.first { border-top: none; margin-top: 0; padding-top: 0; }
+.sec-intro { font-size: 12px; color: var(--c-text-3); margin: -6px 0 12px; line-height: 1.8; }
+.sec-intro b { color: var(--c-text-2); font-weight: 500; }
+
+/* ---- 密钥模式卡（本稿新增 UI；卡片语法 = 既有 surface/border/r-lg/shadow-1 组合） ---- */
+.mode-card {
+  background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg);
+  padding: 16px; box-shadow: var(--shadow-1);
+  transition: border-color .15s ease, background .15s ease;
+}
+.mode-card.custom { border-color: var(--c-primary); background: var(--c-primary-l); }
+.mode-head { display: flex; align-items: center; gap: 8px; }
+.mode-ico { flex: none; display: flex; align-items: center; justify-content: center; }
+.mode-title { font-size: 14px; font-weight: 600; color: var(--c-text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mode-badge { flex: none; display: inline-flex; align-items: center; padding: 0 8px; height: 20px; border-radius: var(--r-full); font-size: 12px; font-weight: 500; background: var(--c-primary-l); color: var(--c-primary); }
+.mode-card.custom .mode-badge { background: var(--c-surface); }
+.mode-desc { font-size: 12px; color: var(--c-text-3); margin-top: 6px; line-height: 1.8; }
+.mode-desc b { color: var(--c-text-2); font-weight: 500; }
+.quota-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 12px; color: var(--c-text-3); flex-wrap: wrap; }
+.tag-occ { display: inline-block; padding: 0 6px; height: 18px; line-height: 18px; border-radius: var(--r-full); font-size: 12px; font-weight: 500; background: var(--c-warning-l); color: var(--c-warning); }
+.mode-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.btn-ghost-s {
+  height: 32px; padding: 0 12px; display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-2);
+  border-radius: var(--r-md); font-size: 13px; cursor: pointer;
+  transition: border-color .15s ease, color .15s ease, background .15s ease, transform .1s ease;
+}
+.mode-card.custom .btn-ghost-s { background: var(--c-surface); }
+.btn-ghost-s:hover { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-l); }
+.mode-card.custom .btn-ghost-s:hover { background: var(--c-surface); }
+.btn-ghost-s:active { transform: scale(.98); }
+.link-adv { font-size: 13px; color: var(--c-primary); font-weight: 500; cursor: pointer; background: none; border: none; padding: 0; }
+.link-adv:hover { color: var(--c-primary-h); text-decoration: underline; }
+
+/* ---- 供应商档案列表（iter-5 3.1 基线原样，仅令牌引用） ---- */
+.profile-list { display: flex; flex-direction: column; gap: 8px; }
+.profile-item {
+  display: flex; align-items: center; gap: 12px; padding: 12px;
+  border: 1px solid var(--c-border); border-radius: var(--r-md); background: var(--c-surface);
+  transition: border-color .15s ease, background .15s ease;
+}
+.profile-item:hover { background: var(--c-hover-bg); }
+.profile-item.current { border-color: var(--c-primary); background: var(--c-primary-l); }
+.p-radio { flex: none; width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--c-border); display: flex; align-items: center; justify-content: center; transition: border-color .15s ease; }
+.profile-item.current .p-radio { border-color: var(--c-primary); }
+.profile-item.current .p-radio::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c-primary); }
+.p-info { flex: 1; min-width: 0; }
+.p-name-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.p-name { font-size: 13px; font-weight: 600; color: var(--c-text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.p-meta { font-size: 12px; color: var(--c-text-3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: "SF Mono", Menlo, Consolas, monospace; }
+.tag-current { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 0 8px; height: 20px; border-radius: var(--r-full); font-size: 12px; font-weight: 500; background: var(--c-primary-solid); color: #fff; }
+.tag-pending { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 0 8px; height: 20px; border-radius: var(--r-full); font-size: 12px; font-weight: 500; background: var(--c-warning-l); color: var(--c-warning); }
+.p-actions { flex: none; display: flex; align-items: center; gap: 4px; }
+.btn-use { height: 26px; padding: 0 10px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-primary); font-size: 12px; font-weight: 500; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+.btn-use:hover { border-color: var(--c-primary); background: var(--c-primary-l); }
+.btn-p-act { width: 26px; height: 26px; padding: 0; border: none; border-radius: var(--r-sm); background: transparent; color: var(--c-text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .15s ease, color .15s ease; }
+.btn-p-act:hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+.btn-p-act.del { color: var(--c-danger); }
+.btn-p-act.del:hover { background: var(--c-danger-l); color: var(--c-danger); }
+.btn-p-act:disabled { color: var(--c-text-3); opacity: .45; cursor: not-allowed; }
+.btn-p-act.del:disabled:hover { background: transparent; }
+.btn-add-profile {
+  display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; height: 36px;
+  border: 1px dashed var(--c-border); border-radius: var(--r-md); background: transparent;
+  color: var(--c-text-2); font-size: 13px; cursor: pointer;
+  transition: border-color .15s ease, color .15s ease, background .15s ease;
+}
+.btn-add-profile:hover { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-l); }
+.list-hint { font-size: 12px; color: var(--c-text-3); margin-top: 8px; line-height: 1.7; }
+.list-hint b { color: var(--c-text-2); font-weight: 500; }
+
+/* ---- 模态（iter-5 3.3 基线：遮罩 + surface 面板 + shadow-3） ---- */
+.modal-stage { position: relative; min-height: 300px; border-radius: var(--r-lg); overflow: hidden; background: var(--c-bg); }
+.modal-mask { position: absolute; inset: 0; background: var(--c-mask); display: flex; align-items: center; justify-content: center; }
+.modal { width: 400px; max-width: calc(100% - 32px); background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: var(--shadow-3); padding: 20px; }
+.modal h3 { font-size: 15px; font-weight: 600; margin-bottom: 8px; color: var(--c-text-1); }
+.modal .m-body { font-size: 13px; color: var(--c-text-2); line-height: 1.7; }
+.modal .m-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.btn-cancel { height: 32px; padding: 0 12px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-2); border-radius: var(--r-md); font-size: 13px; cursor: pointer; transition: border-color .15s ease, color .15s ease; }
+.btn-cancel:hover { border-color: var(--c-primary); color: var(--c-primary); }
+.btn-primary { height: 36px; padding: 0 20px; background: var(--c-primary-solid); color: #fff; border: none; border-radius: var(--r-md); font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s ease, transform .1s ease; }
+.btn-primary:hover { background: var(--c-primary-solid-h); }
+.btn-primary:active { background: var(--c-primary-solid-a); transform: scale(.98); }
+
+/* 表单字段（components.md「表单模态」口径） */
+.field { margin-bottom: 16px; }
+.field label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: var(--c-text-1); }
+.field label .req { color: var(--c-danger); margin-left: 2px; }
+.field input {
+  width: 100%; height: 36px; padding: 0 12px; font-size: 16px; font-family: inherit;
+  border: 1px solid var(--c-border); border-radius: var(--r-md); outline: none;
+  color: var(--c-text-1); background: var(--c-surface);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.field input:focus { border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-focus-ring); }
+.field input::placeholder { color: var(--c-text-3); }
+.field.invalid input { border-color: var(--c-danger); }
+.field.invalid input:focus { box-shadow: 0 0 0 3px var(--c-danger-l); }
+.hint { font-size: 12px; color: var(--c-text-3); margin-top: 4px; }
+.hint.err { color: var(--c-danger); display: none; }
+.field.invalid .hint.err { display: block; }
+.key-row { position: relative; }
+.key-row input { padding-right: 40px; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 14px; }
+.key-eye {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 24px; height: 24px;
+  border: none; border-radius: var(--r-sm); background: transparent; color: var(--c-text-3);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: background .15s ease, color .15s ease;
+}
+.key-eye:hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+
+/* ---- 提示条（design-iter-6 form-banner 模式：danger-l/danger 与 warning-l/warning 既有令牌组合） ---- */
+.form-banner {
+  display: flex; align-items: flex-start; gap: 8px;
+  border-radius: var(--r-md); padding: 8px 12px; font-size: 13px; line-height: 1.6;
+  margin-bottom: 16px; flex-wrap: wrap;
+}
+.form-banner .b-ico { flex: none; font-weight: 600; }
+.form-banner.warn { background: var(--c-warning-l); color: var(--c-warning); }
+.form-banner .b-act {
+  flex: none; height: 24px; padding: 0 10px; margin-left: auto;
+  border: 1px solid currentColor; border-radius: var(--r-sm); background: transparent;
+  color: inherit; font-size: 12px; cursor: pointer; transition: opacity .15s ease, transform .1s ease;
+}
+.form-banner .b-act:hover { opacity: .8; }
+.form-banner .b-act:active { transform: scale(.96); }
+
+/* ---- 错误气泡（REQ-007 基线：危险浅底 + 重试 + 去设置） ---- */
+.msg { display: flex; gap: 12px; }
+.msg-avatar { width: 28px; height: 28px; border-radius: var(--r-full); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; background: var(--c-primary-l); color: var(--c-primary-h); }
+.msg-body { max-width: calc(100% - 80px); min-width: 0; }
+.msg-role { font-size: 12px; color: var(--c-text-3); margin-bottom: 4px; }
+.err-bubble { background: var(--c-danger-l); color: var(--c-danger); border: 1px solid var(--c-danger); border-radius: var(--r-lg); border-bottom-left-radius: 4px; padding: 10px 14px; font-size: 15px; line-height: 1.7; }
+.err-bubble .err-title { font-weight: 600; }
+.err-actions { display: flex; gap: 8px; margin-top: 8px; }
+.btn-retry { height: 28px; padding: 0 12px; border: none; border-radius: var(--r-sm); background: var(--c-danger-solid); color: #fff; font-size: 12px; font-weight: 600; cursor: pointer; transition: background .15s ease; }
+.btn-retry:hover { background: var(--c-danger-solid-h); }
+.btn-goto-set { height: 28px; padding: 0 12px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-text-2); font-size: 12px; cursor: pointer; transition: border-color .15s ease, color .15s ease; }
+.btn-goto-set:hover { border-color: var(--c-primary); color: var(--c-primary); }
+
+/* ---- toast（iter-1 深底基线） ---- */
+.toast { display: inline-flex; align-items: center; gap: 8px; background: #23272E; border: 1px solid transparent; color: #fff; font-size: 13px; padding: 10px 16px; border-radius: var(--r-md); box-shadow: 0 4px 16px rgba(31,35,41,.10); }
+.toast-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
+#toastHost { position: fixed; left: 50%; bottom: 32px; transform: translateX(-50%); z-index: 100; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
+#toastHost .toast { animation: toastIn .2s ease; }
+@keyframes toastIn { from { opacity: 0; transform: translateY(6px); } }
+
+/* ---- 演示状态单选（文档功能件，非产品组件） ---- */
+.sim-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; font-size: 12px; color: #646A73; margin-bottom: 12px; }
+.sim-row label { cursor: pointer; white-space: nowrap; }
+
+/* ---- 布局工具 ---- */
+.frame-cap { text-align: center; font-size: 12px; color: #8F959E; margin-bottom: 8px; }
+.cols { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+.cols > div { flex: 1; min-width: 380px; max-width: 540px; }
+</style>
+</head>
+<body>
+<div id="toastHost"></div>
+<div class="page">
+
+  <h1>ai-chat · iter-7 设计稿</h1>
+  <div class="sub">
+    依据：<b>plans/iter-7.md</b> T0（REQ-014 高级设置双模式重设计 + REQ-018 档案迁服务端 + REQ-007 错误映射扩展口径；
+    <b>v1.4.4 硬要求：含 §7.x 走查清单，本稿首次执行</b>；4 项技术定夺随基线由 CEO 拍板）·
+    <b>req-baseline-v3</b>（REQ-014/018 CHG-004 改写版 · REQ-023 代理 · REQ-024 占位联动）·
+    令牌全部来自公司 <b>design-system/tokens.md v1.3/v1.3.1</b> + <b>components.md v1.0</b>，本稿零新增 ·
+    档案管理交互沿用 <b>design-iter-5 基线</b>（引用不重画）；主界面/侧栏 iter-1~6 基线不动
+  </div>
+  <div class="badge">状态：已批准（2026-08-16 CEO 批准，tag design-iter-7）—— 第 8 节 4 项技术定夺已全部定案（按建议方案）</div>
+
+  <!-- 演示控制 -->
+  <div class="demo-ctl">
+    <b>演示控制：</b>
+    <span class="seg">
+      <button id="btnLight" class="on">浅色</button>
+      <button id="btnDark">暗色</button>
+    </span>
+    <span class="note">一键切换下方全部可翻转样件（第 4 节锁定帧不随动）；选择写入 localStorage 刷新保持（REQ-017 机制演示）。1.1 密钥配置区可直接交互：设为当前 / 回退统一密钥。</span>
+  </div>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">1</span>密钥模式区重设计（REQ-014 双模式核心，设置页新 UI）</h2>
+    <div class="sec-desc">
+      spec REQ-014（v3 改写）核心：<b>默认统一 key 零配置</b>——新用户登录后直接可用，设置页<b>不再有任何密钥输入框</b>；
+      <b>高级设置</b>允许自填供应商档案（存服务端、解锁更高配额）；<b>可随时回退</b>统一 key 模式。
+      模式判定规则（本稿定稿）：<b>存在「当前生效档案」= 自填模式；无 = 统一 key 模式</b>——
+      档案列表「设为当前」即进入自填模式，「回退统一密钥」清除当前生效（档案保留、可再启用）。
+      设置页其余区（外观/系统提示词）不动。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.1 统一 key 默认态 → 自填模式 → 回退（可交互全流程）<span class="tag">状态卡 + 档案列表联动 · 设为当前=进自填 · 回退=清当前生效</span></div>
+      <div class="sim-row">
+        <label><input type="checkbox" id="simGen2"> 模拟「生成中」切换模式/档案（勾选后操作看 CHG-002 语义 toast）</label>
+      </div>
+      <div class="stage">
+        <div class="tk settings-pane" id="keyAreaDemo">
+          <div class="settings-form">
+            <!-- 密钥模式卡：统一 key 态 -->
+            <div class="mode-card" id="cardUnified">
+              <div class="mode-head">
+                <span class="mode-ico"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" style="color:var(--c-success)"><circle cx="8" cy="8" r="6.2" stroke="currentColor" stroke-width="1.4"/><path d="M5.4 8.2l1.8 1.8 3.4-3.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                <span class="mode-title">服务端统一密钥</span>
+                <span class="mode-badge">当前模式</span>
+              </div>
+              <div class="mode-desc"><b>零配置</b>：无需填写任何密钥，免费额度内即可对话。请求经服务端代理转发（REQ-023）。</div>
+              <div class="quota-row">
+                <span>免费额度：每日 — 次对话 · 今日已用 —</span>
+                <span class="tag-occ">占位 · 数值由管理员配置（REQ-024，iter-8）</span>
+              </div>
+              <div class="mode-actions">
+                <button class="link-adv" id="btnGotoAdv">在下方高级设置中添加自有密钥，解锁更高配额 ↓</button>
+              </div>
+            </div>
+            <!-- 密钥模式卡：自填态（初始隐藏，设为当前后显示） -->
+            <div class="mode-card custom" id="cardCustom" style="display:none;">
+              <div class="mode-head">
+                <span class="mode-ico"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" style="color:var(--c-primary)"><circle cx="5.5" cy="5.5" r="2.3" stroke="currentColor" stroke-width="1.4"/><path d="M7.2 7.2L13 13M10 10l1.8-1.8M12 12l1.8-1.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span>
+                <span class="mode-title">自填密钥 · 当前生效：<span id="customName">DeepSeek</span></span>
+                <span class="mode-badge">已解锁更高配额</span>
+              </div>
+              <div class="mode-desc">使用你配置的供应商密钥发起请求。密钥<b>仅存服务端</b>（受保护存储），多设备一致，浏览器本地不保留。</div>
+              <div class="mode-actions">
+                <button class="btn-ghost-s" id="btnFallback">回退统一密钥（免费额度）</button>
+              </div>
+            </div>
+
+            <!-- 高级设置 · 自填供应商密钥 -->
+            <div class="settings-section-label">高级设置 · 自填供应商密钥</div>
+            <div class="sec-intro">填写自有 base URL / 模型名 / API Key，解锁更高配额。<b>密钥仅存服务端</b>（受保护存储），登录后任意设备可见；浏览器本地不存储任何密钥。</div>
+            <div class="profile-list" id="profListDemo">
+              <div class="profile-item" data-pname="GLM">
+                <span class="p-radio"></span>
+                <div class="p-info">
+                  <div class="p-name-row"><span class="p-name">GLM</span></div>
+                  <div class="p-meta">https://open.bigmodel.cn/api/paas/v4 · glm-4.6 · sk-****f2a9</div>
+                </div>
+                <div class="p-actions">
+                  <button class="btn-use" data-use2>设为当前</button>
+                  <button class="btn-p-act" title="编辑"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>
+                  <button class="btn-p-act del" title="删除"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>
+                </div>
+              </div>
+              <div class="profile-item" data-pname="DeepSeek">
+                <span class="p-radio"></span>
+                <div class="p-info">
+                  <div class="p-name-row"><span class="p-name">DeepSeek</span></div>
+                  <div class="p-meta">https://api.deepseek.com/v1 · deepseek-chat · sk-****3c71</div>
+                </div>
+                <div class="p-actions">
+                  <button class="btn-use" data-use2>设为当前</button>
+                  <button class="btn-p-act" title="编辑"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>
+                  <button class="btn-p-act del" title="删除"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>
+                </div>
+              </div>
+            </div>
+            <div style="margin-top:8px;"><button class="btn-add-profile" id="btnAdd2"><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>添加供应商档案</button></div>
+            <div class="list-hint">「设为当前」即切换为<b>自填模式</b>，下一次请求生效；<b>当前生效的档案不可删除</b>，请先切换到其他档案或回退统一密钥。</div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>统一 key 状态卡（默认态）</b>：surface 卡（1px <code>--c-border</code> + <code>--r-lg</code> + <code>--shadow-1</code>，内距 16px）；
+        成功色对勾图标（<code>--c-success</code>）+ 标题 14px/600 + 「当前模式」徽标（<code>--c-primary-l</code> 底 + <code>--c-primary</code> 字，12px 胶囊）；
+        描述 12px <code>--c-text-3</code>。<b>配额行为占位</b>：「每日 — 次 · 已用 —」用破折号占位 + 琥珀「占位」胶囊明示
+        （数值 iter-8 由管理后台参数化，REQ-024）——<b>不显示任何编造数值</b>（铁律 5「度量数据不编造」同精神）。<br>
+        <b>零配置口径</b>：统一 key 态<b>没有任何密钥输入框</b>——旧版（iter-5 前的 REQ-014 单表单）三要素表单在设置页首屏消失，
+        自填能力整体收进「高级设置」区（REQ-014 v3：「高级设置允许用户自填」）。<br>
+        <b>模式切换（可交互）</b>：点任一档案「设为当前」→ 模式卡翻为自填态（主色描边 + <code>--c-primary-l</code> 底，
+        与「当前生效档案」同一视觉语法），toast 反馈；「回退统一密钥」→ 清除当前生效、模式卡翻回统一态，档案保留。
+        生成中切换/回退 = <b>CHG-002 语义</b>（当前回复旧配置跑完、下一次请求生效，toast 明示）——与 iter-5 3.2 定案一致，勾选模拟复选框可看。<br>
+        <b>组件建议</b>：<code>SettingsForm.vue</code> 内新增 <code>KeyModeCard.vue</code>；store 增 <code>keyMode</code>（派生自
+        <code>activeProfileId</code>）与 <code>clearActiveProfile()</code>（回退）。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.2 回退路径与反馈文案（REQ-014 主流程 4）<span class="tag">直接生效 + toast · 可逆操作无确认弹窗</span></div>
+      <div class="stage tk" style="border-radius:var(--r-md);display:flex;flex-direction:column;gap:12px;align-items:flex-start;padding:20px;">
+        <div class="mode-card custom" style="width:100%;max-width:420px;">
+          <div class="mode-head">
+            <span class="mode-ico"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" style="color:var(--c-primary)"><circle cx="5.5" cy="5.5" r="2.3" stroke="currentColor" stroke-width="1.4"/><path d="M7.2 7.2L13 13M10 10l1.8-1.8M12 12l1.8-1.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span>
+            <span class="mode-title">自填密钥 · 当前生效：GLM</span>
+            <span class="mode-badge">已解锁更高配额</span>
+          </div>
+          <div class="mode-desc">使用你配置的供应商密钥发起请求。密钥<b>仅存服务端</b>（受保护存储），多设备一致，浏览器本地不保留。</div>
+          <div class="mode-actions"><button class="btn-ghost-s">回退统一密钥（免费额度）</button></div>
+        </div>
+        <div class="toast-row">
+          <div class="toast">已回退统一密钥模式，<b>自下一次请求生效</b>（当前生成中的回复沿用 GLM 完成）</div>
+          <div class="toast">已切换到 DeepSeek（自填模式），下一次请求生效</div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>回退 = 「清除自填配置」的落法（spec 主流程 4 / T2 验收「清除自填配置后自动回退统一 key 模式」）</b>：
+        「回退统一密钥（免费额度）」按钮清除<b>当前生效档案</b>（activeProfileId 置空），档案数据保留、可随时再「设为当前」——
+        与「删除档案」（iter-5 确认模态）是两个动作，互不混淆。<br>
+        <b>无确认弹窗</b>：回退完全可逆、不删任何数据，直接生效 + toast（左）；生成中回退 = CHG-002 语义 toast。
+        <b>注意</b>：spec REQ-014 验收「清除自填配置后，下一次请求自动回退统一 key 模式并可正常对话」——回退后请求走服务端统一 key，
+        无需用户再做任何配置。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">2</span>高级设置区（自填供应商档案，REQ-018 迁服务端）</h2>
+    <div class="sec-desc">
+      档案管理交互<b>沿用 design-iter-5 基线不重画</b>：列表单选「设为当前」（1.1 已含）、生成中切换 toast + 待生效胶囊（iter-5 3.2）、
+      删除确认模态与当前项禁删（3.4）、空态与极端态 ellipsis/内部滚动（3.5）——全部引用生效。本节只画<b>三处因 v3 架构产生的变更点</b>：
+      ① 区头说明（存储位置改服务端）② 添加/编辑模态文案与<b>密钥编辑不回显</b>（安全条款驱动，偏离 iter-5 基线之处）③ 存量本地档案上云提示条（定夺 ④ 已定案，见 2.3）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.1 档案管理区引用框（iter-5 基线，不重画）<span class="tag">交互清单逐条引用 · 仅存储注记更新</span></div>
+      <div class="stage tk" style="border-radius:var(--r-md);">
+        <div style="border:1px dashed var(--c-border);border-radius:var(--r-md);padding:16px;font-size:13px;color:var(--c-text-2);line-height:2;">
+          <b style="color:var(--c-text-1);">引用：design-iter-5 §3（供应商档案管理基线）</b>——本稿不重画，以下交互原样生效：<br>
+          · 列表项与「当前生效」标记（3.1：radio 语义 + 主色描边选中 + 密文 <code>sk-****后4位</code>）<br>
+          · 生成中切换档案：toast + 「↻ 待生效（本轮完成后）」胶囊（3.2，CHG-002）<br>
+          · 删除非当前档案二次确认 / 当前生效档案禁删 + 提示（3.4）<br>
+          · 空态引导 / 超长名与 URL ellipsis / 多档案内部滚动（3.5）<br>
+          <b style="color:var(--c-text-1);">v3 变更注记（本稿）</b>：档案存储已迁<b>服务端</b>（REQ-018）——登录后任意设备档案列表与当前生效档案一致（T2 验收）；
+          列表 hint 与模态说明文案由「密钥仅存本地浏览器」改为「密钥仅存服务端」（见 1.1 样件与 2.2 模态）。
+        </div>
+      </div>
+      <div class="ann">
+        <b>为什么列表仍显示密文掩码</b>：服务端对档案 key 只回掩码（<code>sk-****后4位</code>），<b>明文绝不下发前端</b>
+        （REQ-023「API 密钥仅存服务端，绝不下发前端」+ T1 验收「浏览器网络面板检索不到任何 key」）——列表展示形态与 iter-5 一致，数据源改为服务端掩码。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.2 添加 / 编辑档案模态（iter-5 3.3 基线 + 两处 v3 变更）<span class="tag">说明文案改服务端 · 编辑时密钥不回显（安全）</span></div>
+      <div class="stage" style="display:flex;gap:20px;flex-wrap:wrap;">
+        <div class="tk modal-stage" style="flex:1;min-width:340px;height:470px;">
+          <div class="modal-mask">
+            <div class="modal" style="width:440px;">
+              <h3>添加供应商档案</h3>
+              <div class="m-body" style="margin-bottom:16px;">按 OpenAI 兼容协议填写三项；<b>密钥仅存服务端</b>（受保护存储），浏览器本地不保留。</div>
+              <div class="field">
+                <label>档案名称<span class="req">*</span></label>
+                <input type="text" placeholder="如：DeepSeek / GLM / 公司中转">
+                <div class="hint">列表中显示，用于区分多套档案</div>
+              </div>
+              <div class="field"><label>Base URL<span class="req">*</span></label><input type="text" placeholder="https://api.deepseek.com/v1"></div>
+              <div class="field"><label>模型名<span class="req">*</span></label><input type="text" placeholder="deepseek-chat"></div>
+              <div class="field">
+                <label>API Key<span class="req">*</span></label>
+                <div class="key-row">
+                  <input type="password" placeholder="sk-…">
+                  <button class="key-eye" title="显示/隐藏密钥"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M1.5 8S3.8 3.5 8 3.5 14.5 8 14.5 8 12.2 12.5 8 12.5 1.5 8 1.5 8z" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.2"/></svg></button>
+                </div>
+                <div class="hint">填写后仅上传服务端保存，界面不再回显明文</div>
+              </div>
+              <div class="m-actions" style="margin-top:8px;">
+                <button class="btn-cancel">取消</button>
+                <button class="btn-primary">保存档案</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="tk modal-stage" style="flex:1;min-width:340px;height:470px;">
+          <div class="modal-mask">
+            <div class="modal" style="width:440px;">
+              <h3>编辑供应商档案</h3>
+              <div class="m-body" style="margin-bottom:16px;">按 OpenAI 兼容协议填写三项；<b>密钥仅存服务端</b>（受保护存储），浏览器本地不保留。</div>
+              <div class="field">
+                <label>档案名称<span class="req">*</span></label>
+                <input type="text" value="DeepSeek">
+              </div>
+              <div class="field"><label>Base URL<span class="req">*</span></label><input type="text" value="https://api.deepseek.com/v1"></div>
+              <div class="field"><label>模型名<span class="req">*</span></label><input type="text" value="deepseek-chat"></div>
+              <div class="field">
+                <label>API Key（已保存，不回显）</label>
+                <div class="key-row">
+                  <input type="password" placeholder="留空保持不变；输入新值则覆盖">
+                  <button class="key-eye" title="显示/隐藏密钥"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M1.5 8S3.8 3.5 8 3.5 14.5 8 14.5 8 12.2 12.5 8 12.5 1.5 8 1.5 8z" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.2"/></svg></button>
+                </div>
+                <div class="hint">出于安全，已保存的密钥不回显；<b>留空 = 沿用原密钥</b>，填写新值 = 覆盖</div>
+              </div>
+              <div class="m-actions" style="margin-top:8px;">
+                <button class="btn-cancel">取消</button>
+                <button class="btn-primary">保存修改</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>变更点 1（文案）</b>：模态说明与 key hint 由「密钥仅存本地浏览器」改为「密钥仅存服务端（受保护存储），浏览器本地不保留」（两模态一致）。<br>
+        <b>变更点 2（安全，偏离 iter-5 基线之处）</b>：<b>编辑时密钥不回填明文</b>——iter-5 3.3 的「key 回填明文」在 v3 下不可为（明文不下发前端）。
+        编辑模态 key 字段 label 标注「（已保存，不回显）」+ placeholder「留空保持不变；输入新值则覆盖」。
+        <b>校验差异</b>：添加 = key 必填（空则红描边提示，沿 iter-5）；<b>编辑 = key 可空（= 沿用原值）</b>，其余三项必填规则不变——T2 校验分支按此实现。<br>
+        其余（必填校验、Esc 取消、密/明文切换眼睛按钮）沿 iter-5 3.3 基线；保存成功 toast「已保存」（下一次请求生效）沿基线。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.3 存量本地档案上云提示条（定夺 ④ 已定案示意，iter-8 落地占位）<span class="tag">登录后提示 + 一键导入 · 非静默</span></div>
+      <div class="stage tk" style="border-radius:var(--r-md);">
+        <div class="settings-pane" style="border:none;padding:0;background:transparent;">
+          <div class="settings-form">
+            <div class="form-banner warn">
+              <span class="b-ico">!</span>
+              <span>检测到本浏览器存有旧版本保存的 <b>2 套供应商档案</b>，导入云端后可在多设备使用（密钥将上传至你的服务端账号）。</span>
+              <button class="b-act">导入到云端</button>
+              <button class="b-act">暂不导入</button>
+              <span class="tag-occ" style="margin-left:0;background:var(--c-surface);color:var(--c-text-2);">iter-8 落地（定夺 ④ 已定案）</span>
+            </div>
+            <div class="mode-card">
+              <div class="mode-head">
+                <span class="mode-ico"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" style="color:var(--c-success)"><circle cx="8" cy="8" r="6.2" stroke="currentColor" stroke-width="1.4"/><path d="M5.4 8.2l1.8 1.8 3.4-3.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                <span class="mode-title">服务端统一密钥</span>
+                <span class="mode-badge">当前模式</span>
+              </div>
+              <div class="mode-desc"><b>零配置</b>：无需填写任何密钥，免费额度内即可对话。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>定案（④，2026-08-16 CEO 定；iter-7 只定形态，iter-8 与 REQ-022 会话迁移同批落地）</b>：
+        登录后进入设置页（或首次登录任意时机，落地细节 iter-8 定）显示 warning 提示条 + <b>一键导入</b>——<b>非静默自动上传</b>：
+        API key 属敏感凭据，未经用户确认不得上传（spec 安全条款精神）。「暂不导入」= 本次会话不再提示，下次登录检测到仍显示（不提供「永久忽略」，
+        避免误关后找不回）。导入 = 本地档案作为<b>新增</b>写入云端（不覆盖云端已有，口径同 REQ-022 会话迁移），成功后 toast + 本地清除。
+        提示条仅在有旧本地数据时出现，无则零打扰。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">3</span>REQ-007 错误映射定稿（上游错误经代理透传，定夺 ③ 载体）</h2>
+    <div class="sec-desc">
+      对话请求本迭代起全部经后端代理（REQ-023）：上游错误（401/403/429/5xx/超时）由后端透传或映射，前端按本表提示。
+      表格一次定稿（随基线批准即生效，T1/T2 按此实现）；iter-8 的配额类错误已预留行，届时零 UI 改动接入。
+      <b>落点全部为消息区错误气泡</b>（iter-1/3 基线组件，形态不变，仅文案与按钮按表取值）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">3.1 错误映射表（经代理）</div>
+      <table>
+        <tr><th>场景（来源 / HTTP）</th><th>用户文案（定稿）</th><th>按钮 / 下一步</th><th>色调落点</th><th>归属</th></tr>
+        <tr><td>上游 401/403（自填 key 无效/无权限）</td><td>请求失败：API 密钥无效，请检查高级设置中的供应商配置</td><td>「前往高级设置」（<b>不提供重试</b>——不修复必然再失败）</td><td>错误气泡 · danger</td><td>iter-7</td></tr>
+        <tr><td>上游 429（限流）</td><td>请求过于频繁，已被限流。请稍后重试</td><td>「重试」（仅手动，<b>不自动连发</b>）</td><td>错误气泡 · danger</td><td>iter-7</td></tr>
+        <tr><td>上游 5xx</td><td>上游服务暂时不可用，请稍后重试</td><td>「重试」</td><td>错误气泡 · danger</td><td>iter-7</td></tr>
+        <tr><td>上游超时</td><td>请求超时，请稍后重试</td><td>「重试」</td><td>错误气泡 · danger</td><td>iter-7</td></tr>
+        <tr><td>网络断（浏览器 ↔ 后端）</td><td>无法连接服务器，请检查网络后重试</td><td>「重试」</td><td>错误气泡 · danger</td><td>iter-7（文案沿 design-iter-6 定稿）</td></tr>
+        <tr><td>上游流式中断</td><td>（非气泡）已收内容保留 + 「生成中断」胶囊</td><td>—</td><td>警告胶囊 · warning</td><td>基线引用（REQ-001/023，不变）</td></tr>
+        <tr><td>会话 401（token 失效）</td><td>（非气泡）跳登录页 +「登录已过期」banner</td><td>—</td><td>登录页 banner · warning</td><td>基线引用（design-iter-6，不变）</td></tr>
+        <tr><td>配额不足（用户当前档位用尽）</td><td>配额已用尽，将于明日 00:00 重置。可在高级设置使用自有密钥解锁更高配额</td><td>「前往高级设置」</td><td>错误气泡 · danger</td><td><b>占位</b>，REQ-024 iter-8 返回</td></tr>
+        <tr><td>全站统一 key 每日上限触发</td><td>服务今日用量已达上限，明日恢复</td><td>无按钮（次日自动恢复）</td><td>错误气泡 · danger</td><td><b>占位</b>，REQ-024 iter-8 返回</td></tr>
+        <tr><td>服务端统一密钥未配置（部署缺 env）</td><td>服务端未配置统一密钥，请联系管理员</td><td>无按钮（部署问题，重试无益）</td><td>错误气泡 · danger</td><td>iter-7（T1 对齐，见定夺 ①）</td></tr>
+        <tr><td><s>未配置 API 密钥即发送</s></td><td><b>分支消亡</b>：v3 双模式下统一 key 零配置恒可用；自填档案保存时必填校验拦空 key</td><td>—</td><td>—</td><td>留档防 T2 误实现（REQ-007 v1 旧分支）</td></tr>
+      </table>
+      <div class="ann">
+        <b>映射原则（REQ-007 原口径保持）</b>：可重试错误（429/5xx/超时/网络）提供「重试」且<b>复用原消息</b>；401/403 只引导修复不提供重试；
+        无技术性报错堆栈暴露；提示 3 秒内出现。<b>重试语义</b>：重试=重发原请求（走当前生效模式与档案）。<br>
+        <b>「前往高级设置」入口变化</b>：既有 401 引导按钮文案为「去设置更新」（iter-5 基线），本稿起统一为「<b>前往高级设置</b>」
+        （自填密钥的修复位置从设置页首屏变为高级设置区）——落地即跳设置页并定位/滚动至高级设置区。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">3.2 错误气泡样件（可用演示控制翻转亮暗）<span class="tag">基线组件 · 文案按 3.1 表取值</span></div>
+      <div class="stage tk" style="border-radius:var(--r-md);display:flex;flex-direction:column;gap:16px;padding:20px;max-width:560px;">
+        <div class="msg">
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body">
+            <div class="msg-role">AI</div>
+            <div class="err-bubble">
+              <div class="err-title">请求失败：API 密钥无效</div>
+              请检查高级设置中的供应商配置。
+              <div class="err-actions"><button class="btn-goto-set">前往高级设置</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="msg">
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body">
+            <div class="msg-role">AI</div>
+            <div class="err-bubble">
+              <div class="err-title">请求过于频繁，已被限流</div>
+              请稍后重试。
+              <div class="err-actions"><button class="btn-retry">重试</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="msg">
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body">
+            <div class="msg-role">AI</div>
+            <div class="err-bubble">
+              <div class="err-title">上游服务暂时不可用，请稍后重试</div>
+              <div class="err-actions"><button class="btn-retry">重试</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="msg">
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body">
+            <div class="msg-role">AI</div>
+            <div class="err-bubble">
+              <div class="err-title">配额已用尽，将于明日 00:00 重置</div>
+              可在高级设置使用自有密钥解锁更高配额。
+              <div class="err-actions"><button class="btn-goto-set">前往高级设置</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        超时/网络断文案同构（「请求超时，请稍后重试」/「无法连接服务器，请检查网络后重试」+ 重试按钮，不逐个画）；
+        「生成中断」胶囊与 token 失效跳转为基线引用（iter-3/6），不变。暗色：错误气泡 <code>#361B18</code> 底 + <code>#FF8073</code> 字（6.5:1）、
+        重试实底 <code>#D93025</code> 不变（tokens v1.3 既有值）。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">4</span>亮暗锁定对照（密钥配置区整区）</h2>
+    <div class="sec-desc">设置页「密钥配置」区整区一屏走查：模式卡（自填态）+ 高级设置区（档案列表当前生效态）。同一 DOM，仅根节点令牌覆盖；暗色帧内任何肉眼发白块即为漏改裸色值。</div>
+    <div class="spec">
+      <div class="cols">
+        <div>
+          <div class="frame-cap">浅色（tokens v1.3 浅色值）</div>
+          <div class="tk force-light settings-pane" style="height:560px;overflow-y:auto;">
+            <div class="settings-form">
+              <div class="mode-card custom">
+                <div class="mode-head">
+                  <span class="mode-ico"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" style="color:var(--c-primary)"><circle cx="5.5" cy="5.5" r="2.3" stroke="currentColor" stroke-width="1.4"/><path d="M7.2 7.2L13 13M10 10l1.8-1.8M12 12l1.8-1.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span>
+                  <span class="mode-title">自填密钥 · 当前生效：GLM</span>
+                  <span class="mode-badge">已解锁更高配额</span>
+                </div>
+                <div class="mode-desc">使用你配置的供应商密钥发起请求。密钥<b>仅存服务端</b>（受保护存储），多设备一致，浏览器本地不保留。</div>
+                <div class="mode-actions"><button class="btn-ghost-s">回退统一密钥（免费额度）</button></div>
+              </div>
+              <div class="settings-section-label">高级设置 · 自填供应商密钥</div>
+              <div class="sec-intro">填写自有 base URL / 模型名 / API Key，解锁更高配额。<b>密钥仅存服务端</b>（受保护存储），登录后任意设备可见；浏览器本地不存储任何密钥。</div>
+              <div class="profile-list">
+                <div class="profile-item current">
+                  <span class="p-radio"></span>
+                  <div class="p-info">
+                    <div class="p-name-row"><span class="p-name">GLM</span><span class="tag-current">✓ 当前生效</span></div>
+                    <div class="p-meta">https://open.bigmodel.cn/api/paas/v4 · glm-4.6 · sk-****f2a9</div>
+                  </div>
+                  <div class="p-actions">
+                    <button class="btn-p-act" title="编辑"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>
+                    <button class="btn-p-act del" disabled title="当前生效档案不可删除，请先切换或回退统一密钥"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>
+                  </div>
+                </div>
+                <div class="profile-item">
+                  <span class="p-radio"></span>
+                  <div class="p-info">
+                    <div class="p-name-row"><span class="p-name">DeepSeek</span></div>
+                    <div class="p-meta">https://api.deepseek.com/v1 · deepseek-chat · sk-****3c71</div>
+                  </div>
+                  <div class="p-actions"><button class="btn-use">设为当前</button></div>
+                </div>
+              </div>
+              <div style="margin-top:8px;"><button class="btn-add-profile">+ 添加供应商档案</button></div>
+              <div class="list-hint">「设为当前」即切换为<b>自填模式</b>，下一次请求生效；<b>当前生效的档案不可删除</b>，请先切换到其他档案或回退统一密钥。</div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="frame-cap">暗色（tokens v1.3 暗色值，同一 DOM 仅变量覆盖）</div>
+          <div class="tk force-dark settings-pane" style="height:560px;overflow-y:auto;">
+            <div class="settings-form">
+              <div class="mode-card custom">
+                <div class="mode-head">
+                  <span class="mode-ico"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" style="color:var(--c-primary)"><circle cx="5.5" cy="5.5" r="2.3" stroke="currentColor" stroke-width="1.4"/><path d="M7.2 7.2L13 13M10 10l1.8-1.8M12 12l1.8-1.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span>
+                  <span class="mode-title">自填密钥 · 当前生效：GLM</span>
+                  <span class="mode-badge">已解锁更高配额</span>
+                </div>
+                <div class="mode-desc">使用你配置的供应商密钥发起请求。密钥<b>仅存服务端</b>（受保护存储），多设备一致，浏览器本地不保留。</div>
+                <div class="mode-actions"><button class="btn-ghost-s">回退统一密钥（免费额度）</button></div>
+              </div>
+              <div class="settings-section-label">高级设置 · 自填供应商密钥</div>
+              <div class="sec-intro">填写自有 base URL / 模型名 / API Key，解锁更高配额。<b>密钥仅存服务端</b>（受保护存储），登录后任意设备可见；浏览器本地不存储任何密钥。</div>
+              <div class="profile-list">
+                <div class="profile-item current">
+                  <span class="p-radio"></span>
+                  <div class="p-info">
+                    <div class="p-name-row"><span class="p-name">GLM</span><span class="tag-current">✓ 当前生效</span></div>
+                    <div class="p-meta">https://open.bigmodel.cn/api/paas/v4 · glm-4.6 · sk-****f2a9</div>
+                  </div>
+                  <div class="p-actions">
+                    <button class="btn-p-act" title="编辑"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>
+                    <button class="btn-p-act del" disabled title="当前生效档案不可删除，请先切换或回退统一密钥"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>
+                  </div>
+                </div>
+                <div class="profile-item">
+                  <span class="p-radio"></span>
+                  <div class="p-info">
+                    <div class="p-name-row"><span class="p-name">DeepSeek</span></div>
+                    <div class="p-meta">https://api.deepseek.com/v1 · deepseek-chat · sk-****3c71</div>
+                  </div>
+                  <div class="p-actions"><button class="btn-use">设为当前</button></div>
+                </div>
+              </div>
+              <div style="margin-top:8px;"><button class="btn-add-profile">+ 添加供应商档案</button></div>
+              <div class="list-hint">「设为当前」即切换为<b>自填模式</b>，下一次请求生效；<b>当前生效的档案不可删除</b>，请先切换到其他档案或回退统一密钥。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>暗色取值</b>：模式卡自填态 = 主色描边 <code>#5C8DFF</code>（前景）+ 选中底 <code>--c-primary-l #1D2740</code>；徽标底改 surface <code>#1E2026</code> +
+        主色字（在 <code>#1D2740</code> 卡上保对比）；「当前生效」实底胶囊 <code>#3370FF</code> 白字不变（4.3:1）；面板 bg <code>#131417</code> / 卡 surface <code>#1E2026</code> /
+        描边 <code>#33363E</code>。全部 tokens v1.3 既有值。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">5</span>适用性说明（不适用项注明，v1.4.4 口径）</h2>
+    <div class="spec">
+      <table>
+        <tr><th>项</th><th>结论</th><th>依据</th></tr>
+        <tr><td>移动端 ≤480px 适配</td><td><b>不适用</b>：设置页维持桌面优先，不做窄屏断点</td><td>spec 兼容条款（CEO 定 2026-08-15，随 design-iter-6 基线批准）：仅登录/注册两页承诺 ≤480px，其余页面维持现状不承诺</td></tr>
+        <tr><td>T1（流式代理端到端）走查</td><td><b>不适用</b>：无 UI 变更（错误呈现按本稿第 3 节文案，组件为既有基线）</td><td>iter-7.md 任务表 T1 验收原文「无 UI 变更，走查不适用（v1.4.4 注明）」</td></tr>
+        <tr><td>T3（断网暂存重试）走查</td><td><b>不适用</b>：复用 AppToast（提示文案「部分更改未同步」沿 iter-6 交付基线），无新 UI</td><td>iter-7.md 任务表 T3「无新 UI（提示复用 AppToast——走查不适用，注明）」</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">6</span>令牌与组件使用说明</h2>
+    <div class="sec-desc">本稿零新增令牌；新 UI（密钥模式卡）为既有令牌与卡片语法的组合。</div>
+    <table>
+      <tr><th>项</th><th>结论</th></tr>
+      <tr>
+        <td>色值</td>
+        <td>全部取自 tokens.md v1.3/v1.3.1（浅色 + 暗色 + 前景/实底拆分族），本稿零新增、零裸色值（toast 深底与实底白字为既有组合；模式卡图标描边经内联
+        <code>var(--c-success)</code>/<code>var(--c-primary)</code> 引用语义令牌）。无需 design-system 变更。</td>
+      </tr>
+      <tr>
+        <td>组件模式</td>
+        <td>表单/模态/图标按钮/悬停操作栏/列表当前态 = components.md v1.0 既有模式；档案列表、生成中切换、删除确认、空态、极端态 = design-iter-5 §3 基线引用不重画；
+        提示条（form-banner）与「占位」胶囊 = design-iter-6 已沉淀模式（banner 待 components.md 补登记项，iter-6 报告已提）。<b>新增形态一项</b>：密钥模式卡
+        KeyModeCard（状态卡：surface/primary-l 双态 + 徽标 + 动作行）——纯既有令牌组合，建议随本基线批准后补登记 components.md（资产沉淀，不涉令牌批准）。</td>
+      </tr>
+      <tr>
+        <td>字号/间距/圆角/阴影/动效</td>
+        <td>全部在 tokens 既定值域内（卡内距 16px、标题 14px/600、说明 12px、胶囊 12px、过渡 .15s ease、按压 scale .98）。</td>
+      </tr>
+    </table>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">7</span>T0 验收对照 + 走查清单（v1.4.4 硬要求，首次执行）</h2>
+    <div class="sec-desc">上半表对照 plans/iter-7.md T0 验收标准逐条落点；下半表为本稿全部触点与状态组合的走查清单（含亮暗双态与不适用注明）——T2 实现时对照逐条自查留档（development.md §1.4），QA 审计取证。</div>
+
+    <div class="spec">
+      <div class="spec-title">7.1 T0 验收标准对照（plans/iter-7.md 原文）</div>
+      <table>
+        <tr><th>T0 验收标准（原文）</th><th>本稿落点</th><th>状态</th></tr>
+        <tr><td>设计稿经 CEO 批准并打 design-iter-7 tag</td><td>已批准（2026-08-16 CEO 批准 + 第 8 节 4 项技术定夺全部定案）；tag 由主会话打</td><td>☑ 已批准</td></tr>
+        <tr><td>含 §7.x 走查清单（v1.4.4 硬要求）</td><td>7.2（26 条，含亮暗双态、引用基线条目与不适用注明）</td><td>☑ 已覆盖</td></tr>
+        <tr><td>T0 定夺 4 项技术项随基线批准由 CEO 拍板</td><td>第 8 节定案记录（4 项全部按建议方案定案：① env 口径 ② 受保护存储 ③ 错误映射（第 3 节为载体）④ 存量上云方式）</td><td>☑ 已定案</td></tr>
+      </table>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">7.2 走查清单（design-iter-7）</div>
+      <table>
+        <tr><th style="width:44px">序号</th><th>需求</th><th>触点</th><th>状态组合</th><th>期望表现（=验收口径）</th><th>样件</th></tr>
+        <tr><td>1</td><td>REQ-014</td><td>设置页·密钥模式</td><td>统一 key 默认态</td><td>状态卡「服务端统一密钥 · 零配置 · 免费额度内可用」，<b>无任何密钥输入框</b>；新用户登录即此态</td><td>1.1</td></tr>
+        <tr><td>2</td><td>REQ-014</td><td>密钥模式卡</td><td>配额行</td><td>「每日 — 次 · 已用 —」破折号占位 + 琥珀「占位」胶囊（iter-8 参数化），不显示编造数值</td><td>1.1</td></tr>
+        <tr><td>3</td><td>REQ-014</td><td>密钥模式卡</td><td>高级设置入口</td><td>「在下方高级设置中添加自有密钥，解锁更高配额」链接；区头标注「密钥仅存服务端，解锁更高配额」</td><td>1.1</td></tr>
+        <tr><td>4</td><td>REQ-014</td><td>密钥模式卡</td><td>自填模式态</td><td>模式卡主色描边 + primary-l 底；显示当前生效档案名 +「已解锁更高配额」徽标 +「回退统一密钥」按钮</td><td>1.2 / 4</td></tr>
+        <tr><td>5</td><td>REQ-014</td><td>模式联动</td><td>设为当前 = 进自填</td><td>档案「设为当前」→ 模式卡翻自填态 + toast；activeProfileId 即模式判定（有=自填 / 无=统一）</td><td>1.1（可交互）</td></tr>
+        <tr><td>6</td><td>REQ-014</td><td>回退路径</td><td>回退统一密钥</td><td>按钮清除当前生效（档案保留）→ 卡翻统一态 + toast「自下一次请求生效」；无确认弹窗（可逆）</td><td>1.2（可交互）</td></tr>
+        <tr><td>7</td><td>REQ-014</td><td>回退/切换</td><td>生成中（CHG-002）</td><td>生成中设为当前/回退：当前回复旧配置跑完、下一次请求生效，toast 明示（沿 iter-5 3.2 语义）</td><td>1.1（可交互·模拟）</td></tr>
+        <tr><td>8</td><td>REQ-014</td><td>添加档案模态</td><td>表单 + 校验</td><td>四字段沿 iter-5 3.3（必填红描边、Esc 取消、key 密文）；说明改「密钥仅存服务端」</td><td>2.2</td></tr>
+        <tr><td>9</td><td>REQ-014/T2 安全</td><td>编辑档案模态</td><td>key 不回显</td><td>label「API Key（已保存，不回显）」+ placeholder「留空保持不变」；<b>编辑时 key 可空=沿用</b>（添加必填）；明文绝不下发前端</td><td>2.2</td></tr>
+        <tr><td>10</td><td>REQ-018</td><td>档案列表</td><td>交互全集</td><td>沿 iter-5 §3 基线：设为当前/编辑/删除/当前生效徽标/当前项禁删 + title；列表 key 显示服务端掩码 sk-****后4位</td><td>1.1 / 2.1（引用）</td></tr>
+        <tr><td>11</td><td>REQ-018</td><td>数据层</td><td>多设备一致</td><td>档案存服务端；另一设备登录后档案列表与当前生效档案一致（T2 验收行为）</td><td>2.1 注</td></tr>
+        <tr><td>12</td><td>REQ-018</td><td>档案切换</td><td>生成中切换</td><td>toast +「↻ 待生效（本轮完成后）」胶囊（iter-5 3.2 基线引用，不重画）</td><td>2.1（引用）</td></tr>
+        <tr><td>13</td><td>REQ-014</td><td>保存反馈</td><td>toast</td><td>保存档案/修改 toast「已保存」，下一次请求生效（沿基线）</td><td>2.2 注</td></tr>
+        <tr><td>14</td><td>定夺④（已定案）</td><td>存量档案上云</td><td>提示条（占位）</td><td>登录后 warning 提示条 +「导入到云端/暂不导入」；非静默；导入=新增不覆盖 + 本地清除；iter-8 落地</td><td>2.3</td></tr>
+        <tr><td>15</td><td>REQ-007</td><td>错误气泡</td><td>上游 401/403</td><td>「API 密钥无效…」+「前往高级设置」；不提供重试；跳设置页并定位高级设置区</td><td>3</td></tr>
+        <tr><td>16</td><td>REQ-007</td><td>错误气泡</td><td>上游 429</td><td>「请求过于频繁…稍后重试」+ 手动重试（复用原消息），不自动连发</td><td>3</td></tr>
+        <tr><td>17</td><td>REQ-007</td><td>错误气泡</td><td>上游 5xx / 超时</td><td>对应文案 + 重试</td><td>3</td></tr>
+        <tr><td>18</td><td>REQ-007</td><td>错误气泡</td><td>前后端网络断</td><td>「无法连接服务器…」（沿 design-iter-6 定稿文案）+ 重试</td><td>3</td></tr>
+        <tr><td>19</td><td>REQ-007</td><td>消息区</td><td>上游流中断</td><td>已收内容保留 +「生成中断」胶囊（基线引用不变）</td><td>3 表</td></tr>
+        <tr><td>20</td><td>REQ-024 联动</td><td>错误气泡</td><td>配额不足（占位）</td><td>「配额已用尽，将于 XX 重置」+ 高级设置引导；iter-8 返回时零 UI 改动接入</td><td>3</td></tr>
+        <tr><td>21</td><td>REQ-024 联动</td><td>错误气泡</td><td>全站每日上限（占位）</td><td>「服务今日用量已达上限，明日恢复」，无按钮</td><td>3</td></tr>
+        <tr><td>22</td><td>T1 对齐</td><td>错误气泡</td><td>统一密钥未配置</td><td>「服务端未配置统一密钥，请联系管理员」，无按钮（部署缺 env，见定夺 ①）</td><td>3</td></tr>
+        <tr><td>23</td><td>REQ-007</td><td>映射表</td><td>消亡分支留档</td><td>「未配置密钥即发送」v3 双模式下不适用（统一 key 恒可用 + 自填必填校验），防 T2 误实现</td><td>3 表</td></tr>
+        <tr><td>24</td><td>REQ-017</td><td>密钥配置区</td><td>亮暗双态</td><td>第 4 节锁定双帧对照，暗色无亮色残留；正文/说明对比度 ≥4.5:1（tokens v1.3 计算值）</td><td>4</td></tr>
+        <tr><td>25</td><td>极端</td><td>档案列表</td><td>超长/多档案</td><td>沿 iter-5 3.5（名称与 meta ellipsis、列表内部滚动），引用不重画</td><td>2.1（引用）</td></tr>
+        <tr><td>26</td><td>适用性</td><td>移动端 / T1 / T3</td><td>不适用注明</td><td>设置页不做 ≤480px（spec 兼容条款仅登录/注册两页）；T1/T3 无 UI 变更走查不适用（v1.4.4 注明）</td><td>5</td></tr>
+      </table>
+      <div class="ann">共 <b>26</b> 条。「可交互」样件在本页可直接操作复核；「引用」条目按 design-iter-5 基线走查；行为类由 T1/T2 自动化用例或手工走查取证。
+      v1.4.4 口径：T2 实现对照本清单逐条自查后再提交，留档供 QA 审计。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">8</span>技术定夺（2026-08-16 CEO 定，随基线批准，4 项全部按建议方案定案）</h2>
+    <div class="sec-desc">沿 iter-1~6 固化模式：设计师建议方案落样件 → CEO 拍板 → 本节固化为决策记录，T1/T2 按定案实现。③ 的载体为第 3 节映射表，随基线批准即生效。</div>
+
+    <div class="spec" style="border-color:#3370FF;background:#F0F4FF;">
+      <div class="spec-title" style="color:#1F2329;">定案记录（CEO，2026-08-16，4 项全部按建议方案定案）</div>
+      <div class="ann" style="color:#646A73;">
+        <b>① 统一 key 存放口径——按建议定案</b>：backend/.env 三变量（<code>AI_CHAT_UNIFIED_KEY / AI_CHAT_UNIFIED_BASE_URL / AI_CHAT_UNIFIED_MODEL</code>，默认上游 DeepSeek），.env 不入 git + .env.example 占位；<br>
+        <b>② 自填 key 受保护存储——按建议定案</b>：SQLite 明文 + 受保护可验收条款（不进 git/日志/响应、只回掩码、DB 文件 0600 与目录属主），Code Review 重点审密钥路径；<br>
+        <b>③ 上游错误透传映射——按建议定案</b>：第 3 节映射表随基线批准即生效（T1/T2 按表实现）；<br>
+        <b>④ 存量档案上云——按建议定案</b>：登录后提示条 + 一键导入（非静默），「暂不导入」下次登录再提示，导入 = 新增不覆盖 + 本地清除；落地 iter-8。
+      </div>
+    </div>
+
+    <table>
+      <tr><th style="width:60px">编号</th><th>问题（iter-7.md T0 原文）</th><th>定案内容（2026-08-16 CEO 定 = 建议方案）</th></tr>
+      <tr>
+        <td>①</td>
+        <td>统一 key 及默认上游的存放与环境变量口径（.env 不入 git）</td>
+        <td><b>已定案：backend/.env 环境变量</b>：<code>AI_CHAT_UNIFIED_KEY</code> / <code>AI_CHAT_UNIFIED_BASE_URL</code> / <code>AI_CHAT_UNIFIED_MODEL</code> 三项
+        （默认上游 DeepSeek，与 T1 冒烟计划一致）；<code>.env</code> 加入 <code>.gitignore</code> 不入 git，仓库提供 <code>.env.example</code> 占位说明各项含义。
+        理由：12-factor 惯例、Compose 部署时环境注入天然支持（iter-8 全链路 Compose 直接受益）、泄露面收敛为部署机文件权限；
+        缺配时后端返回「服务端未配置统一密钥」（第 3 节映射表已定稿文案）。</td>
+      </tr>
+      <tr>
+        <td>②</td>
+        <td>自填 key 服务端受保护存储形式</td>
+        <td><b>已定案：SQLite 明文 + 文件权限起步，不做应用层可逆加密</b>。理由：单机自部署威胁模型下，可逆加密的密钥仍须存于同机（env/密钥文件），
+        对「能读 DB 文件的攻击者」仅增加一层混淆、无法真正对抗，却引入密钥轮换/备份恢复复杂度与调试成本。
+        「受保护」拆解为<b>可验收条款</b>：key 不进 git（全量历史可检索验证）、不进日志（日志脱钩）、不出现在任何 API 响应（只回掩码）、
+        DB 文件依赖部署目录属主与权限（0600）——iter-7 风险清单已列 Code Review 重点审密钥路径。
+        备选（未采纳，留档）：AES-GCM 加密存储、密钥来自 env——其对本机攻击者防护有限，且增加备份/迁移复杂度。
+        未来多租户云化时再升级 KMS 方案。</td>
+      </tr>
+      <tr>
+        <td>③</td>
+        <td>上游错误经代理透传后的 REQ-007 文案映射表</td>
+        <td><b>已定案：第 3 节映射表定稿生效</b>（10 类场景 + 1 条消亡分支留档，含 iter-8 配额占位行）——T1/T2 按表实现，无需另行定夺。</td>
+      </tr>
+      <tr>
+        <td>④</td>
+        <td>存量本地档案上云方式（登录静默自动 vs 手动导入）</td>
+        <td><b>已定案：手动导入（非静默）</b>：登录后提示条 + 一键导入（2.3 示意样件）——API key 属敏感凭据，未经用户确认不得上传；
+        「暂不导入」本次会话不再提示、下次登录仍显示；导入=本地档案作新增写入云端（不覆盖已有，口径同 REQ-022 会话迁移）+ 本地清除。
+        形态本稿定稿，落地排 iter-8（与 REQ-022 存量迁移同批）。</td>
+      </tr>
+    </table>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">9</span>基线声明</h2>
+    <div class="sec-desc">
+      本稿为 <b>design-iter-7 已批准基线（2026-08-16 CEO 批准；tag design-iter-7 由主会话打）</b>：密钥模式区双模式重设计（统一 key 零配置态 /
+      自填态 / 回退路径）+ 高级设置区（iter-5 档案基线引用 + v3 变更点：文案、密钥编辑不回显、存量上云）+ REQ-007 经代理错误映射定稿 +
+      §7.x 走查清单（v1.4.4 首次执行，26 条），对应 iter-7.md T0 全部交付点；第 8 节 4 项技术定夺已全部定案（按建议方案）。
+      全部色值取自公司 design-system tokens.md v1.3/v1.3.1，零新增令牌；主界面/侧栏 iter-1~6 基线零改动。
+      T1/T2/T3 按本稿与定案开发；T2 实现须对照 7.2 清单逐条自查留档（v1.4.4 任务级门槛）。
+    </div>
+  </section>
+
+</div>
+
+<script>
+/* ============================================================
+   演示交互（文档功能件）：主题切换持久化 / 密钥模式切换 / 回退 / CHG-002 模拟
+   ============================================================ */
+(function () {
+  var KEY = 'mm-demo-theme';
+  var flippables = document.querySelectorAll('.tk:not(.force-light):not(.force-dark)');
+  var btnLight = document.getElementById('btnLight');
+  var btnDark = document.getElementById('btnDark');
+
+  function applyTheme(t) {
+    flippables.forEach(function (f) { f.classList.toggle('dark', t === 'dark'); });
+    btnLight.classList.toggle('on', t === 'light');
+    btnDark.classList.toggle('on', t === 'dark');
+    try { localStorage.setItem(KEY, t); } catch (e) {}
+  }
+  var saved = 'light';
+  try { saved = localStorage.getItem(KEY) || 'light'; } catch (e) {}
+  applyTheme(saved);
+  btnLight.addEventListener('click', function () { applyTheme('light'); });
+  btnDark.addEventListener('click', function () { applyTheme('dark'); });
+
+  function toast(text) {
+    var host = document.getElementById('toastHost');
+    var el = document.createElement('div');
+    el.className = 'toast';
+    el.textContent = text;
+    host.appendChild(el);
+    setTimeout(function () { host.removeChild(el); }, 3000);
+  }
+
+  /* ---- 1.1 密钥模式区：设为当前 / 回退 / 生成中模拟 ---- */
+  var cardUnified = document.getElementById('cardUnified');
+  var cardCustom = document.getElementById('cardCustom');
+  var customName = document.getElementById('customName');
+  var profListDemo = document.getElementById('profListDemo');
+  var simGen2 = document.getElementById('simGen2');
+
+  function setMode(custom, name) {
+    cardUnified.style.display = custom ? 'none' : '';
+    cardCustom.style.display = custom ? '' : 'none';
+    if (name) customName.textContent = name;
+    profListDemo.querySelectorAll('.profile-item').forEach(function (p) {
+      var isCur = custom && p.getAttribute('data-pname') === name;
+      p.classList.toggle('current', isCur);
+      var badge = p.querySelector('.tag-current'); if (badge) badge.remove();
+      var del = p.querySelector('.btn-p-act.del'); if (del) del.disabled = isCur;
+      var use = p.querySelector('.btn-use'); if (use) use.style.display = isCur ? 'none' : '';
+      if (isCur) {
+        var tag = document.createElement('span');
+        tag.className = 'tag-current'; tag.textContent = '✓ 当前生效';
+        p.querySelector('.p-name-row').appendChild(tag);
+      }
+    });
+  }
+  document.querySelectorAll('[data-use2]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var item = btn.closest('.profile-item');
+      var name = item.getAttribute('data-pname');
+      setMode(true, name);
+      toast(simGen2 && simGen2.checked
+        ? '已切换到 ' + name + '（自填模式）：当前回复将用原配置完成，自下一次请求生效（CHG-002 演示）'
+        : '已切换到 ' + name + '（自填模式），下一次请求生效');
+    });
+  });
+  document.getElementById('btnFallback').addEventListener('click', function () {
+    setMode(false, null);
+    toast(simGen2 && simGen2.checked
+      ? '已回退统一密钥模式：当前回复将用原档案完成，自下一次请求生效（CHG-002 演示）'
+      : '已回退统一密钥模式，自下一次请求生效');
+  });
+  document.getElementById('btnGotoAdv').addEventListener('click', function () {
+    var target = document.getElementById('profListDemo');
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+  var addBtn2 = document.getElementById('btnAdd2');
+  if (addBtn2) addBtn2.addEventListener('click', function () {
+    toast('演示：打开「添加供应商档案」模态（见 2.2 样件；密钥仅存服务端）');
+  });
+})();
+</script>
+</body>
+</html>
