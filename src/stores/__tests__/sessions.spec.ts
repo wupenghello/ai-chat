@@ -249,3 +249,95 @@ describe('停止时效构造性证明（NCR-iter2-003 整改）', () => {
     expect(sessions.active!.messages[1].status).toBe('stopped')
   })
 })
+
+describe('消息编辑与重新生成（REQ-015，iter-4 T2）', () => {
+  it('编辑历史消息：删除编辑点及其后消息，从编辑点重建，上下文不含旧后文', async () => {
+    mockedStream
+      .mockResolvedValueOnce('回复1')
+      .mockResolvedValueOnce('回复2')
+      .mockResolvedValueOnce('新回复')
+    const sessions = useSessionsStore()
+    await sessions.send('问题1')
+    await sessions.send('问题2')
+    expect(sessions.active!.messages).toHaveLength(4)
+
+    await sessions.editAndRegenerate(sessions.active!.messages[0].id, '改后问题1')
+
+    const msgs = sessions.active!.messages
+    expect(msgs).toHaveLength(2)
+    expect(msgs[0]).toMatchObject({ role: 'user', content: '改后问题1' })
+    expect(msgs[1]).toMatchObject({ role: 'assistant', content: '新回复', status: 'done' })
+    // 上下文：仅编辑后的用户消息（新 assistant 占位不参与请求）
+    const ctx = mockedStream.mock.calls.at(-1)![1] as Array<{ role: string; content: string }>
+    expect(ctx).toEqual([{ role: 'user', content: '改后问题1' }])
+  })
+
+  it('编辑中间轮次：编辑点之前的轮次完整保留，其后消息被替换', async () => {
+    mockedStream
+      .mockResolvedValueOnce('回复1')
+      .mockResolvedValueOnce('回复2')
+      .mockResolvedValueOnce('新回复2')
+    const sessions = useSessionsStore()
+    await sessions.send('问题1')
+    await sessions.send('问题2')
+
+    await sessions.editAndRegenerate(sessions.active!.messages[2].id, '改后问题2')
+
+    const msgs = sessions.active!.messages
+    expect(msgs).toHaveLength(4)
+    expect(msgs[0]).toMatchObject({ role: 'user', content: '问题1' }) // 第一轮不变
+    expect(msgs[1]).toMatchObject({ role: 'assistant', content: '回复1' })
+    expect(msgs[2]).toMatchObject({ role: 'user', content: '改后问题2' }) // 第二轮被替换
+    expect(msgs[3]).toMatchObject({ role: 'assistant', content: '新回复2', status: 'done' })
+    // 上下文：第一轮完整保留 + 编辑后的第二轮用户消息；旧第二轮后文不出现
+    const ctx = mockedStream.mock.calls.at(-1)![1] as Array<{ role: string; content: string }>
+    expect(ctx).toEqual([
+      { role: 'user', content: '问题1' },
+      { role: 'assistant', content: '回复1' },
+      { role: 'user', content: '改后问题2' },
+    ])
+  })
+
+  it('生成中编辑：中断当前生成，从编辑点重建，新生成不受旧 finally 干扰', async () => {
+    let call = 0
+    mockedStream.mockImplementation((_c, _m, _h: StreamHandlers, signal?: AbortSignal) => {
+      call++
+      if (call === 1) {
+        return new Promise((_res, rej) => {
+          signal?.addEventListener('abort', () => {
+            const e = new Error('aborted')
+            e.name = 'AbortError'
+            rej(e)
+          })
+        })
+      }
+      return Promise.resolve('新回复')
+    })
+    const sessions = useSessionsStore()
+    const p = sessions.send('长问题')
+    await new Promise((r) => setTimeout(r, 10))
+    expect(sessions.isGenerating(sessions.activeId)).toBe(true)
+
+    await sessions.editAndRegenerate(sessions.active!.messages[0].id, '改后问题')
+    await p
+
+    const msgs = sessions.active!.messages
+    expect(msgs).toHaveLength(2)
+    expect(msgs[0]).toMatchObject({ role: 'user', content: '改后问题' })
+    expect(msgs[1]).toMatchObject({ role: 'assistant', content: '新回复', status: 'done' })
+    expect(sessions.isGenerating(sessions.activeId)).toBe(false)
+  })
+
+  it('空文本 / 非用户消息 / 不存在的消息：no-op 不发请求', async () => {
+    mockedStream.mockResolvedValueOnce('回复')
+    const sessions = useSessionsStore()
+    await sessions.send('问题')
+    const calls = mockedStream.mock.calls.length
+
+    await sessions.editAndRegenerate(sessions.active!.messages[0].id, '   ')
+    await sessions.editAndRegenerate(sessions.active!.messages[1].id, '改')
+    await sessions.editAndRegenerate('不存在', '改')
+
+    expect(mockedStream.mock.calls.length).toBe(calls) // 未新增请求
+  })
+})

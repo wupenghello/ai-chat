@@ -47,6 +47,11 @@ function exportCurrent() {
   }
   exportSession(session, settings.config.model)
 }
+
+/** REQ-015：编辑历史消息并重新生成其后内容 */
+function editMessage(id: string, text: string) {
+  void sessions.editAndRegenerate(id, text)
+}
 </script>
 
 <template>
@@ -87,6 +92,7 @@ function exportCurrent() {
             :messages="sessions.active.messages"
             @retry="(id) => sessions.retry(id)"
             @go-settings="openSettings"
+            @edit="editMessage"
           />
           <div class="composer-row">
             <div class="composer-col">

@@ -1,9 +1,16 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import type { Message } from '../stores/sessions'
 import { renderMarkdown } from '../utils/markdown'
 
-const props = defineProps<{ message: Message }>()
+const props = defineProps<{ message: Message; followingCount?: number }>()
+const emit = defineEmits<{ edit: [id: string, text: string] }>()
+
+// REQ-015 编辑态：仅用户消息可编辑
+const editing = ref(false)
+const draft = ref('')
+const editEl = ref<HTMLTextAreaElement | null>(null)
+const canSave = computed(() => editing.value && draft.value.trim().length > 0)
 
 // AI 回复按 Markdown 渲染（流式增量：每次 onDelta 触发重渲染）
 const rendered = computed(() => renderMarkdown(props.message.content))
@@ -45,6 +52,35 @@ function onCopy(e: MouseEvent) {
     }, 1500)
   })
 }
+
+// REQ-015 编辑态交互：进入编辑回填原文本；Enter 确认、Shift+Enter 换行、Esc 取消
+function startEdit() {
+  draft.value = props.message.content
+  editing.value = true
+  void nextTick(() => editEl.value?.focus())
+}
+
+function cancelEdit() {
+  editing.value = false
+  draft.value = ''
+}
+
+function saveEdit() {
+  if (!canSave.value) return
+  emit('edit', props.message.id, draft.value.trim())
+  editing.value = false
+}
+
+function onEditKey(e: KeyboardEvent) {
+  if (e.isComposing) return // 中文输入法选词回车不保存
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    cancelEdit()
+  } else if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    saveEdit()
+  }
+}
 </script>
 
 <template>
@@ -61,7 +97,25 @@ function onCopy(e: MouseEvent) {
         />
       </svg>
     </div>
-    <div class="bubble" :class="message.role">
+    <!-- REQ-015：编辑态（仅用户消息）替换气泡为编辑面板 -->
+    <div v-if="message.role === 'user' && editing" class="edit-form">
+      <textarea
+        ref="editEl"
+        v-model="draft"
+        rows="1"
+        class="edit-ta"
+        @keydown="onEditKey"
+      />
+      <div class="edit-hint">
+        {{ followingCount ? `保存后，此消息及其后的 ${followingCount} 条回复将被删除并重新生成` : '保存后仅重新生成该条回复' }}
+      </div>
+      <div class="edit-actions">
+        <button class="edit-cancel" @click="cancelEdit">取消</button>
+        <button class="edit-save" :disabled="!canSave" @click="saveEdit">保存并重新生成</button>
+      </div>
+    </div>
+
+    <div v-else class="bubble" :class="message.role">
       <!-- 用户消息保持纯文本；AI 回复走 Markdown 富文本（v-html 内容，样式见下方非 scoped 块） -->
       <span v-if="message.role === 'user'" class="content">{{ message.content }}</span>
       <div v-else class="md" v-html="rendered" @click="onCopy"></div>
@@ -74,6 +128,17 @@ function onCopy(e: MouseEvent) {
         已停止生成
       </span>
     </div>
+
+    <!-- REQ-015：用户消息 hover 显示编辑入口 -->
+    <button v-if="message.role === 'user' && !editing" class="edit-trigger" aria-label="编辑消息" @click="startEdit">
+      <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+        <path
+          fill="currentColor"
+          d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
+        />
+      </svg>
+    </button>
+
     <div v-if="message.role === 'user'" class="avatar user" aria-hidden="true">我</div>
   </div>
 </template>
@@ -159,6 +224,95 @@ function onCopy(e: MouseEvent) {
   background: #f2f3f5;
   border-radius: 999px;
   padding: 2px 8px;
+}
+/* REQ-015 编辑态：主色描边面板 + 就地回填 textarea + 取消/保存操作栏 */
+.edit-form {
+  flex: 1;
+  max-width: 80%;
+  background: var(--c-surface);
+  border: 1px solid var(--c-primary);
+  border-radius: 12px;
+  padding: 10px 12px;
+  box-shadow: 0 0 0 3px rgba(51, 112, 255, 0.12);
+}
+.edit-ta {
+  width: 100%;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--c-text-1);
+  font-family: inherit;
+}
+.edit-hint {
+  font-size: 12px;
+  color: var(--c-text-3);
+  margin-top: 6px;
+}
+.edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+.edit-cancel {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  background: var(--c-surface);
+  color: var(--c-text-2);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.edit-cancel:hover {
+  border-color: var(--c-primary);
+  color: var(--c-primary);
+}
+.edit-save {
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 8px;
+  background: var(--c-primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.edit-save:hover:not(:disabled) {
+  background: var(--c-primary-h);
+}
+.edit-save:disabled {
+  background: #c9cfdb;
+  cursor: not-allowed;
+}
+.edit-trigger {
+  flex: none;
+  align-self: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--c-text-3);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.row:hover .edit-trigger {
+  opacity: 1;
+}
+.edit-trigger:hover {
+  background: var(--c-primary-l);
+  color: var(--c-primary);
 }
 @keyframes blink {
   50% {

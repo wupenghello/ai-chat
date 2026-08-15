@@ -46,6 +46,8 @@ export const useSessionsStore = defineStore('sessions', {
     controllers: {} as Record<string, AbortController>,
     /** 用户主动停止的会话（REQ-010）：abort 后标注 stopped，与系统中断 interrupted 区分 */
     stopRequested: {} as Record<string, true>,
+    /** 生成纪元：每次 generate 递增；REQ-015 编辑中断旧生成后，旧 finally 不再清理新控制器 */
+    generation: {} as Record<string, number>,
   }),
 
   getters: {
@@ -170,9 +172,39 @@ export const useSessionsStore = defineStore('sessions', {
       await this.generate(session, retryMsg)
     },
 
+    /** REQ-015：编辑历史用户消息并重新生成其后内容 */
+    async editAndRegenerate(messageId: string, newText: string): Promise<void> {
+      const session = this.active
+      if (!session || session.corrupted) return
+      const trimmed = newText.trim()
+      if (!trimmed) return
+      const idx = session.messages.findIndex((m) => m.id === messageId)
+      if (idx < 0) return
+      if (session.messages[idx].role !== 'user') return
+
+      // 生成中编辑：中断当前生成（不置 stopRequested，语义为「生成中断」），递增纪元让旧 finally 失效
+      if (this.controllers[session.id]) {
+        this.generation[session.id] = (this.generation[session.id] ?? 0) + 1
+        this.controllers[session.id].abort()
+        delete this.controllers[session.id]
+      }
+
+      // 删除编辑点及其后所有消息，从编辑点重建
+      session.messages.splice(idx)
+      const userMsg: Message = { id: uid(), role: 'user', content: trimmed, status: 'done' }
+      const aiMsg: Message = { id: uid(), role: 'assistant', content: '', status: 'generating' }
+      session.messages.push(userMsg, aiMsg)
+      session.updatedAt = Date.now()
+      void this.persist(session)
+
+      const aiMsgReactive = session.messages[session.messages.length - 1]
+      await this.generate(session, aiMsgReactive)
+    },
+
     async generate(session: Session, aiMsg: Message) {
       const settings = useSettingsStore()
       const controller = new AbortController()
+      const epoch = (this.generation[session.id] = (this.generation[session.id] ?? 0) + 1)
       this.controllers[session.id] = controller
       try {
         const full = await streamChat(
@@ -203,8 +235,11 @@ export const useSessionsStore = defineStore('sessions', {
         }
       } finally {
         session.updatedAt = Date.now()
-        delete this.controllers[session.id]
-        delete this.stopRequested[session.id]
+        // REQ-015：仅当仍是当前纪元才清理控制器——编辑中断后旧生成的 finally 不得清掉新控制器
+        if (this.generation[session.id] === epoch) {
+          delete this.controllers[session.id]
+          delete this.stopRequested[session.id]
+        }
         void this.persist(session)
       }
     },

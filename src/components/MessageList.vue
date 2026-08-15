@@ -5,7 +5,7 @@ import MessageBubble from './MessageBubble.vue'
 import ErrorBubble from './ErrorBubble.vue'
 
 const props = defineProps<{ messages: Message[] }>()
-const emit = defineEmits<{ retry: [id: string]; goSettings: [] }>()
+const emit = defineEmits<{ retry: [id: string]; goSettings: []; edit: [id: string, text: string] }>()
 
 const el = ref<HTMLElement | null>(null)
 
@@ -39,7 +39,7 @@ watch(
 <template>
   <div ref="el" class="list" @scroll.passive="onScroll">
     <div class="list-col">
-      <template v-for="m in messages" :key="m.id">
+      <template v-for="(m, i) in messages" :key="m.id">
         <ErrorBubble
           v-if="m.status === 'error'"
           :kind="m.error?.kind ?? 'unknown'"
@@ -48,7 +48,11 @@ watch(
           @go-settings="emit('goSettings')"
         />
         <div v-else class="row-wrap" :class="m.role">
-          <MessageBubble :message="m" />
+          <MessageBubble
+            :message="m"
+            :following-count="messages.length - i - 1"
+            @edit="(id, text) => emit('edit', id, text)"
+          />
         </div>
       </template>
     </div>
