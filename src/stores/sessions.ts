@@ -12,6 +12,8 @@ export interface Message {
   content: string
   status: MessageStatus
   error?: { kind: string; message: string }
+  /** REQ-019：有可切换版本时指向 Session.branches 的 key */
+  forkId?: string
 }
 
 export interface Session extends PersistedSession {
@@ -189,9 +191,16 @@ export const useSessionsStore = defineStore('sessions', {
         delete this.controllers[session.id]
       }
 
+      // 归档旧分支（REQ-019 版本切换）：深拷贝，避免与响应式对象互相引用成环
+      const oldBranch = JSON.parse(JSON.stringify(session.messages.slice(idx))) as Message[]
+      const forkId = uid()
+      oldBranch[0].forkId = forkId
+      session.branches = session.branches ?? {}
+      session.branches[forkId] = oldBranch
+
       // 删除编辑点及其后所有消息，从编辑点重建
       session.messages.splice(idx)
-      const userMsg: Message = { id: uid(), role: 'user', content: trimmed, status: 'done' }
+      const userMsg: Message = { id: uid(), role: 'user', content: trimmed, status: 'done', forkId }
       const aiMsg: Message = { id: uid(), role: 'assistant', content: '', status: 'generating' }
       session.messages.push(userMsg, aiMsg)
       session.updatedAt = Date.now()
@@ -199,6 +208,24 @@ export const useSessionsStore = defineStore('sessions', {
 
       const aiMsgReactive = session.messages[session.messages.length - 1]
       await this.generate(session, aiMsgReactive)
+    },
+
+    /** REQ-019：切换消息版本（编辑/重新生成后的新旧分支互换） */
+    toggleVersion(forkId: string) {
+      const session = this.active
+      if (!session || session.corrupted) return
+      const branches = session.branches
+      if (!branches) return
+      const alternate = branches[forkId]
+      if (!alternate) return
+      const idx = session.messages.findIndex((m) => m.forkId === forkId)
+      if (idx < 0) return
+      const current = JSON.parse(JSON.stringify(session.messages.slice(idx))) as Message[]
+      current[0].forkId = forkId
+      branches[forkId] = current
+      session.messages.splice(idx, session.messages.length - idx, ...alternate)
+      session.updatedAt = Date.now()
+      void this.persist(session)
     },
 
     async generate(session: Session, aiMsg: Message) {

@@ -93,6 +93,7 @@ function editMessage(id: string, text: string) {
             @retry="(id) => sessions.retry(id)"
             @go-settings="openSettings"
             @edit="editMessage"
+            @toggle-version="(forkId) => sessions.toggleVersion(forkId)"
           />
           <div class="composer-row">
             <div class="composer-col">

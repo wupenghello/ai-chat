@@ -38,20 +38,17 @@ function onKey(e: KeyboardEvent) {
 
 <template>
   <div class="composer">
-    <textarea
-      ref="el"
-      v-model="text"
-      rows="1"
-      class="ta"
-      placeholder="输入消息，Enter 发送，Shift+Enter 换行"
-      @keydown="onKey"
-      @input="autosize"
-    />
-    <div class="composer-bar">
-      <span class="composer-hint">{{
-        generating ? (hint ?? 'AI 回复生成中，发送暂不可用…') : 'Enter 发送 · Shift+Enter 换行'
-      }}</span>
-      <!-- REQ-010：生成中发送按钮原位切换为停止按钮；输入框保持可输入（草稿不丢），Enter 不发送 -->
+    <div class="composer-main">
+      <textarea
+        ref="el"
+        v-model="text"
+        rows="1"
+        class="ta"
+        placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+        @keydown="onKey"
+        @input="autosize"
+      />
+      <!-- REQ-010：生成中发送按钮原位切换为停止按钮；CHG-003 按钮与 textarea 同排、顶部对齐首行 -->
       <button v-if="generating" class="stop" aria-label="停止生成" @click="onStop">
         <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
           <rect width="10" height="10" rx="1.5" fill="currentColor" />
@@ -64,16 +61,18 @@ function onKey(e: KeyboardEvent) {
         </svg>
       </button>
     </div>
+    <div class="composer-hint">
+      {{ generating ? (hint ?? 'AI 回复生成中，发送暂不可用…') : 'Enter 发送 · Shift+Enter 换行' }}
+    </div>
   </div>
 </template>
 
 <style scoped>
-/* DEF-011：回基线设计稿 iter-1 4.6 节——textarea 在上 + 底部操作栏两行结构 */
 .composer {
   background: var(--c-surface);
   border: 1px solid var(--c-border);
   border-radius: 12px;
-  padding: 12px 12px 8px;
+  padding: 12px;
   box-shadow: 0 1px 2px rgba(31, 35, 41, 0.06);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
@@ -81,9 +80,14 @@ function onKey(e: KeyboardEvent) {
   border-color: var(--c-primary);
   box-shadow: 0 0 0 3px rgba(51, 112, 255, 0.12);
 }
+.composer-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
 .ta {
-  width: 100%;
-  display: block;
+  flex: 1;
+  min-width: 0;
   border: none;
   outline: none;
   resize: none;
@@ -93,20 +97,15 @@ function onKey(e: KeyboardEvent) {
   color: var(--c-text-1);
   max-height: 160px;
   font-family: inherit;
+  padding-top: 7px; /* 让首行文字与 36px 按钮视觉居中（CHG-003 顶部对齐首行） */
 }
 .ta::placeholder {
   color: var(--c-text-3);
 }
-.composer-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-}
 .composer-hint {
   font-size: 12px;
   color: var(--c-text-3);
-  margin-right: auto;
+  margin-top: 6px;
 }
 .send {
   flex: none;

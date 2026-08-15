@@ -4,13 +4,16 @@ import type { Message } from '../stores/sessions'
 import { renderMarkdown } from '../utils/markdown'
 
 const props = defineProps<{ message: Message; followingCount?: number }>()
-const emit = defineEmits<{ edit: [id: string, text: string] }>()
+const emit = defineEmits<{ edit: [id: string, text: string]; toggleVersion: [forkId: string] }>()
 
 // REQ-015 编辑态：仅用户消息可编辑
 const editing = ref(false)
 const draft = ref('')
 const editEl = ref<HTMLTextAreaElement | null>(null)
 const canSave = computed(() => editing.value && draft.value.trim().length > 0)
+
+// CHG-003 复制整条消息（复制原文，非渲染后 HTML）
+const copied = ref(false)
 
 // AI 回复按 Markdown 渲染（流式增量：每次 onDelta 触发重渲染）
 const rendered = computed(() => renderMarkdown(props.message.content))
@@ -50,6 +53,15 @@ function onCopy(e: MouseEvent) {
       btn.classList.remove('copied')
       btn.textContent = '复制'
     }, 1500)
+  })
+}
+
+// CHG-003：复制整条消息原文，短暂反馈「已复制」
+function copyMessage() {
+  void copyToClipboard(props.message.content).then((ok) => {
+    if (!ok) return
+    copied.value = true
+    window.setTimeout(() => (copied.value = false), 1500)
   })
 }
 
@@ -97,47 +109,62 @@ function onEditKey(e: KeyboardEvent) {
         />
       </svg>
     </div>
-    <!-- REQ-015：编辑态（仅用户消息）替换气泡为编辑面板 -->
-    <div v-if="message.role === 'user' && editing" class="edit-form">
-      <textarea
-        ref="editEl"
-        v-model="draft"
-        rows="1"
-        class="edit-ta"
-        @keydown="onEditKey"
-      />
-      <div class="edit-hint">
-        {{ followingCount ? `保存后，此消息及其后的 ${followingCount} 条回复将被删除并重新生成` : '保存后仅重新生成该条回复' }}
-      </div>
-      <div class="edit-actions">
-        <button class="edit-cancel" @click="cancelEdit">取消</button>
-        <button class="edit-save" :disabled="!canSave" @click="saveEdit">保存并重新生成</button>
-      </div>
-    </div>
 
-    <div v-else class="bubble" :class="message.role">
-      <!-- 用户消息保持纯文本；AI 回复走 Markdown 富文本（v-html 内容，样式见下方非 scoped 块） -->
-      <span v-if="message.role === 'user'" class="content">{{ message.content }}</span>
-      <div v-else class="md" v-html="rendered" @click="onCopy"></div>
-
-      <span v-if="message.status === 'generating'" class="cursor" aria-hidden="true" />
-      <span v-if="message.status === 'generating'" class="status-hint">正在生成…</span>
-      <span v-else-if="message.status === 'interrupted'" class="pill interrupted">生成中断</span>
-      <span v-else-if="message.status === 'stopped'" class="pill stopped">
-        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect width="10" height="10" rx="1.5" fill="currentColor" /></svg>
-        已停止生成
-      </span>
-    </div>
-
-    <!-- REQ-015：用户消息 hover 显示编辑入口 -->
-    <button v-if="message.role === 'user' && !editing" class="edit-trigger" aria-label="编辑消息" @click="startEdit">
-      <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
-        <path
-          fill="currentColor"
-          d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
+    <div class="msg-col" :class="message.role">
+      <!-- REQ-015：编辑态（仅用户消息）替换气泡为编辑面板 -->
+      <div v-if="message.role === 'user' && editing" class="edit-form">
+        <textarea
+          ref="editEl"
+          v-model="draft"
+          rows="1"
+          class="edit-ta"
+          @keydown="onEditKey"
         />
-      </svg>
-    </button>
+        <div class="edit-hint">
+          {{ followingCount ? `保存后，此消息及其后的 ${followingCount} 条回复将被删除并重新生成` : '保存后仅重新生成该条回复' }}
+        </div>
+        <div class="edit-actions">
+          <button class="edit-cancel" @click="cancelEdit">取消</button>
+          <button class="edit-save" :disabled="!canSave" @click="saveEdit">保存并重新生成</button>
+        </div>
+      </div>
+
+      <div v-else class="bubble" :class="message.role">
+        <!-- 用户消息保持纯文本；AI 回复走 Markdown 富文本（v-html 内容，样式见下方非 scoped 块） -->
+        <span v-if="message.role === 'user'" class="content">{{ message.content }}</span>
+        <div v-else class="md" v-html="rendered" @click="onCopy"></div>
+
+        <span v-if="message.status === 'generating'" class="cursor" aria-hidden="true" />
+        <span v-if="message.status === 'generating'" class="status-hint">正在生成…</span>
+        <span v-else-if="message.status === 'interrupted'" class="pill interrupted">生成中断</span>
+        <span v-else-if="message.status === 'stopped'" class="pill stopped">
+          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect width="10" height="10" rx="1.5" fill="currentColor" /></svg>
+          已停止生成
+        </span>
+      </div>
+
+      <!-- CHG-003：消息下方常显操作栏（复制 / 编辑 / 版本切换） -->
+      <div v-if="!editing" class="actions">
+        <button class="action-btn" :aria-label="copied ? '已复制' : '复制'" @click="copyMessage">
+          <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+            <path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z" />
+          </svg>
+          {{ copied ? '已复制' : '复制' }}
+        </button>
+        <button v-if="message.role === 'user'" class="action-btn" aria-label="编辑" @click="startEdit">
+          <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+            <path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
+          </svg>
+          编辑
+        </button>
+        <button v-if="message.forkId" class="action-btn" aria-label="切换版本" @click="emit('toggleVersion', message.forkId!)">
+          <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+            <path fill="currentColor" d="M12 6v3l4-4-4-4v3a8 8 0 0 0-8 8 8 8 0 0 0 1.5 4.7l1.5-1.5A6 6 0 0 1 6 12a6 6 0 0 1 6-6zm6.5 2.3-1.5 1.5A6 6 0 0 1 18 12a6 6 0 0 1-6 6v-3l-4 4 4 4v-3a8 8 0 0 0 8-8 8 8 0 0 0-1.5-4.7z" />
+          </svg>
+          切换版本
+        </button>
+      </div>
+    </div>
 
     <div v-if="message.role === 'user'" class="avatar user" aria-hidden="true">我</div>
   </div>
@@ -172,8 +199,23 @@ function onEditKey(e: KeyboardEvent) {
   background: #e8ebf2;
   color: var(--c-text-2);
 }
-.bubble {
+/* CHG-003：消息列（气泡 + 下方操作栏），宽度由本列约束 */
+.msg-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
   max-width: 80%;
+}
+.msg-col.assistant {
+  flex: 1;
+  max-width: 100%;
+}
+.msg-col.user {
+  align-items: flex-end;
+}
+.bubble {
+  max-width: 100%;
   font-size: 15px;
   line-height: 1.75;
   white-space: pre-wrap;
@@ -186,7 +228,6 @@ function onEditKey(e: KeyboardEvent) {
   border-radius: 12px 12px 4px 12px;
 }
 .bubble.assistant {
-  max-width: 100%;
   padding: 4px 0;
 }
 .cursor {
@@ -225,10 +266,33 @@ function onEditKey(e: KeyboardEvent) {
   border-radius: 999px;
   padding: 2px 8px;
 }
+/* CHG-003：消息下方常显操作栏（复制 / 编辑 / 切换版本），参考 DeepSeek */
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--c-text-3);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.action-btn:hover {
+  background: #f2f3f5;
+  color: var(--c-text-1);
+}
 /* REQ-015 编辑态：主色描边面板 + 就地回填 textarea + 取消/保存操作栏 */
 .edit-form {
-  flex: 1;
-  max-width: 80%;
+  width: 100%;
   background: var(--c-surface);
   border: 1px solid var(--c-primary);
   border-radius: 12px;
@@ -290,29 +354,6 @@ function onEditKey(e: KeyboardEvent) {
 .edit-save:disabled {
   background: #c9cfdb;
   cursor: not-allowed;
-}
-.edit-trigger {
-  flex: none;
-  align-self: center;
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--c-text-3);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
-}
-.row:hover .edit-trigger {
-  opacity: 1;
-}
-.edit-trigger:hover {
-  background: var(--c-primary-l);
-  color: var(--c-primary);
 }
 @keyframes blink {
   50% {

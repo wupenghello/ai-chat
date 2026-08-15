@@ -10,6 +10,8 @@ export interface PersistedMessage {
   content: string
   status: 'done' | 'generating' | 'interrupted' | 'stopped' | 'error'
   error?: { kind: string; message: string }
+  /** REQ-019：有可切换版本时指向 Session.branches 的 key */
+  forkId?: string
 }
 
 export interface PersistedSession {
@@ -20,6 +22,8 @@ export interface PersistedSession {
   messages: PersistedMessage[]
   /** REQ-009 × REQ-012：手动改名后置 true，自动命名不再覆盖 */
   renamed?: boolean
+  /** REQ-019：版本分支存档（key=forkId，value=深拷贝的替代分支消息序列） */
+  branches?: Record<string, PersistedMessage[]>
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null

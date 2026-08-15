@@ -340,4 +340,26 @@ describe('消息编辑与重新生成（REQ-015，iter-4 T2）', () => {
 
     expect(mockedStream.mock.calls.length).toBe(calls) // 未新增请求
   })
+
+  it('版本切换：编辑后保留旧分支，toggleVersion 在新旧分支间互换（REQ-019）', async () => {
+    mockedStream.mockResolvedValueOnce('回复1').mockResolvedValueOnce('新回复')
+    const sessions = useSessionsStore()
+    await sessions.send('问题1')
+    const uid = sessions.active!.messages[0].id
+
+    await sessions.editAndRegenerate(uid, '改后问题')
+    expect(sessions.active!.messages[0]).toMatchObject({ role: 'user', content: '改后问题' })
+    const forkId = sessions.active!.messages[0].forkId
+    expect(forkId).toBeTruthy()
+
+    // 切到旧分支
+    sessions.toggleVersion(forkId!)
+    expect(sessions.active!.messages[0]).toMatchObject({ role: 'user', content: '问题1' })
+    expect(sessions.active!.messages[1]).toMatchObject({ role: 'assistant', content: '回复1', status: 'done' })
+
+    // 再切回新分支
+    sessions.toggleVersion(forkId!)
+    expect(sessions.active!.messages[0]).toMatchObject({ role: 'user', content: '改后问题' })
+    expect(sessions.active!.messages[1]).toMatchObject({ role: 'assistant', content: '新回复', status: 'done' })
+  })
 })

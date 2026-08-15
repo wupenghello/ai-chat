@@ -5,7 +5,7 @@ import MessageBubble from './MessageBubble.vue'
 import ErrorBubble from './ErrorBubble.vue'
 
 const props = defineProps<{ messages: Message[] }>()
-const emit = defineEmits<{ retry: [id: string]; goSettings: []; edit: [id: string, text: string] }>()
+const emit = defineEmits<{ retry: [id: string]; goSettings: []; edit: [id: string, text: string]; toggleVersion: [forkId: string] }>()
 
 const el = ref<HTMLElement | null>(null)
 
@@ -52,6 +52,7 @@ watch(
             :message="m"
             :following-count="messages.length - i - 1"
             @edit="(id, text) => emit('edit', id, text)"
+            @toggle-version="(forkId) => emit('toggleVersion', forkId)"
           />
         </div>
       </template>
