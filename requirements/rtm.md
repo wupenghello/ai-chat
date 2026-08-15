@@ -2,7 +2,7 @@
 
 双向可追溯：需求 → 设计稿 → 实现 → 测试 → 状态。迭代收尾时必须与实际代码一致。
 
-> 需求已基线（req-baseline-v1，2026-08-15 CEO 批准）。iter-1 已关闭（G4 过，v0.1.0 已发布）。iter-2 已关闭（2026-08-15，G4 过：开发 T0~T4 全完成、37/37 测试、24 条走查、QA 审计 3 NCR 全整改、复盘完成，见 retros/iter-2.md）。iter-3 计划已批准（Σ9，REQ-009/011/012/013，2026-08-15 CEO 确认，见 plans/iter-3.md）。设计稿 design-iter-3 已基线（2026-08-15 CEO 批准，6 项待澄清定夺）。iter-3 已关闭（2026-08-15，G4 过：开发 T0~T4 全完成、62/62 测试、28 条走查、QA 审计 0 NCR 符合、复盘完成，见 retros/iter-3.md）。REQ-001~014 全部达成。iter-4 计划已批准（Σ9，REQ-015/016 + DEF-011，2026-08-15 CEO 确认，见 plans/iter-4.md）。iter-4 开发完成（T0~T3 全完成、79/79 测试、设计基线 design-iter-4）。iter-4 已关闭（2026-08-15，G4 过：开发 T0~T3 + CHG-003 全完成、79/79 测试、走查 28 条、QA 审计 5 NCR 全整改、周报含 Code Review、生产构建通过、复盘完成，见 retros/iter-4.md）。v0.3.0 已发布（CEO 批准，releases/v0.3.0.md）。iter-5 计划已批准（Σ8，REQ-017/018 + 复盘遗留 token 化，2026-08-15 CEO 确认，见 plans/iter-5.md）。iter-5 已关闭（2026-08-15，G4 过：T0~T3 全完成、85/85 测试、走查 17 条、QA 审计 5 NCR 全整改、周报含 Code Review（CEO 过目 2026-08-15）、生产构建通过、复盘完成，见 retros/iter-5.md）。v0.4.0 已发布（CEO 批准，releases/v0.4.0.md）。基线 v2 需求 REQ-001~019 全部达成。CHG-004 已批准（req-baseline-v3，2026-08-15），REQ-020~025 进入排期；REQ-006/014/018 正文已按澄清结论改写。
+> 需求已基线（req-baseline-v1，2026-08-15 CEO 批准）。iter-1 已关闭（G4 过，v0.1.0 已发布）。iter-2 已关闭（2026-08-15，G4 过：开发 T0~T4 全完成、37/37 测试、24 条走查、QA 审计 3 NCR 全整改、复盘完成，见 retros/iter-2.md）。iter-3 计划已批准（Σ9，REQ-009/011/012/013，2026-08-15 CEO 确认，见 plans/iter-3.md）。设计稿 design-iter-3 已基线（2026-08-15 CEO 批准，6 项待澄清定夺）。iter-3 已关闭（2026-08-15，G4 过：开发 T0~T4 全完成、62/62 测试、28 条走查、QA 审计 0 NCR 符合、复盘完成，见 retros/iter-3.md）。REQ-001~014 全部达成。iter-4 计划已批准（Σ9，REQ-015/016 + DEF-011，2026-08-15 CEO 确认，见 plans/iter-4.md）。iter-4 开发完成（T0~T3 全完成、79/79 测试、设计基线 design-iter-4）。iter-4 已关闭（2026-08-15，G4 过：开发 T0~T3 + CHG-003 全完成、79/79 测试、走查 28 条、QA 审计 5 NCR 全整改、周报含 Code Review、生产构建通过、复盘完成，见 retros/iter-4.md）。v0.3.0 已发布（CEO 批准，releases/v0.3.0.md）。iter-5 计划已批准（Σ8，REQ-017/018 + 复盘遗留 token 化，2026-08-15 CEO 确认，见 plans/iter-5.md）。iter-5 已关闭（2026-08-15，G4 过：T0~T3 全完成、85/85 测试、走查 17 条、QA 审计 5 NCR 全整改、周报含 Code Review（CEO 过目 2026-08-15）、生产构建通过、复盘完成，见 retros/iter-5.md）。v0.4.0 已发布（CEO 批准，releases/v0.4.0.md）。基线 v2 需求 REQ-001~019 全部达成。CHG-004 已批准（req-baseline-v3，2026-08-15），REQ-020~025 进入排期；REQ-006/014/018 正文已按澄清结论改写。iter-6 计划已批准（Σ10 = M×2 + L×2，2026-08-15 CEO 批准，按草案原样通过）：REQ-020 全量（T0 设计/T1 后端/T2 前端）+ REQ-022 存储核心（T3）+ REQ-006 数据层换源（T3）；REQ-023 排 iter-7，REQ-024/021/025 排 iter-8（见 plans/iter-6.md 跨迭代切分）；随计划定案两项技术决策——仓库布局 monorepo（backend/ 目录 + 根 docker-compose.yml）、登录态 token 传递方式 = HttpOnly Cookie（均 2026-08-15 CEO 拍板；monorepo 以 changes.md CHG-004 补录落盘为准）。
 
 | 需求 | 描述摘要 | 优先级 | 设计稿 | 实现（文件/模块） | 测试（用例/文件） | 状态 | 所在迭代 |
 |------|---------|--------|----------|-----------------|------------------|------|---------|
@@ -11,7 +11,7 @@
 | REQ-003 | 新建会话（生成中新建 = 中断并标注） | P0 | design/iter-1（已基线） | stores/sessions.ts, TheSidebar | sessions.spec | 已验证 | iter-1 |
 | REQ-004 | 查看历史会话并切换（CHG-001：切换不中断，后台继续生成） | P0 | design/iter-1（已基线） | stores/sessions.ts, SessionListItem | sessions.spec（CHG-001 用例） | 已验证 | iter-1 |
 | REQ-005 | 删除会话 | P0 | design/iter-1（已基线） | TheSidebar + ConfirmModal | sessions.spec | 已验证 | iter-1 |
-| REQ-006 | 会话本地持久化与恢复（IndexedDB） | P0 | 不涉及（数据层） | db/idb.ts, stores/sessions.ts | sessions.spec + 浏览器实测（修复 Proxy 克隆缺陷后端到端通过） | 已验证 | iter-1 |
+| REQ-006 | 会话本地持久化与恢复（IndexedDB） | P0 | 不涉及（数据层） | db/idb.ts, stores/sessions.ts | sessions.spec + 浏览器实测（修复 Proxy 克隆缺陷后端到端通过） | 已验证（基线 v3 改写后：数据层换源随 iter-6 T3——服务端为唯一持久层，idb 迁移源角色不变，换源后按新验收口径复验） | iter-1（改写落地 iter-6 T3） |
 | REQ-007 | 调用异常与降级提示（401 引导至设置页） | P0 | design/iter-1（已基线） | api/client.ts, ErrorBubble, AppToast | client.spec / sessions.spec + 浏览器实测（未配置引导、429 原因透传） | 已验证 | iter-1 |
 | REQ-008 | 系统提示词设置 | P1（CEO 已确认降级） | design/iter-2（已基线） | stores/settings.ts, SettingsForm, api/client.ts buildContext | settings.spec / sessions.spec + 走查（plans/iter-2-verify.md 24 条） | 已验证（"回复只用英文"端到端以请求体单测取证：system 恒居首位） | iter-2 |
 | REQ-009 | 会话自动命名 | P1 | design/iter-3（已基线） | stores/sessions.ts（titleOf 省略号 + renamed） | sessions-naming.spec | 已验证 | iter-3 |
@@ -25,12 +25,12 @@
 | REQ-017 | 暗色主题 | P2 | design/iter-5（已基线） | App.vue 令牌根 [data-theme=dark] 覆盖, composables/useTheme, 顶栏主题按钮 + SettingsForm 外观 segmented | 浏览器实测（暗色 #131417/#1E2026/#E6EAF0 命中令牌、切换即变、刷新保持）+ 全组件 token 化走查 | 已验证 | iter-5 |
 | REQ-018 | 多供应商档案一键切换（REQ-014 增强） | P2 | design/iter-5（已基线） | stores/settings（profiles + 旧格式迁移 + setActiveProfile/removeProfile）, SettingsForm 档案列表/模态, TheSidebar 当前档案标签 | settings.spec（4 档案用例）/ settings-form.spec（4 用例）+ 浏览器实测（迁移/添加/切换/删除边界） | 已验证（**GLM 真实流式按 DEF-002 CEO 决策 2026-08-15 不补验、接受部分达成**——多档案切换性由配置/协议层与单测承载，参照 REQ-014 行注记） | iter-5 |
 | REQ-019 | 版本切换（编辑/重生成后切换新旧分支） | P1 | design/iter-4（已同步） | stores/sessions.ts（toggleVersion + branches + forkId） | sessions.spec（版本切换用例）+ MessageBubble.spec | 已验证 | iter-4 |
-| REQ-020 | 注册与登录（用户名+密码，会话 token）〔CHG-004〕 | P0（CEO 已确认） | 待设计师产出（登录/注册原型） | 待排期（FastAPI 后端 + 前端） | 待设计 | 未开始（基线 v3） | 待排期（iter-6 起） |
-| REQ-021 | 账号管理（改密码、注销/删号）〔CHG-004〕 | P1（CEO 已确认） | 待设计师产出（账号管理原型） | 待排期 | 待设计 | 未开始（基线 v3） | 待排期 |
-| REQ-022 | 服务端会话云存储与多设备同步（LWW + 一次性本地迁移，REQ-006 承接）〔CHG-004〕 | P0（CEO 已确认） | 迁移入口（首次登录提示，待设计） | 待排期（替换 db/idb 读写层） | 待设计 | 未开始（基线 v3） | 待排期 |
-| REQ-023 | API 密钥服务端代管与流式代理（双模式：统一 key / 自填 key 解锁高配额）〔CHG-004〕 | P0（CEO 已确认） | 高级设置待重设计（随 REQ-014） | 待排期（FastAPI 代理层 + api/client.ts 切换） | 待设计 | 未开始（基线 v3） | 待排期 |
-| REQ-024 | 用量配额与滥用防护（注册限频/每用户配额/统一 key 总量保护，配额与密钥模式联动）〔CHG-004〕 | P0（CEO 已确认） | 不涉及（复用错误提示体系） | 待排期（FastAPI quota 层） | 待设计 | 未开始（基线 v3） | 待排期 |
-| REQ-025 | 管理员 Web 后台（封禁/解封、按用户调配额、按用户按日用量列表）〔CHG-004〕 | P1（CEO 已确认） | 待设计师产出（管理后台原型） | 待排期（FastAPI admin 层 + 后台前端） | 待设计 | 未开始（基线 v3） | 待排期 |
+| REQ-020 | 注册与登录（用户名+密码，会话 token）〔CHG-004〕 | P0（CEO 已确认） | 待设计师产出（登录/注册原型，iter-6 T0） | 待排期：backend/（FastAPI，T1）+ 登录页与路由守卫（T2）；token 传递方式已定案 HttpOnly Cookie | 待设计 | 未开始（已列入 iter-6，计划批准 2026-08-15） | iter-6（T0/T1/T2） |
+| REQ-021 | 账号管理（改密码、注销/删号）〔CHG-004〕 | P1（CEO 已确认） | 待设计师产出（账号管理原型） | 待排期 | 待设计 | 未开始（基线 v3；排期 iter-8） | iter-8 |
+| REQ-022 | 服务端会话云存储与多设备同步（LWW + 一次性本地迁移，REQ-006 承接）〔CHG-004〕 | P0（CEO 已确认） | 迁移入口（首次登录提示，待设计） | 待排期：存储核心 iter-6 T3（backend/ sessions API + db/idb 换源）；断网重试/LWW 细项 iter-7；迁移入口 iter-8 | 待设计 | 未开始（存储核心已列入 iter-6，计划批准 2026-08-15） | iter-6 起（T3 核心；细项 iter-7/8） |
+| REQ-023 | API 密钥服务端代管与流式代理（双模式：统一 key / 自填 key 解锁高配额）〔CHG-004〕 | P0（CEO 已确认） | 高级设置待重设计（随 REQ-014） | 待排期（FastAPI 代理层 + api/client.ts 切换；iter-6 骨架已预留 proxy 模块位） | 待设计 | 未开始（基线 v3；排期 iter-7 主线；iter-6 内对话为直连上游过渡态） | iter-7 |
+| REQ-024 | 用量配额与滥用防护（注册限频/每用户配额/统一 key 总量保护，配额与密钥模式联动）〔CHG-004〕 | P0（CEO 已确认） | 不涉及（复用错误提示体系） | 待排期（FastAPI quota 层） | 待设计 | 未开始（基线 v3；排期 iter-8，随 iter-7 代理层落地后；iter-6 注册不限频窗口由本地部署未公开缓解） | iter-8 |
+| REQ-025 | 管理员 Web 后台（封禁/解封、按用户调配额、按用户按日用量列表）〔CHG-004〕 | P1（CEO 已确认） | 待设计师产出（管理后台原型） | 待排期（FastAPI admin 层 + 后台前端） | 待设计 | 未开始（基线 v3；排期 iter-8） | iter-8 |
 
 ## 状态定义
 
