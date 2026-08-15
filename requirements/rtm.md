@@ -13,9 +13,9 @@
 | REQ-005 | 删除会话 | P0 | design/iter-1（已基线） | TheSidebar + ConfirmModal | sessions.spec | 已验证 | iter-1 |
 | REQ-006 | 会话本地持久化与恢复（IndexedDB） | P0 | 不涉及（数据层） | db/idb.ts, stores/sessions.ts | sessions.spec + 浏览器实测（修复 Proxy 克隆缺陷后端到端通过） | 已验证 | iter-1 |
 | REQ-007 | 调用异常与降级提示（401 引导至设置页） | P0 | design/iter-1（已基线） | api/client.ts, ErrorBubble, AppToast | client.spec / sessions.spec + 浏览器实测（未配置引导、429 原因透传） | 已验证 | iter-1 |
-| REQ-008 | 系统提示词设置 | P1（CEO 已确认降级） | 待 T0 产出（iter-2） | - | - | 未开始（排入 iter-2，T3） | iter-2 |
+| REQ-008 | 系统提示词设置 | P1（CEO 已确认降级） | design/iter-2（已基线） | - | - | 未开始（排入 iter-2，T3） | iter-2 |
 | REQ-009 | 会话自动命名 | P1 | 待设计师产出 | - | - | 未开始（iter-2 容量取舍砍掉，CEO 拍板排 iter-3 首选） | - |
-| REQ-010 | 停止生成 | P1 | 待 T0 产出（iter-2） | - | - | 未开始（排入 iter-2，T2） | iter-2 |
+| REQ-010 | 停止生成 | P1 | design/iter-2（已基线） | - | - | 未开始（排入 iter-2，T2） | iter-2 |
 | REQ-011 | Markdown 渲染与代码块复制 | P1 | 待设计师产出 | - | - | 未开始 | - |
 | REQ-012 | 会话重命名 | P2 | 待设计师产出 | - | - | 未开始 | - |
 | REQ-013 | 导出会话 | P2 | 待设计师产出 | - | - | 未开始 | - |
