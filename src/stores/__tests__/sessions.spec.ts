@@ -206,3 +206,21 @@ describe('会话管理（REQ-003/004/005）', () => {
     expect(sessions.active!.messages[1].status).toBe('interrupted')
   })
 })
+
+describe('系统提示词组装（REQ-008，iter-2 T3）', () => {
+  it('已设置时请求上下文首位为 system；未设置时不携带 system', async () => {
+    mockedStream.mockResolvedValue('ok')
+    const settings = useSettingsStore()
+    const sessions = useSessionsStore()
+
+    settings.saveSystemPrompt('回复只用英文')
+    await sessions.send('hi')
+    const withSys = mockedStream.mock.calls.at(-1)![1] as Array<{ role: string }>
+    expect(withSys[0]).toEqual({ role: 'system', content: '回复只用英文' })
+
+    settings.saveSystemPrompt('')
+    await sessions.send('again')
+    const withoutSys = mockedStream.mock.calls.at(-1)![1] as Array<{ role: string }>
+    expect(withoutSys.some((m) => m.role === 'system')).toBe(false)
+  })
+})

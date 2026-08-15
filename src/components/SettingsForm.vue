@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useSettingsStore, type ApiConfig } from '../stores/settings'
 import { useToastStore } from '../stores/toast'
 import ConfirmModal from './ConfirmModal.vue'
@@ -39,6 +39,25 @@ const fields: Array<{ key: keyof ApiConfig; label: string; placeholder: string; 
   { key: 'model', label: '模型名', placeholder: 'glm-5.3' },
   { key: 'apiKey', label: 'API Key', placeholder: 'sk-…（仅保存在本机浏览器）', type: 'password' },
 ]
+
+// ---- REQ-008 系统提示词（对话设置，design-iter-2 触点一）----
+const promptText = ref(settings.systemPrompt)
+const promptSaved = ref(false)
+let savedTimer: ReturnType<typeof setTimeout> | undefined
+const promptCharCount = computed(() => promptText.value.trim().length)
+
+function savePrompt() {
+  settings.saveSystemPrompt(promptText.value) // 留空/仅空白 = 无提示词
+  promptSaved.value = true
+  clearTimeout(savedTimer)
+  savedTimer = setTimeout(() => (promptSaved.value = false), 2000) // "已保存" 2s 淡出
+}
+
+function clearPrompt() {
+  promptText.value = ''
+  settings.saveSystemPrompt('') // 按留空即时保存，不弹确认（可重填，非不可逆）
+  toast.push('已清除，后续对话将不使用系统提示词')
+}
 </script>
 
 <template>
@@ -72,6 +91,29 @@ const fields: Array<{ key: keyof ApiConfig; label: string; placeholder: string; 
         >
           清除密钥
         </button>
+      </div>
+
+      <!-- REQ-008 对话设置 · 系统提示词（design-iter-2 触点一） -->
+      <div class="section-label">对话设置</div>
+      <label class="field" for="system-prompt">
+        <span class="field-label">系统提示词<span class="optional">可选</span></span>
+        <textarea
+          id="system-prompt"
+          v-model="promptText"
+          class="prompt-ta"
+          placeholder="定义 AI 的角色与回复风格，如：你是一个简洁的翻译助手，回复不超过三句话。&#10;留空则不使用系统提示词，按普通对话正常请求。"
+        />
+        <span class="char-count">{{ promptCharCount }} 字</span>
+      </label>
+      <div class="actions">
+        <button type="button" class="btn btn-primary" @click="savePrompt">保存</button>
+        <button v-if="settings.systemPrompt" type="button" class="btn-text-danger" @click="clearPrompt">清除</button>
+        <span v-if="promptSaved" class="saved-flag">
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path d="M2.5 7.5l3 3 6-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          已保存
+        </span>
       </div>
     </form>
 
@@ -147,6 +189,73 @@ const fields: Array<{ key: keyof ApiConfig; label: string; placeholder: string; 
 .field-error {
   font-size: 12px;
   color: var(--c-error);
+}
+/* REQ-008 对话设置分组（design-iter-2：分组线 + 标签） */
+.section-label {
+  margin-top: 4px;
+  padding-top: 20px;
+  border-top: 1px solid var(--c-border);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--c-text-1);
+}
+.optional {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--c-text-3);
+  margin-left: 6px;
+}
+.prompt-ta {
+  width: 100%;
+  min-height: 96px;
+  max-height: 240px;
+  resize: vertical;
+  overflow-y: auto;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 16px;
+  line-height: 1.6;
+  font-family: inherit;
+  color: var(--c-text-1);
+  background: var(--c-surface);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.prompt-ta:focus {
+  border-color: var(--c-primary);
+  box-shadow: 3px 3px 0 rgba(51, 112, 255, 0.12);
+}
+.prompt-ta::placeholder {
+  font-size: 14px;
+  color: var(--c-text-3);
+}
+.char-count {
+  font-size: 12px;
+  color: var(--c-text-3);
+  text-align: right;
+}
+.btn-text-danger {
+  height: 36px;
+  padding: 0 12px;
+  border: none;
+  background: transparent;
+  color: var(--c-error);
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s ease;
+}
+.btn-text-danger:hover {
+  background: #fdecea;
+}
+.saved-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--c-success);
 }
 .actions {
   display: flex;

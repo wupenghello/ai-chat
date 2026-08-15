@@ -53,3 +53,28 @@ describe('settings store（REQ-014 持久化与清除）', () => {
     expect(localStorage.getItem('ai-chat:settings')).not.toContain('secret')
   })
 })
+
+describe('系统提示词（REQ-008，iter-2 T3）', () => {
+  it('保存并 trim；仅空白字符 = 留空', () => {
+    const s = useSettingsStore()
+    s.saveSystemPrompt('  你是翻译助手。 ')
+    expect(s.systemPrompt).toBe('你是翻译助手。')
+    s.saveSystemPrompt('   ')
+    expect(s.systemPrompt).toBe('')
+  })
+
+  it('与 API 配置共存持久化，互不覆盖；新 store 实例可读回（刷新后仍生效）', () => {
+    const s = useSettingsStore()
+    s.save({ baseUrl: 'https://x', model: 'm', apiKey: 'k' })
+    s.saveSystemPrompt('只用英文回复')
+    expect(localStorage.getItem('ai-chat:settings')).toContain('"systemPrompt":"只用英文回复"')
+
+    // 之后再保存 API 配置，不丢系统提示词
+    s.save({ baseUrl: 'https://y', model: 'm2', apiKey: 'k2' })
+    expect(localStorage.getItem('ai-chat:settings')).toContain('"systemPrompt":"只用英文回复"')
+
+    const s2 = useSettingsStore() // 模拟重新加载
+    expect(s2.systemPrompt).toBe('只用英文回复')
+    expect(s2.config.baseUrl).toBe('https://y')
+  })
+})

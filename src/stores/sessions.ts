@@ -158,7 +158,12 @@ export const useSessionsStore = defineStore('sessions', {
       try {
         const full = await streamChat(
           { baseUrl: settings.config.baseUrl!, model: settings.config.model!, apiKey: settings.config.apiKey! },
-          buildContext(toContext(session.messages.filter((m) => m.id !== aiMsg.id))),
+          // REQ-008：系统提示词（如有）置于首位；buildContext 保证其不受 20 轮截断影响
+          buildContext(
+            settings.systemPrompt
+              ? [{ role: 'system', content: settings.systemPrompt }, ...toContext(session.messages.filter((m) => m.id !== aiMsg.id))]
+              : toContext(session.messages.filter((m) => m.id !== aiMsg.id)),
+          ),
           {
             onDelta: (d) => {
               aiMsg.content += d
