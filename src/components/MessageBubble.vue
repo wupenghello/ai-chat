@@ -143,26 +143,32 @@ function onEditKey(e: KeyboardEvent) {
         </span>
       </div>
 
-      <!-- CHG-003：消息下方常显操作栏（复制 / 编辑 / 版本切换） -->
-      <div v-if="!editing" class="actions">
-        <button class="action-btn" :aria-label="copied ? '已复制' : '复制'" @click="copyMessage">
+      <!-- CHG-003：消息下方操作栏（icon-only，hover 出 tooltip；复制/修改 hover 才显示） -->
+      <div v-if="!editing" class="action-row">
+        <button class="action-btn" :title="copied ? '已复制' : '复制'" :aria-label="copied ? '已复制' : '复制'" @click="copyMessage">
           <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
             <path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z" />
           </svg>
-          {{ copied ? '已复制' : '复制' }}
         </button>
-        <button v-if="message.role === 'user'" class="action-btn" aria-label="编辑" @click="startEdit">
+        <button v-if="message.role === 'user'" class="action-btn" title="修改" aria-label="修改" @click="startEdit">
           <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
             <path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
           </svg>
-          编辑
         </button>
-        <button v-if="message.forkId" class="action-btn" aria-label="切换版本" @click="emit('toggleVersion', message.forkId!)">
-          <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
-            <path fill="currentColor" d="M12 6v3l4-4-4-4v3a8 8 0 0 0-8 8 8 8 0 0 0 1.5 4.7l1.5-1.5A6 6 0 0 1 6 12a6 6 0 0 1 6-6zm6.5 2.3-1.5 1.5A6 6 0 0 1 18 12a6 6 0 0 1-6 6v-3l-4 4 4 4v-3a8 8 0 0 0 8-8 8 8 0 0 0-1.5-4.7z" />
-          </svg>
-          切换版本
-        </button>
+        <!-- REQ-019：版本切换用左右箭头 + 计数器（常显，可看出当前版本） -->
+        <div v-if="message.forkId" class="version-nav">
+          <button class="action-btn" title="上一版本" aria-label="上一版本" @click="emit('toggleVersion', message.forkId!)">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <path fill="currentColor" d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
+            </svg>
+          </button>
+          <span class="version-count">{{ (message.forkIndex ?? 0) + 1 }}/2</span>
+          <button class="action-btn" title="下一版本" aria-label="下一版本" @click="emit('toggleVersion', message.forkId!)">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <path fill="currentColor" d="M8.59 16.59 10 18l6-6-6-6-1.41 1.41L13.17 12z" />
+            </svg>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -266,29 +272,50 @@ function onEditKey(e: KeyboardEvent) {
   border-radius: 999px;
   padding: 2px 8px;
 }
-/* CHG-003：消息下方常显操作栏（复制 / 编辑 / 切换版本），参考 DeepSeek */
-.actions {
+/* CHG-003：消息下方操作栏——icon-only、hover 出 tooltip；复制/修改 hover 才显示，版本箭头常显 */
+.action-row {
   display: flex;
   align-items: center;
   gap: 4px;
+  min-height: 24px;
 }
 .action-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  width: 24px;
   height: 24px;
-  padding: 0 8px;
+  padding: 0;
   border: none;
   border-radius: 6px;
   background: transparent;
   color: var(--c-text-3);
-  font-size: 12px;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.msg-col:hover .action-btn {
+  opacity: 1;
 }
 .action-btn:hover {
   background: #f2f3f5;
   color: var(--c-text-1);
+}
+.version-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 2px;
+}
+.version-nav .action-btn {
+  opacity: 1; /* 版本切换箭头常显 */
+}
+.version-count {
+  font-size: 12px;
+  color: var(--c-text-3);
+  min-width: 30px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 /* REQ-015 编辑态：主色描边面板 + 就地回填 textarea + 取消/保存操作栏 */
 .edit-form {

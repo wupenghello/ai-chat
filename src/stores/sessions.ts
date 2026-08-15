@@ -14,6 +14,8 @@ export interface Message {
   error?: { kind: string; message: string }
   /** REQ-019：有可切换版本时指向 Session.branches 的 key */
   forkId?: string
+  /** REQ-019：版本序号（0=新版，1=旧版），供版本计数器展示 */
+  forkIndex?: 0 | 1
 }
 
 export interface Session extends PersistedSession {
@@ -195,12 +197,13 @@ export const useSessionsStore = defineStore('sessions', {
       const oldBranch = JSON.parse(JSON.stringify(session.messages.slice(idx))) as Message[]
       const forkId = uid()
       oldBranch[0].forkId = forkId
+      oldBranch[0].forkIndex = 1 // 旧版
       session.branches = session.branches ?? {}
       session.branches[forkId] = oldBranch
 
       // 删除编辑点及其后所有消息，从编辑点重建
       session.messages.splice(idx)
-      const userMsg: Message = { id: uid(), role: 'user', content: trimmed, status: 'done', forkId }
+      const userMsg: Message = { id: uid(), role: 'user', content: trimmed, status: 'done', forkId, forkIndex: 0 }
       const aiMsg: Message = { id: uid(), role: 'assistant', content: '', status: 'generating' }
       session.messages.push(userMsg, aiMsg)
       session.updatedAt = Date.now()

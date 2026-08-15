@@ -12,6 +12,8 @@ export interface PersistedMessage {
   error?: { kind: string; message: string }
   /** REQ-019：有可切换版本时指向 Session.branches 的 key */
   forkId?: string
+  /** REQ-019：版本序号（0=新版，1=旧版），供版本计数器展示 */
+  forkIndex?: 0 | 1
 }
 
 export interface PersistedSession {
