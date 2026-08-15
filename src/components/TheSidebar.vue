@@ -99,6 +99,7 @@ const filtered = computed<Array<{ session: Session; hit: SearchHit | null }>>(()
         </svg>
         设置
       </button>
+      <span class="profile-tag" :title="settings.activeProfile?.name">{{ settings.activeProfile?.name ?? '未配置' }}</span>
       <span class="api-dot" :class="settings.isConfigured ? 'ok' : 'bad'" :title="settings.isConfigured ? 'API 已配置' : 'API 未配置'" />
     </div>
 
@@ -241,6 +242,14 @@ const filtered = computed<Array<{ session: Session; hit: SearchHit | null }>>(()
 .settings-btn:hover {
   background: var(--c-hover-bg);
   color: var(--c-text-1);
+}
+.profile-tag {
+  font-size: 12px;
+  color: var(--c-text-3);
+  max-width: 96px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .api-dot {
   width: 8px;

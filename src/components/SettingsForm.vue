@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
-import { useSettingsStore, type ApiConfig } from '../stores/settings'
+import { useSettingsStore, type ApiProfile } from '../stores/settings'
 import { useToastStore } from '../stores/toast'
 import { useTheme } from '../composables/useTheme'
 import ConfirmModal from './ConfirmModal.vue'
@@ -11,38 +11,76 @@ const toast = useToastStore()
 // REQ-017：设置页「外观」入口（与顶栏主题按钮同状态同存储）
 const { theme, setTheme } = useTheme()
 
-const form = reactive<Partial<ApiConfig>>({
-  baseUrl: settings.config.baseUrl ?? '',
-  model: settings.config.model ?? '',
-  apiKey: settings.config.apiKey ?? '',
-})
-
-const errors = ref<Partial<Record<keyof ApiConfig, string>>>({})
+// ---- REQ-018 供应商档案：列表 + 添加/编辑模态 ----
+const editing = ref(false)
+const editingId = ref<string | null>(null) // 新增时为全新 id
+const form = reactive<Partial<ApiProfile>>({})
+const errors = ref<Partial<Record<keyof ApiProfile, string>>>({})
 const confirmClear = ref(false)
+const pendingDelete = ref<ApiProfile | null>(null)
 
-function save() {
-  errors.value = settings.save({
+const newId = () =>
+  typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `p-${Date.now()}-${Math.random()}`
+
+const profileFields: Array<{ key: keyof ApiProfile; label: string; placeholder: string; type?: string }> = [
+  { key: 'name', label: '档案名称', placeholder: '如 DeepSeek、GLM' },
+  { key: 'baseUrl', label: 'API 地址', placeholder: 'https://open.bigmodel.cn/api/paas/v4' },
+  { key: 'model', label: '模型名', placeholder: 'glm-5.3' },
+  { key: 'apiKey', label: 'API Key', placeholder: 'sk-…（仅保存在本机浏览器）', type: 'password' },
+]
+
+function hostOf(baseUrl: string) {
+  try {
+    return new URL(baseUrl).hostname
+  } catch {
+    return '自定义'
+  }
+}
+
+function openAdd() {
+  editingId.value = newId()
+  Object.assign(form, { name: '', baseUrl: '', model: '', apiKey: '' })
+  errors.value = {}
+  editing.value = true
+}
+
+function openEdit(p: ApiProfile) {
+  editingId.value = p.id
+  Object.assign(form, { ...p })
+  errors.value = {}
+  editing.value = true
+}
+
+function saveProfile() {
+  if (!editingId.value) return
+  errors.value = settings.saveProfile({
+    id: editingId.value,
+    name: form.name ?? '',
     baseUrl: form.baseUrl ?? '',
     model: form.model ?? '',
     apiKey: form.apiKey ?? '',
   })
   if (Object.keys(errors.value).length === 0) {
-    toast.push('配置已保存')
+    editing.value = false
+    toast.push('档案已保存')
   }
+}
+
+function confirmDelete() {
+  if (pendingDelete.value && settings.removeProfile(pendingDelete.value.id)) toast.push('档案已删除')
+  pendingDelete.value = null
+}
+
+function switchTo(p: ApiProfile) {
+  settings.setActiveProfile(p.id)
+  toast.push(`已切换到「${p.name}」，下一次请求生效`)
 }
 
 function clearKey() {
   settings.clearKey()
-  form.apiKey = ''
   confirmClear.value = false
   toast.push('密钥已清除，本地无残留')
 }
-
-const fields: Array<{ key: keyof ApiConfig; label: string; placeholder: string; type?: string }> = [
-  { key: 'baseUrl', label: 'API 地址', placeholder: 'https://open.bigmodel.cn/api/paas/v4' },
-  { key: 'model', label: '模型名', placeholder: 'glm-5.3' },
-  { key: 'apiKey', label: 'API Key', placeholder: 'sk-…（仅保存在本机浏览器）', type: 'password' },
-]
 
 // ---- REQ-008 系统提示词（对话设置，design-iter-2 触点一）----
 const promptText = ref(settings.systemPrompt)
@@ -96,29 +134,57 @@ function clearPrompt() {
       </button>
     </div>
 
-    <form class="form" novalidate @submit.prevent="save">
-      <label v-for="f in fields" :key="f.key" class="field">
-        <span class="field-label">{{ f.label }}</span>
-        <input
-          v-model="form[f.key]!"
-          :type="f.type ?? 'text'"
-          :placeholder="f.placeholder"
-          class="input"
-          :class="{ invalid: errors[f.key] }"
-          :aria-invalid="!!errors[f.key]"
-        />
-        <span v-if="errors[f.key]" class="field-error">{{ errors[f.key] }}</span>
-      </label>
+    <!-- REQ-018 供应商档案：列表 + 当前生效标记 + 添加/编辑/删除 -->
+    <div class="section-label">供应商档案</div>
+    <div class="form">
+      <div class="profile-list">
+        <div
+          v-for="p in settings.profiles"
+          :key="p.id"
+          class="profile-item"
+          :class="{ current: p.id === settings.activeProfileId }"
+        >
+          <div class="p-info">
+            <span class="p-name">{{ p.name }}</span>
+            <span class="p-sub">{{ p.model }} · {{ hostOf(p.baseUrl) }}</span>
+          </div>
+          <span v-if="p.id === settings.activeProfileId" class="p-current">当前生效</span>
+          <button v-else type="button" class="p-btn" @click="switchTo(p)">设为当前</button>
+          <button type="button" class="p-icon" aria-label="编辑档案" title="编辑" @click="openEdit(p)">
+            <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+              <path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="p-icon"
+            :disabled="p.id === settings.activeProfileId"
+            :title="p.id === settings.activeProfileId ? '当前生效档案不可删除，请先切换到其他档案' : '删除'"
+            aria-label="删除档案"
+            @click="pendingDelete = p"
+          >
+            <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+              <path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-3 6h12l-1 12H7L6 9Zm4 2v8h1.5v-8H10Zm3 0v8h1.5v-8H13Z" />
+            </svg>
+          </button>
+        </div>
+        <div v-if="settings.profiles.length === 0" class="p-empty">暂无档案，点击下方「添加档案」创建第一套供应商配置</div>
+      </div>
 
       <div class="actions">
-        <button type="submit" class="btn btn-primary">保存</button>
+        <button type="button" class="btn" @click="openAdd">
+          <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+            <path fill="currentColor" d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5Z" />
+          </svg>
+          添加档案
+        </button>
         <button
-          v-if="settings.config.apiKey"
+          v-if="settings.activeProfile?.apiKey"
           type="button"
-          class="btn"
+          class="btn-text-danger"
           @click="confirmClear = true"
         >
-          清除密钥
+          清除当前档案密钥
         </button>
       </div>
 
@@ -144,7 +210,39 @@ function clearPrompt() {
           已保存
         </span>
       </div>
-    </form>
+    </div>
+
+    <!-- REQ-018 档案编辑/添加模态 -->
+    <div v-if="editing" class="modal-mask" @click.self="editing = false">
+      <div class="modal" role="dialog" aria-label="供应商档案">
+        <h3 class="modal-title">{{ settings.profiles.some((p) => p.id === editingId) ? '编辑档案' : '添加档案' }}</h3>
+        <label v-for="f in profileFields" :key="f.key" class="field">
+          <span class="field-label">{{ f.label }}</span>
+          <input
+            v-model="form[f.key]!"
+            :type="f.type ?? 'text'"
+            :placeholder="f.placeholder"
+            class="input"
+            :class="{ invalid: errors[f.key] }"
+            :aria-invalid="!!errors[f.key]"
+          />
+          <span v-if="errors[f.key]" class="field-error">{{ errors[f.key] }}</span>
+        </label>
+        <div class="actions">
+          <button type="button" class="btn" @click="editing = false">取消</button>
+          <button type="button" class="btn btn-primary" @click="saveProfile">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <ConfirmModal
+      :open="!!pendingDelete"
+      title="删除这个档案？"
+      :body="`「${pendingDelete?.name ?? ''}」的配置与密钥将一并删除（不影响其它档案与历史会话）。`"
+      confirm-label="删除"
+      @confirm="confirmDelete"
+      @cancel="pendingDelete = null"
+    />
 
     <ConfirmModal
       :open="confirmClear"
@@ -346,4 +444,123 @@ function clearPrompt() {
   background: var(--c-primary-l);
   color: var(--c-primary);
   font-weight: 500;
+}
+/* REQ-018 供应商档案列表 + 编辑模态（design-iter-5 触点三） */
+.profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.profile-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  background: var(--c-surface);
+}
+.profile-item.current {
+  border-color: var(--c-primary);
+  background: var(--c-primary-l);
+}
+.p-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.p-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--c-text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.p-sub {
+  font-size: 12px;
+  color: var(--c-text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.p-current {
+  flex: none;
+  font-size: 12px;
+  color: var(--c-primary);
+  font-weight: 500;
+}
+.p-btn {
+  flex: none;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--c-text-2);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.p-btn:hover {
+  border-color: var(--c-primary);
+  color: var(--c-primary);
+}
+.p-icon {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--c-text-3);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.p-icon:hover:not(:disabled) {
+  background: var(--c-hover-bg);
+  color: var(--c-text-1);
+}
+.p-icon:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.p-empty {
+  padding: 16px;
+  font-size: 13px;
+  color: var(--c-text-3);
+  text-align: center;
+  border: 1px dashed var(--c-border);
+  border-radius: 8px;
+}
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  background: var(--c-mask);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.modal {
+  width: 420px;
+  max-width: calc(100vw - 48px);
+  background: var(--c-surface);
+  border-radius: 12px;
+  box-shadow: var(--shadow-3);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.modal-title {
+  margin: 0;
+  font-size: 16px;
+  color: var(--c-text-1);
 }

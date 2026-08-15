@@ -22,8 +22,8 @@
 | REQ-014 | API 供应商与密钥可配置（OpenAI 兼容，DeepSeek/GLM） | P0 | design/iter-1（已基线） | stores/settings.ts, SettingsForm | settings.spec / settings-form.spec + 浏览器实测 | 已验证（DeepSeek 实测通过；**GLM 部分按 CEO 决策 2026-08-15 不补验、接受部分达成**——不充值，见 defects.md DEF-002） | iter-1 |
 | REQ-015 | 消息编辑与重新生成（regenerate） | P1 | design/iter-4（已基线） | stores/sessions.ts editAndRegenerate（generation 纪元防竞态）, MessageBubble（编辑态）, MessageList/App | sessions.spec（4 用例）/ MessageBubble.spec（5 用例）+ 浏览器实测 | 已验证 | iter-4 |
 | REQ-016 | 会话搜索 | P2 | design/iter-4（已基线） | utils/search.ts, TheSidebar（搜索框）, SessionListItem（高亮/片段） | search.spec（5 用例）+ 浏览器实测（命中/空态/清除） | 已验证 | iter-4 |
-| REQ-017 | 暗色主题 | P2 | （待产出） | （待实现） | （待测试） | 未开始 | iter-5 |
-| REQ-018 | 多供应商档案一键切换（REQ-014 增强） | P2 | （待产出） | （待实现） | （待测试） | 未开始 | iter-5 |
+| REQ-017 | 暗色主题 | P2 | design/iter-5（已基线） | App.vue 令牌根 [data-theme=dark] 覆盖, composables/useTheme, 顶栏主题按钮 + SettingsForm 外观 segmented | 浏览器实测（暗色 #131417/#1E2026/#E6EAF0 命中令牌、切换即变、刷新保持）+ 全组件 token 化走查 | 已验证 | iter-5 |
+| REQ-018 | 多供应商档案一键切换（REQ-014 增强） | P2 | design/iter-5（已基线） | stores/settings（profiles + 旧格式迁移 + setActiveProfile/removeProfile）, SettingsForm 档案列表/模态, TheSidebar 当前档案标签 | settings.spec（4 档案用例）/ settings-form.spec（4 用例）+ 浏览器实测（迁移/添加/切换/删除边界） | 已验证 | iter-5 |
 | REQ-019 | 版本切换（编辑/重生成后切换新旧分支） | P1 | design/iter-4（已同步） | stores/sessions.ts（toggleVersion + branches + forkId） | sessions.spec（版本切换用例）+ MessageBubble.spec | 已验证 | iter-4 |
 
 ## 状态定义

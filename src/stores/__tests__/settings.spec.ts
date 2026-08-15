@@ -78,3 +78,49 @@ describe('系统提示词（REQ-008，iter-2 T3）', () => {
     expect(s2.config.baseUrl).toBe('https://y')
   })
 })
+
+describe('供应商档案（REQ-018，iter-5 T3）', () => {
+  it('多档案保存、切换当前生效、持久化可读回', () => {
+    const s = useSettingsStore()
+    s.saveProfile({ id: 'a', name: 'DeepSeek', baseUrl: 'https://a.io', model: 'm1', apiKey: 'k1' })
+    s.saveProfile({ id: 'b', name: 'GLM', baseUrl: 'https://b.io', model: 'm2', apiKey: 'k2' })
+    expect(s.profiles).toHaveLength(2)
+    expect(s.activeProfileId).toBe('a') // 首个自动生效
+    s.setActiveProfile('b')
+    expect(s.activeProfile?.name).toBe('GLM')
+    expect(s.config.model).toBe('m2')
+
+    // 刷新读回（新 pinia 实例）
+    setActivePinia(createPinia())
+    const s2 = useSettingsStore()
+    expect(s2.activeProfile?.name).toBe('GLM')
+    expect(s2.profiles.map((p) => p.name)).toEqual(['DeepSeek', 'GLM'])
+  })
+
+  it('当前生效档案不可删除；非当前可删', () => {
+    const s = useSettingsStore()
+    s.saveProfile({ id: 'a', name: 'A', baseUrl: 'https://a.io', model: 'ma', apiKey: 'k1' })
+    s.saveProfile({ id: 'b', name: 'B', baseUrl: 'https://b.io', model: 'mb', apiKey: 'k2' })
+    expect(s.removeProfile('a')).toBe(false) // 当前生效
+    expect(s.profiles).toHaveLength(2)
+    expect(s.removeProfile('b')).toBe(true)
+    expect(s.profiles.map((p) => p.name)).toEqual(['A'])
+  })
+
+  it('旧版单套配置自动迁移为首个档案（数据兼容）', () => {
+    localStorage.setItem('ai-chat:settings', JSON.stringify({ baseUrl: 'https://x.io', model: 'glm-5.3', apiKey: 'old-key' }))
+    setActivePinia(createPinia())
+    const s = useSettingsStore()
+    expect(s.profiles).toHaveLength(1)
+    expect(s.activeProfile?.apiKey).toBe('old-key')
+    expect(s.activeProfile?.name).toContain('glm-5.3')
+    expect(s.isConfigured).toBe(true)
+  })
+
+  it('名称必填：缺名称的档案不写入', () => {
+    const s = useSettingsStore()
+    const errs = s.saveProfile({ id: 'x', name: '  ', baseUrl: 'https://x', model: 'm', apiKey: 'k' })
+    expect(errs.name).toContain('必填')
+    expect(s.profiles).toHaveLength(0)
+  })
+})
