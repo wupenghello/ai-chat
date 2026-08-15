@@ -970,7 +970,7 @@ function scriptedReply(userText, history) {
     return '下面是一个用 fetch 实现 OpenAI 兼容流式请求的最小示例（原型中代码块已渲染，复制按钮为 P1 预演）：\n\n```javascript\nasync function chatStream(messages, onChunk) {\n  const res = await fetch(BASE_URL + "/chat/completions", {\n    method: "POST",\n    headers: {\n      "Content-Type": "application/json",\n      "Authorization": "Bearer " + API_KEY,\n    },\n    body: JSON.stringify({ model: MODEL, messages, stream: true }),\n  });\n  if (!res.ok) throw new Error("HTTP " + res.status);\n  const reader = res.body.getReader();\n  const decoder = new TextDecoder();\n  let buf = "";\n  while (true) {\n    const { done, value } = await reader.read();\n    if (done) break;\n    buf += decoder.decode(value, { stream: true });\n    // 按 SSE 行解析 data: {...}\n    const lines = buf.split("\\n");\n    buf = lines.pop();\n    for (const line of lines) {\n      if (!line.startsWith("data: ")) continue;\n      const data = line.slice(6);\n      if (data === "[DONE]") return;\n      const delta = JSON.parse(data).choices[0].delta;\n      if (delta.content) onChunk(delta.content);\n    }\n  }\n}\n```\n\n说明：上下文组装为「最近 20 轮」，密钥仅从浏览器本地存储读取。';
   }
   if (/^(你好|hello|hi|嗨|在吗)/i.test(userText)) {
-    return '你好！这里是 ai-chat 需求原型。所有回复都是本地假数据脚本。\n\n建议演示路径：\n1. 告诉我「我叫小明」，再问我「我叫什么」——演示多轮上下文（REQ-002）\n2. 生成中点击左侧其他会话或新建会话——演示「生成中断」标注（REQ-003/004）\n3. 打开右下角「演示控制」，把下一次请求设为 401——演示错误提示与设置页引导（REQ-007）\n4. 刷新页面——会话与配置不丢（REQ-006 持久化演示）';
+    return '你好！这里是 ai-chat 需求原型。所有回复都是本地假数据脚本。\n\n建议演示路径：\n1. 告诉我「我叫小明」，再问我「我叫什么」——演示多轮上下文（REQ-002）\n2. 生成中点击「新建会话」——演示「生成中断」标注（REQ-003；切换会话不中断，CHG-001）\n3. 打开右下角「演示控制」，把下一次请求设为 401——演示错误提示与设置页引导（REQ-007）\n4. 刷新页面——会话与配置不丢（REQ-006 持久化演示）';
   }
   return '收到：「' + userText.slice(0, 40) + (userText.length > 40 ? '…' : '') + '」\n\n（原型说明：这是本地脚本生成的模拟流式回复，用于演示打字机效果、消息持久化与上下文记忆，不调用真实 API。产品实现时此处为模型真实输出。）\n\n如果你想看代码块渲染效果，可以让我「给一个流式请求的代码示例」。';
 }
@@ -985,7 +985,7 @@ function retry(msgId) {
   startFakeStream(s, false);
 }
 
-/* 中断生成（REQ-003/004：新建/切换时中断并标注） */
+/* 中断生成（仅 REQ-003：新建会话时中断并标注；REQ-004 切换不中断——CHG-001，2026-08-15） */
 function interruptGeneration() {
   if (!state.generating) return;
   clearInterval(state.generating.timer);
@@ -1020,7 +1020,7 @@ function switchSession(id) {
   if (!s) return;
   if (s.corrupt) { toast('该会话数据无法读取（REQ-004 异常分支演示），不影响其他会话使用'); return; }
   if (id === state.currentId) return;
-  interruptGeneration(); // REQ-004：切换时中断并标注
+  // CHG-001（2026-08-15）：切换不再中断生成，原会话后台继续（此处原为 interruptGeneration()）
   state.currentId = id;
   renderSidebar();
   renderMessages(true);            // 骨架屏加载态
@@ -1167,7 +1167,7 @@ function loadDemoData() {
     ]),
     mk('生成中断演示', 120, [
       m('user','讲一个长一点的故事。'),
-      m('ai','从前有座山，山里有座庙，庙里有个老和尚在给小和尚讲故事：从前有座山，山里有座……就在故事讲到一半时，用户切换到了别的会话，于是这段回复被中断并标注了「生成中断」，已生成的部分原样保留。','interrupted'),
+      m('ai','从前有座山，山里有座庙，庙里有个老和尚在给小和尚讲故事：从前有座山，山里有座……就在故事讲到一半时，用户新建了会话，于是这段回复被中断并标注了「生成中断」，已生成的部分原样保留。（CHG-001 后仅新建触发中断，切换会话不中断）','interrupted'),
     ]),
     mk('错误提示演示（401）', 180, [
       m('user','你好'),
