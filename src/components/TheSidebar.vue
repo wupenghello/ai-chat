@@ -158,14 +158,14 @@ const filtered = computed<Array<{ session: Session; hit: SearchHit | null }>>(()
   gap: 6px;
   height: 32px;
   padding: 0 8px;
-  background: #f2f3f5;
-  border: 1px solid transparent;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
   border-radius: 8px;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .search-box:focus-within {
-  background: var(--c-surface);
   border-color: var(--c-primary);
+  box-shadow: 0 0 0 3px rgba(51, 112, 255, 0.12);
 }
 .search-icon {
   flex: none;

@@ -45,14 +45,31 @@ git 提交 4 个（37ee268~fba475e），T0~T4 全部完成（Σ=9，容量 10 �
 
 测试结果（迭代末汇总）：**iter-3 末 62/62 通过**（单测 58 + 集成 2 + 组件 8，较 iter-2 的 37 新增 25）、跳过 0；走查 28/28（不抽查）。
 
+### iter-4（08-15 晚间，开发完成 + CHG-003 迭加，QA 审计 5 NCR 整改中）
+
+git 提交 11 个（2c3a243 起），T0~T3 全部完成（Σ=9）+ CEO 试用反馈 CHG-003 三处打磨：
+
+- 需求基线 req-baseline-v2（CHG-002：新增 REQ-015~018 + DEF-011；CHG-003：REQ-019 版本切换等）
+- T0 设计基线（design-iter-4，6 项待澄清 CEO 全按默认；CHG-003 后增量同步）
+- T1 DEF-011 输入框修复（原两行回基线，后被 CHG-003 覆盖为单排顶对齐）
+- T2 REQ-015 消息编辑与重新生成（generation 纪元防竞态）
+- T3 REQ-016 会话搜索（标题/正文命中 + 主色高亮 + 空态）
+- CHG-003：输入区按钮与 textarea 同排顶对齐、消息操作栏（复制/修改 icon-only + hover + tooltip）、REQ-019 版本切换（‹ 1/2 › 箭头计数器，forkId/branches 深拷贝归档）
+- design-iter-4 与 design/proto 均已按 CHG-003 增量同步（NCR-iter4-005 整改）
+- 28 条走查全过（plans/iter-4-verify.md，DOM 实测 + 单测，NCR-iter4-002 整改补录）
+- QA 审计：5 NCR（见下方处置表）
+
+测试结果（迭代末汇总）：**iter-4 末 79/79 通过**（较 iter-3 的 62 新增 17）、跳过 0；走查 28/28（不抽查）；生产构建通过（G4 硬前置）。
+
 ## 进行中与阻塞
 
 | 任务 | 状态 | 阻塞原因 / 需要的决策 |
 |------|------|---------------------|
-| iter-3 QA 审计 | 进行中 | qa 员工后台运行中，待出报告 |
-| iter-3 复盘 + G4 关闭 | 待办 | QA 审计报告 + NCR 处置完成后走 /mm-retrospective |
+| iter-4 QA 审计 5 NCR | 整改完成待复查 | 周报（本节）/走查/RTM/DEF-011/proto 均已整改（见处置表） |
+| iter-4 复盘 + G4 关闭 | 待办 | NCR 关闭确认 + 复盘四问（CEO 参与） |
+| v0.3.0 发布 | 待 CEO 决策 | G4 关闭后走 /mm-release |
 
-（iter-2 相关阻塞项已随 G4 关闭销账；DEF-001/002 已关闭。）
+（iter-3 相关阻塞项已随 QA 报告出件销账；iter-2 遗留阻塞与 DEF-001/002 已关闭。）
 
 ## 计划偏差
 
@@ -75,6 +92,13 @@ iter-3 计划当日完成，无延期。容量 Σ=9 全部交付（≤10 上限�
   - 导出核对：文件名 sanitize + Blob 下载，空会话短路返回 false
   - 无新发现缺陷；62/62 测试与 28 条走查为旁证
   - **CEO 过目确认：待 CEO 过目**（G4 前置条件）
+- **iter-4（本次执行，NCR-iter4-001 整改）**：范围 `2c3a243..HEAD`（生产代码：sessions store / idb、ComposerBox、MessageBubble、MessageList、TheSidebar、SessionListItem、App，测试 4 文件），重点审 CHG-003 数据层。发现与结论：
+  - 版本分支核对：branches 归档/互换均 JSON 深拷贝——无响应式代理入 IndexedDB（DEF-003 同类风险规避）、无引用环（新旧分支互指仅经 forkId 字符串而非对象引用）、persist 可序列化
+  - toggleVersion 核对：findIndex 按 forkId 定位分支头，仅分支首消息携带 forkId，定位无歧义；互换后两侧 forkId/forkIndex 保留，可反复切换（单测往返断言）
+  - 竞态核对：generation 纪元（编辑中断时递增）确保旧 generate 的 finally 不清掉新控制器；epoch 不匹配时仅跳过清理、persist 照常执行，无状态丢失路径
+  - XSS 核对：搜索高亮用 segments 文本插值渲染（非 v-html），标题/命中片段不可注入
+  - 无新发现缺陷；79/79 测试与 28 条走查为旁证
+  - **CEO 过目确认：待 CEO 过目**（G4 前置条件）
 
 ## QA 审计与 NCR 处置（iter-2）
 
@@ -83,6 +107,16 @@ iter-3 计划当日完成，无延期。容量 Σ=9 全部交付（≤10 上限�
 | NCR-iter2-001 | 周报/review 体系未运转 | 整改：本版周报补 iter-2 全部内容 + 全量 review 记录（CEO 过目确认 2026-08-15，见 Code Review 节） | 已关闭 |
 | NCR-iter2-002 | 设计稿头部状态与基线声明矛盾 | 整改：title/badge 更新为"已基线" | 已关闭 |
 | NCR-iter2-003 | 停止时效 200ms 取证不足 | 整改：补同步 abort 构造性证明单测（37/37 含此用例），verify 记录更新 | 已关闭 |
+
+## QA 审计与 NCR 处置（iter-4，2026-08-15）
+
+| 编号 | 内容 | 处置 | 状态 |
+|------|------|------|------|
+| NCR-iter4-001 | 周报无 iter-4 章节 + Code Review 缺失 | 整改：本版周报补 iter-4 全部内容 + 全量 Code Review 记录（重点 CHG-003 数据层，见 Code Review 节） | 待 CEO 过目 |
+| NCR-iter4-002 | 视觉走查记录缺失 | 整改：补 plans/iter-4-verify.md（28 条，DOM 实测 + 单测，含偏差登记与 NCR 观察项 5 整改口径） | 已整改，待 QA 复查 |
+| NCR-iter4-003 | RTM REQ-019 设计列标「待同步」 | 整改：改「已同步」；RTM 头测试数 76→79 同步修正 | 已整改 |
+| NCR-iter4-004 | DEF-011 处置记录失真 | 整改：追加 CHG-003 覆盖说明，中间态 DOM 数据（712px/686px 等）标注作废、关联 CHG-003 | 已整改 |
+| NCR-iter4-005 | design/proto 未同步 CHG-003 | 整改：proto 输入区同步单排顶对齐，操作栏/版本切换不在 P0 原型范围的保留理由写入头部；CHG-003 影响评估补 proto 评估（含整改补记） | 已整改 |
 
 ## 技术债登记
 

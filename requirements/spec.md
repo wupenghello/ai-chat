@@ -1,7 +1,7 @@
 # 产品需求文档（PRD）— ai-chat
 
 - 基线状态：已基线（tag: req-baseline-v1，2026-08-15 CEO 批准；基线后改动一律走变更记录）
-- 最后更新：2026-08-15（req-baseline-v1 基线；基线后变更见 changes.md——CHG-001）
+- 最后更新：2026-08-15（req-baseline-v1 基线；基线后变更见 changes.md——CHG-001/002/003）
 - 交互原型：design/proto/index.html（单文件，浏览器直接打开；右下角"演示控制"可载入演示数据与错误模拟，"设计参数标注"内置令牌对照表）
 
 ## 1. 产品概述

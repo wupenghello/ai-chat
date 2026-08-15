@@ -11,6 +11,14 @@
   纯 HTML/CSS/原生 JS，零外部依赖，直接双击打开
   说明：所有"AI 回复"为本地假数据脚本，不调用真实 API；
         持久化用 localStorage 演示（产品实现为 IndexedDB）
+
+  已按 CHG-003 同步（2026-08-15）：输入区由「两行结构（textarea 上 +
+  底部 hint+按钮 bar）」改为「单排顶对齐」——发送按钮与 textarea 同排
+  （.composer-main flex + align-items:flex-start），textarea padding-top:7px
+  让首行文字与 36px 按钮视觉对齐，hint 移到输入区下方弱化（margin-top:6px）。
+  停止按钮属 REQ-010（不在本 P0 原型覆盖范围），故本原型无停止按钮可同步；
+  消息操作栏（复制/修改）与 REQ-019 版本切换属 iter-4 新增 REQ-015/019，
+  亦不在本 P0 原型范围、无旧态需改，故不在本原型呈现（保留旧态理由）。
   ============================================================
 -->
 <style>
@@ -380,22 +388,24 @@ input, textarea { font-family: inherit; }
   background: var(--c-surface);
   border: 1px solid var(--c-border);
   border-radius: var(--r-lg);
-  padding: 12px 12px 8px;
+  padding: 12px; /* CHG-003：四周均等 12px（原 12px 12px 8px 两行结构） */
   box-shadow: var(--shadow-1);
   transition: border-color .15s ease, box-shadow .15s ease;
 }
+.composer-main { display: flex; align-items: flex-start; gap: 8px; } /* CHG-003：单排顶对齐 */
 .composer-box:focus-within { border-color: var(--c-primary); box-shadow: 0 0 0 3px rgba(51,112,255,.12); }
 .composer textarea {
-  width: 100%; border: none; outline: none; resize: none;
+  flex: 1; min-width: 0; border: none; outline: none; resize: none;
   font-size: 14px; line-height: 1.6;
   max-height: 160px;
   background: transparent; color: var(--c-text-1);
+  padding-top: 7px; /* CHG-003：顶部对齐首行文字（与 36px 按钮视觉对齐） */
 }
 .composer textarea::placeholder { color: var(--c-text-3); }
-.composer-bar { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
-.composer-hint { font-size: 12px; color: var(--c-text-3); margin-right: auto; }
+.composer-hint { font-size: 12px; color: var(--c-text-3); margin-top: 6px; } /* CHG-003：hint 移到输入区下方弱化（原 composer-bar 左 hint） */
 .btn-send {
   /* 发送按钮：36px 见方，圆角 8px；禁用态灰底 */
+  flex: none; /* CHG-003：按钮不随 textarea 伸缩，顶部对齐首行 */
   width: 36px; height: 36px;
   border-radius: var(--r-md);
   background: var(--c-primary); color: #fff;
@@ -613,13 +623,13 @@ input, textarea { font-family: inherit; }
       <div class="composer">
         <div class="composer-inner">
           <div class="composer-box">
-            <textarea id="input" rows="1" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
-            <div class="composer-bar">
-              <span class="composer-hint" id="composerHint">Enter 发送 · Shift+Enter 换行</span>
+            <div class="composer-main">
+              <textarea id="input" rows="1" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
               <button class="btn-send" id="btnSend" onclick="onSend()" disabled title="发送">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8l12-6-4.5 12L8 9.5 2 8z" fill="currentColor"/></svg>
               </button>
             </div>
+            <div class="composer-hint" id="composerHint">Enter 发送 · Shift+Enter 换行</div>
           </div>
         </div>
       </div>
@@ -877,7 +887,7 @@ function updateSendState() {
     ? 'AI 回复生成中，发送暂不可用…'
     : 'Enter 发送 · Shift+Enter 换行';
 }
-function fillInput(t) { input.value = t; updateSendState(); input.focus(); }
+function fillInput(t) { input.value = t; input.dispatchEvent(new Event('input')); input.focus(); }
 
 /* ---------------- 发送与假流式（REQ-001 / 002 / 007） ---------------- */
 const ERRORS = {
