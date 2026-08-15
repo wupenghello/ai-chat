@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-chat · iter-4 设计稿（已基线 design-iter-4）</title>
+<!--
+  ============================================================
+  ai-chat 迭代 4 正式设计稿（设计稿即页面骨架，开发对照实现）
+  依据：requirements/spec.md（req-baseline-v2，CHG-002 新增 REQ-015~018）
+        plans/iter-4.md（T0：3 个 UI 触点，Σ9，M=2 / L=1；T1 输入框回基线 / T2 消息编辑 / T3 会话搜索）
+        plans/defects.md（DEF-011：ComposerBox 偏离 iter-1 基线，本轮回基线，不做超基线升级）
+        design/iter-1/index.html（输入区 4.6 基线，T1 回基线目标）
+        design/iter-2/index.html（停止按钮 design-iter-2 基线，位置随两行结构重定）
+        design/iter-3/index.html（消息区/顶栏/会话重命名铅笔与编辑态，REQ-015/016 复用其范式）
+  状态：已批准（CEO 2026-08-15，第 6 节 6 项待澄清全按默认方案定夺）→ 主会话打 design-iter-4 tag
+  零外部依赖，直接双击打开
+  ============================================================
+-->
+<style>
+/* ============================================================
+   设计令牌：与 design/iter-1/index.html 基线值一致；唯一既有新增
+   --c-success-on-dark #4CC38A 沿用 iter-3（design-iter-3 已批准，非本稿新增）。
+   本稿预期「零新增令牌」，详见第 5 节。
+   ============================================================ */
+:root {
+  --c-bg: #F5F6F7; --c-surface: #FFFFFF; --c-border: #E5E6EB;
+  --c-text-1: #1F2329; --c-text-2: #646A73; --c-text-3: #8F959E;
+  --c-primary: #3370FF; --c-primary-h: #2E5FDF; --c-primary-a: #2860D8; --c-primary-l: #F0F4FF;
+  --c-danger: #D93025; --c-danger-l: #FDECEA; --c-success: #1A9E5C; --c-success-on-dark: #4CC38A;
+  --c-warn: #B45309; --c-warn-l: #FFF7E8;
+  --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-full: 999px;
+  --shadow-1: 0 1px 2px rgba(31,35,41,.06);
+  --shadow-2: 0 4px 16px rgba(31,35,41,.10);
+  --shadow-3: 0 12px 40px rgba(31,35,41,.16);
+  --sidebar-w: 264px; --content-w: 760px;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-size: 14px; line-height: 1.6; color: var(--c-text-1);
+  background: var(--c-bg); padding: 40px 32px 80px;
+}
+.page { max-width: 960px; margin: 0 auto; }
+h1 { font-size: 20px; font-weight: 600; }
+.sub { font-size: 13px; color: var(--c-text-3); margin: 4px 0 8px; }
+.sub b { color: var(--c-text-2); }
+.badge {
+  display: inline-block; padding: 1px 10px; border-radius: var(--r-full);
+  font-size: 12px; font-weight: 500; background: var(--c-warn-l); color: var(--c-warn);
+  margin-bottom: 32px;
+}
+section { margin-bottom: 48px; }
+h2 { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+h2 .no { color: var(--c-primary); margin-right: 4px; }
+.sec-desc { font-size: 13px; color: var(--c-text-3); margin-bottom: 16px; }
+
+table { width: 100%; border-collapse: collapse; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-md); overflow: hidden; font-size: 13px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--c-border); vertical-align: top; }
+th { color: var(--c-text-3); font-weight: 500; background: #FAFBFC; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+td code, li code, .ann code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; background: #F2F3F5; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
+
+.spec { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); padding: 24px; box-shadow: var(--shadow-1); margin-bottom: 16px; }
+.spec-title { font-size: 13px; font-weight: 600; color: var(--c-text-2); margin-bottom: 12px; }
+.spec-title .tag { font-weight: 400; color: var(--c-text-3); margin-left: 8px; }
+.stage { border: 1px dashed var(--c-border); border-radius: var(--r-md); padding: 16px; background: var(--c-bg); }
+.stage.white { background: var(--c-surface); }
+.ann { font-size: 12px; color: var(--c-text-3); margin-top: 8px; line-height: 1.8; }
+.ann b { color: var(--c-text-2); font-weight: 600; }
+
+/* ============================================================
+   产品组件样式（复用 iter-1/2/3 基线样式；本稿新增部分单独注释）
+   ============================================================ */
+
+/* ---- 品牌位 / 侧栏（复用 iter-1/3） ---- */
+.brand { display: flex; align-items: center; gap: 8px; }
+.brand svg { width: 24px; height: 24px; }
+.brand .name { font-size: 15px; font-weight: 600; color: #1F2329; }
+.btn-new {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  width: 100%; height: 36px; margin-top: 12px;
+  background: var(--c-primary); color: #fff;
+  border: none; border-radius: var(--r-md); font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: background .15s ease, transform .1s ease;
+}
+.btn-new:hover { background: var(--c-primary-h); }
+.btn-new:active { background: var(--c-primary-a); transform: scale(.98); }
+
+.sidebar-demo {
+  width: var(--sidebar-w);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
+  display: flex; flex-direction: column;
+  box-shadow: var(--shadow-1);
+}
+.sidebar-demo .hd { padding: 16px 16px 8px; }
+
+/* ★ 触点三新增：搜索框（置于新建按钮与列表之间；全部组合既有令牌） */
+.search-wrap { padding: 8px 12px 4px; }
+.search-box {
+  position: relative; display: flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 8px;
+  background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-md);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.search-box:focus-within { border-color: var(--c-primary); box-shadow: 0 0 0 3px rgba(51,112,255,.12); }
+.search-box .s-icon { flex: none; display: flex; align-items: center; color: var(--c-text-3); }
+.search-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: 13px; line-height: 1.5; color: var(--c-text-1); font-family: inherit; }
+.search-input::placeholder { color: var(--c-text-3); }
+.search-clear {
+  flex: none; width: 20px; height: 20px; border: none; background: none; border-radius: var(--r-sm);
+  display: flex; align-items: center; justify-content: center; color: var(--c-text-3); cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.search-clear:hover { background: #F2F3F5; color: var(--c-text-2); }
+
+.session-list { padding: 8px; }
+.list-label { font-size: 12px; color: var(--c-text-3); font-weight: 500; padding: 8px 8px 4px; }
+.session-item {
+  position: relative; display: flex; flex-direction: column; justify-content: center;
+  min-height: 48px; padding: 6px 32px 6px 10px;
+  border-radius: var(--r-md); cursor: pointer; transition: background .15s ease;
+}
+.session-item:hover { background: #F2F3F5; }
+.session-item.active { background: var(--c-primary-l); }
+.session-title-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.session-title { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.session-item.active .session-title { color: var(--c-primary-h); }
+.session-meta { font-size: 12px; color: var(--c-text-3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session-item.corrupt { opacity: .55; cursor: not-allowed; }
+.tagpill { display: inline-block; padding: 0 6px; height: 18px; line-height: 18px; border-radius: var(--r-full); font-size: 12px; font-weight: 500; }
+.tag-corrupt { background: var(--c-danger-l); color: var(--c-danger); }
+.tag-interrupted { background: var(--c-warn-l); color: var(--c-warn); }
+.sidebar-demo .ft { border-top: 1px solid var(--c-border); padding: 8px 16px; display: flex; align-items: center; gap: 8px; height: 56px; font-size: 13px; font-weight: 500; color: var(--c-text-2); }
+.api-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c-danger); margin-left: auto; }
+.api-dot.ok { background: var(--c-success); }
+
+/* ★ 触点三：关键词高亮（主色 #3370FF，复用既有令牌，非新令牌） */
+.hl { color: var(--c-primary); font-weight: 600; }
+/* ★ 触点三：搜索空态（复用列表空态语义） */
+.search-empty { padding: 24px 16px; text-align: center; font-size: 13px; color: var(--c-text-3); line-height: 1.8; }
+.search-empty .se-title { font-size: 13px; color: var(--c-text-2); font-weight: 500; margin-bottom: 2px; }
+
+/* ---- 消息组件（复用 iter-1/3） ---- */
+.msg { display: flex; gap: 12px; margin-bottom: 24px; }
+.msg-avatar { width: 28px; height: 28px; border-radius: var(--r-full); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; }
+.msg-ai .msg-avatar { background: var(--c-primary-l); color: var(--c-primary-h); }
+.msg-user { flex-direction: row-reverse; }
+.msg-user .msg-avatar { background: #E8EBF2; color: var(--c-text-2); }
+.msg-body { max-width: calc(100% - 80px); min-width: 0; }
+.msg-role { font-size: 12px; color: var(--c-text-3); margin-bottom: 4px; }
+.msg-user .msg-role { text-align: right; }
+.bubble-ai { font-size: 15px; line-height: 1.75; white-space: pre-wrap; word-break: break-word; }
+.bubble-user { background: var(--c-primary); color: #fff; font-size: 15px; line-height: 1.7; padding: 10px 14px; border-radius: var(--r-lg); border-top-right-radius: 4px; white-space: pre-wrap; word-break: break-word; }
+.cursor { display: inline-block; width: 2px; height: 1em; background: var(--c-primary); vertical-align: -2px; margin-left: 2px; animation: blink .8s step-end infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.msg-status-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.status-generating { font-size: 12px; color: var(--c-text-3); display: flex; align-items: center; gap: 6px; }
+.spinner { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--c-border); border-top-color: var(--c-primary); animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.status-interrupted { display: inline-flex; align-items: center; gap: 4px; background: var(--c-warn-l); color: var(--c-warn); font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: var(--r-full); }
+.status-stopped { display: inline-flex; align-items: center; gap: 4px; background: #F2F3F5; color: var(--c-text-2); font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: var(--r-full); }
+
+/* ★ 触点二新增：用户消息编辑入口（复用会话重命名铅笔范式）
+   .msg-user 为 row-reverse，第三个子元素 .msg-edit 渲染于消息流左缘 */
+.msg-edit {
+  flex: none; width: 20px; height: 20px; align-self: center; border-radius: var(--r-sm);
+  display: flex; align-items: center; justify-content: center; color: var(--c-text-3); cursor: pointer;
+  opacity: 0; transition: opacity .15s ease, background .15s ease, color .15s ease;
+}
+.msg-user:hover .msg-edit { opacity: 1; }
+.msg-edit:hover { background: var(--c-primary-l); color: var(--c-primary-h); }
+.msg-edit:active { transform: scale(.94); }
+
+/* ★ 触点二新增：编辑态（就地回填，气泡原位替换为编辑面板）
+   输入框复用输入区 14px/1.6 语义；默认主色描边表「正在编辑」 */
+.edit-panel { width: 360px; max-width: 100%; }
+.edit-textarea {
+  width: 100%; display: block; border: 1px solid var(--c-primary); border-radius: var(--r-md);
+  outline: none; resize: none; padding: 8px 12px; min-height: 40px; max-height: 160px;
+  font-size: 14px; line-height: 1.6; color: var(--c-text-1); background: var(--c-surface); font-family: inherit;
+  transition: box-shadow .15s ease;
+}
+.edit-textarea:focus { border-color: var(--c-primary); box-shadow: 0 0 0 3px rgba(51,112,255,.12); }
+.edit-actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.edit-hint { font-size: 12px; color: var(--c-text-3); margin-top: 8px; line-height: 1.7; }
+.edit-hint b { color: var(--c-warn); font-weight: 500; }
+.btn-save-edit { height: 32px; padding: 0 14px; border: none; background: var(--c-primary); color: #fff; border-radius: var(--r-md); font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s ease, transform .1s ease, opacity .15s ease; }
+.btn-save-edit:hover:not(:disabled) { background: var(--c-primary-h); }
+.btn-save-edit:active:not(:disabled) { background: var(--c-primary-a); transform: scale(.98); }
+.btn-save-edit:disabled { background: #C9CFDB; cursor: not-allowed; }
+.btn-cancel-edit { height: 32px; padding: 0 12px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-2); border-radius: var(--r-md); font-size: 13px; cursor: pointer; transition: border-color .15s ease, color .15s ease, background .15s ease; }
+.btn-cancel-edit:hover { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-l); }
+
+/* ---- 输入区（★ T1 回基线：严格复刻 iter-1 4.6，含停止按钮位置） ---- */
+.composer-box { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); padding: 12px 12px 8px; box-shadow: var(--shadow-1); transition: border-color .15s ease, box-shadow .15s ease; }
+.composer-box.focus { border-color: var(--c-primary); box-shadow: 0 0 0 3px rgba(51,112,255,.12); }
+.composer-demo { width: 100%; border: none; outline: none; resize: none; font-size: 14px; line-height: 1.6; background: transparent; color: var(--c-text-1); display: block; font-family: inherit; }
+.composer-demo::placeholder { color: var(--c-text-3); }
+.composer-bar { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.composer-hint { font-size: 12px; color: var(--c-text-3); margin-right: auto; }
+.btn-send { width: 36px; height: 36px; border-radius: var(--r-md); border: none; background: var(--c-primary); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background .15s ease, transform .1s ease, opacity .15s ease; }
+.btn-send:hover:not(:disabled) { background: var(--c-primary-h); }
+.btn-send:active:not(:disabled) { transform: scale(.94); }
+.btn-send:disabled { background: #C9CFDB; cursor: not-allowed; }
+.btn-stop { height: 36px; padding: 0 16px; border: none; border-radius: var(--r-md); background: var(--c-danger); color: #fff; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; transition: background .15s ease, transform .1s ease; }
+.btn-stop:hover { background: #B7251C; }
+.btn-stop:active { background: #B7251C; transform: scale(.94); }
+
+/* ---- Toast（复用 iter-1） ---- */
+.toast { display: inline-flex; align-items: center; gap: 8px; background: #23272E; color: #fff; font-size: 13px; padding: 10px 16px; border-radius: var(--r-md); box-shadow: var(--shadow-2); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>ai-chat · iter-4 设计稿</h1>
+  <div class="sub">
+    依据：<b>req-baseline-v2</b>（CHG-002 新增 REQ-015 消息编辑与重新生成 / REQ-016 会话搜索）·
+    <b>plans/iter-4.md</b> T0（3 个 UI 触点：T1 输入框回基线 / T2 消息编辑 / T3 会话搜索）·
+    <b>DEF-011</b>（输入区回 iter-1 4.6 基线，不做超基线升级）·
+    基础：<b>design/iter-1</b>（输入区基线）、<b>iter-2</b>（停止按钮）、<b>iter-3</b>（消息区/顶栏/重命名范式）
+  </div>
+  <div class="badge">状态：已批准（CEO 2026-08-15）→ 主会话打 design-iter-4 基线；第 6 节 6 项待澄清已定夺（全按默认）</div>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">1</span>触点一：输入区回基线设计稿（DEF-011 / T1）</h2>
+    <div class="sec-desc">
+      本轮<b>不做</b>输入区视觉升级，只把 <code>ComposerBox.vue</code> 从当前「单行并排」实现<b>修回</b>
+      <code>design/iter-1</code> 第 4.6 节基线形态。停止按钮（design-iter-2 已基线）的视觉不变，仅<b>位置</b>随两行结构重定到
+      底部操作栏、原位替换发送按钮。以下为定稿形态，开发（T1）逐项对照。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.1 基线形态：两行结构 + 默认 / 空输入 / 生成中<span class="tag">14px/1.6 · shadow-1 · 底部 hint</span></div>
+      <div class="stage" style="max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:24px;">
+        <div class="composer-box focus">
+          <textarea class="composer-demo" rows="1">输入内容时按钮可用</textarea>
+          <div class="composer-bar">
+            <span class="composer-hint">Enter 发送 · Shift+Enter 换行</span>
+            <button class="btn-send"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8l12-6-4.5 12L8 9.5 2 8z" fill="currentColor"/></svg></button>
+          </div>
+        </div>
+        <div class="composer-box">
+          <textarea class="composer-demo" rows="1" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
+          <div class="composer-bar">
+            <span class="composer-hint">Enter 发送 · Shift+Enter 换行</span>
+            <button class="btn-send" disabled><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8l12-6-4.5 12L8 9.5 2 8z" fill="currentColor"/></svg></button>
+          </div>
+        </div>
+        <div class="composer-box">
+          <textarea class="composer-demo" rows="1">生成中可继续输入，但不能发送</textarea>
+          <div class="composer-bar">
+            <span class="composer-hint">AI 正在生成，Enter 暂不可发送…</span>
+            <button class="btn-stop"><svg width="10" height="10" viewBox="0 0 10 10"><rect width="10" height="10" rx="1.5" fill="currentColor"/></svg>停止</button>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>结构（两行）</b>：textarea 在上（全宽）+ 底部操作栏（左 hint · 右发送按钮）。<br>
+        <b>容器</b>：白底 1px 描边 <code>#E5E6EB</code> + <b>12px 圆角</b> + <b>1 级阴影 shadow-1</b> + 内边距 <code>12px 12px 8px</code>；
+        focus 时主色描边 + 3px <code>rgba(51,112,255,.12)</code> 光晕。<br>
+        <b>textarea</b>：<b>14px / 1.6</b>，<code>border:none</code>，无自身内边距（内边距由容器提供，<b>严格按 iter-1 基线</b>，见待澄清 6）；
+        placeholder 14px <code>#8F959E</code>；自动增高 max 160px。<br>
+        <b>发送按钮</b>：36px 方形，主色，禁用 <code>#C9CFDB</code>；hover 主色 hover / active scale .94。<br>
+        <b>停止按钮（REQ-010 位置重定）</b>：生成中在<b>底部操作栏原位替换发送按钮</b>，36px 高 / padding 0 16px / 红实底 <code>#D93025</code>
+        + 白字 13px/600 + 方块图标（design-iter-2 视觉不变）；底部 hint 同步切换为「AI 正在生成，Enter 暂不可发送…」。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.2 回基线对照（DEF-011 六项偏离 → 目标）<span class="tag">T1 逐项走查</span></div>
+      <table>
+        <tr><th>项</th><th>当前实现（偏离）</th><th>本稿定稿（回基线）</th></tr>
+        <tr><td>布局</td><td>textarea 与按钮并排单行 + align-items:flex-end</td><td><b>两行结构</b>：textarea 上 + 底部操作栏（hint + 按钮）</td></tr>
+        <tr><td>textarea 字号</td><td>15px</td><td><b>14px / 1.6</b></td></tr>
+        <tr><td>容器内边距</td><td>10px 10px 10px 16px</td><td><b>12px 12px 8px</b></td></tr>
+        <tr><td>阴影</td><td>缺 shadow-1</td><td><b>补 shadow-1</b></td></tr>
+        <tr><td>底部 hint</td><td>缺「Enter 发送 · Shift+Enter 换行」</td><td><b>底部 bar 左 hint</b>；生成中切换为「AI 正在生成…」</td></tr>
+        <tr><td>停止按钮</td><td>位于并排单行右侧</td><td><b>随两行结构重定</b>到底部 bar 发送按钮位（原位替换）</td></tr>
+      </table>
+      <div class="ann">textarea 内边距是否独立补设见<b>待澄清 6</b>（涉及 iter-1 基线的精确定义与 DEF-011 处置措辞）。其余五项按上表直接回基线，零新令牌。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">2</span>触点二：消息编辑与重新生成（REQ-015 / T2）</h2>
+    <div class="sec-desc">
+      用户可对历史中某条<b>「用户消息」</b>进入编辑态，修改后重新发送；系统删除该条及其后全部消息，从该条起按 REQ-002
+      规则重建上下文并流式生成新回复。以下用同一段示例会话的<b>四态 + 边界态</b>画清交互（示例会话：
+      第 1 轮「自我介绍」已完成，第 2 轮「补充兴趣」为编辑对象，其 AI 回复用于演示生成中编辑）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.1 编辑入口<span class="tag">hover 铅笔图标 · 仅用户消息</span></div>
+      <div class="stage white" style="max-width:760px;margin:0 auto;">
+        <div class="msg msg-user">
+          <div class="msg-avatar">我</div>
+          <div class="msg-body"><div class="msg-role">我</div><div class="bubble-user">帮我写一段自我介绍。</div></div>
+          <button class="msg-edit" style="opacity:1" title="编辑消息"><svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M8.5 2.5l3 3L4 13H1v-3l7.5-7.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg></button>
+        </div>
+        <div class="msg msg-ai">
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body"><div class="msg-role">AI</div><div class="bubble-ai">好的，以下是自我介绍：我是一名关注效率与流程的独立开发者，喜欢把重复劳动沉淀成工具。</div></div>
+        </div>
+        <div class="msg msg-user">
+          <div class="msg-avatar">我</div>
+          <div class="msg-body"><div class="msg-role">我</div><div class="bubble-user">再补充一下兴趣爱好。</div></div>
+          <button class="msg-edit" style="opacity:1;background:var(--c-primary-l);color:var(--c-primary-h)" title="编辑消息"><svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M8.5 2.5l3 3L4 13H1v-3l7.5-7.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg></button>
+        </div>
+        <div class="msg msg-ai">
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body"><div class="msg-role">AI</div><div class="bubble-ai">补充内容：平时喜欢阅读、徒步和折腾一些开源小工具，也关注 AI 在效率场景的落地。</div></div>
+        </div>
+      </div>
+      <div class="ann">
+        入口 = 用户消息<b>气泡左侧</b>的铅笔图标（20px，复用会话重命名 <code>.session-rename</code> 范式），
+        <b>仅 hover 该用户消息时显示</b>（AI 消息不提供编辑入口，spec 只允许编辑「用户消息」）。<br>
+        默认态图标 <code>#8F959E</code>；hover 图标 = 浅蓝底 <code>#F0F4FF</code> + 主色 <code>#2E5FDF</code>（图中第二条已展示 hover 态）。
+        <b>实现位置</b>：<code>.msg-user</code> 为 row-reverse，铅笔作为第三个子元素渲染于消息流左缘（头像在右、气泡居中、图标在左），
+        与已有头像/气泡不重叠。<br>
+        <b>组件建议</b>：<code>MessageBubble.vue</code> 增加 <code>editing</code> 本地态与 <code>@edit</code> 事件，或拆 <code>MessageEditor.vue</code>；
+        store 新增 <code>editMessage</code> 动作（见 2.3）。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.2 编辑态<span class="tag">就地回填原文 · 取消 / 保存并重新生成</span></div>
+      <div class="stage white" style="max-width:760px;margin:0 auto;">
+        <div class="msg msg-user">
+          <div class="msg-avatar">我</div>
+          <div class="msg-body"><div class="msg-role">我</div><div class="bubble-user">帮我写一段自我介绍。</div></div>
+        </div>
+        <div class="msg msg-ai">
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body"><div class="msg-role">AI</div><div class="bubble-ai">好的，以下是自我介绍：我是一名关注效率与流程的独立开发者，喜欢把重复劳动沉淀成工具。</div></div>
+        </div>
+        <div class="msg msg-user">
+          <div class="msg-avatar">我</div>
+          <div class="msg-body">
+            <div class="msg-role">我</div>
+            <div class="edit-panel">
+              <textarea class="edit-textarea" rows="1">再补充一下兴趣爱好，尽量简短</textarea>
+              <div class="edit-actions">
+                <button class="btn-save-edit">保存并重新生成</button>
+                <button class="btn-cancel-edit">取消</button>
+              </div>
+              <div class="edit-hint">保存后，<b>此消息及其后的 1 条回复</b>将被删除并重新生成。</div>
+            </div>
+          </div>
+        </div>
+        <div class="msg msg-ai">
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body"><div class="msg-role">AI</div><div class="bubble-ai">补充内容：平时喜欢阅读、徒步和折腾一些开源小工具，也关注 AI 在效率场景的落地。</div></div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>回填</b>：原用户消息文本<b>就地回填</b>到编辑输入框（非弹窗），气泡原位替换为白色编辑面板。<br>
+        <b>输入框</b>：白底 + <b>默认主色描边 <code>#3370FF</code> 表示「正在编辑」</b>，圆角 8px，内边距 8px 12px，
+        字号 <b>14px / 1.6</b>（与输入框输入语义一致），自动增高 max 160px；focus 加 3px 主色光晕。<br>
+        <b>操作栏</b>：主按钮「保存并重新生成」（32px 主色）+ 次级「取消」（32px ghost）；<b>空文本（trim 空）时主按钮禁用</b>（<code>#C9CFDB</code>）。<br>
+        <b>提示</b>：编辑点后存在后续消息时，操作栏下方显示 12px 弱化提示「保存后，此消息及其后的 N 条回复将被删除并重新生成」（N 实时计算），
+        避免误操作；N 由「编辑点后的消息条数」动态得出。提示文案是否保留见<b>待澄清 3</b>。<br>
+        <b>键盘</b>：Enter = 确认并重新生成、Shift+Enter = 换行、Esc = 取消（与输入框约定一致，见待澄清 1）。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.3 确认与取消<span class="tag">确认 → 编辑点后删除 + 重建流式 · 取消 → 无变化</span></div>
+      <div class="stage white" style="max-width:760px;margin:0 auto;">
+        <div class="msg msg-user">
+          <div class="msg-avatar">我</div>
+          <div class="msg-body"><div class="msg-role">我</div><div class="bubble-user">帮我写一段自我介绍。</div></div>
+        </div>
+        <div class="msg msg-ai">
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body"><div class="msg-role">AI</div><div class="bubble-ai">好的，以下是自我介绍：我是一名关注效率与流程的独立开发者，喜欢把重复劳动沉淀成工具。</div></div>
+        </div>
+        <div class="msg msg-user">
+          <div class="msg-avatar">我</div>
+          <div class="msg-body"><div class="msg-role">我</div><div class="bubble-user">再补充一下兴趣爱好，尽量简短</div></div>
+        </div>
+        <div class="msg msg-ai">
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body">
+            <div class="msg-role">AI</div>
+            <div class="bubble-ai">补充内容：阅读、徒步、折腾开源小工具。<span class="cursor"></span></div>
+            <div class="msg-status-row"><span class="status-generating"><span class="spinner"></span>正在生成…</span></div>
+          </div>
+        </div>
+        <div class="ann" style="margin-top:0">
+          <b>确认（保存并重新生成）</b>：编辑点消息更新为新文本；<b>其后的所有消息（原 AI 回复及更后轮次）被删除</b>；
+          从编辑点按 REQ-002 规则重建上下文（系统提示词 + 最近 20 轮，编辑点之前的历史保留、之后不再出现），
+          出现新的 AI 回复气泡流式生成（光标 + spinner，图中示意）。编辑点之前的第 1 轮及其历史不变。<br>
+          <b>取消</b>：恢复原消息气泡展示，无任何改动、不发请求、不写库。图中不单独展示（取消态 = 回 2.1 默认态）。<br>
+          <b>数据语义（给开发）</b>：store 动作 <code>editMessage(sessionId, messageId, newText)</code> =
+          1) 定位消息，2) 若该会话正在生成则 <code>abortSession</code>（中断标注，见 2.4），3) 删除该消息及之后所有消息，
+          4) 写入新用户消息，5) 复用 <code>generate()</code> 流式生成新回复，6) persist。请求体可观测编辑点前后（T2 验收）。
+        </div>
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.4 生成中编辑：中断当前生成<span class="tag">REQ-015 异常分支 · 允许编辑 · 确认时中断</span></div>
+      <div class="stage white" style="max-width:760px;margin:0 auto;">
+        <div class="msg msg-user">
+          <div class="msg-avatar">我</div>
+          <div class="msg-body"><div class="msg-role">我</div><div class="bubble-user">帮我写一段自我介绍。</div></div>
+        </div>
+        <div class="msg msg-ai">
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body"><div class="msg-role">AI</div><div class="bubble-ai">好的，以下是自我介绍：我是一名关注效率与流程的独立开发者，喜欢把重复劳动沉淀成工具。</div></div>
+        </div>
+        <div class="msg msg-user">
+          <div class="msg-avatar">我</div>
+          <div class="msg-body"><div class="msg-role">我</div><div class="bubble-user">再补充一下兴趣爱好，尽量简短</div></div>
+        </div>
+        <div class="msg msg-ai">
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body">
+            <div class="msg-role">AI</div>
+            <div class="bubble-ai">补充内容：阅读、徒步、折腾开源小工<span class="cursor"></span></div>
+            <div class="msg-status-row">
+              <span class="status-interrupted"><svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>生成中断</span>
+              <span style="font-size:12px;color:var(--c-text-3)">已生成内容保留，编辑后重新生成</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>语义（spec 已定稿）</b>：生成中编辑历史消息 = <b>允许编辑</b>；确认编辑时<b>中断当前正在生成的回复</b>
+        （该回复保留已生成部分并标注「生成中断」，与 REQ-003 语义一致），随后删除编辑点及其后消息、从编辑点重新生成。<br>
+        <b>关键时序</b>：进入编辑态时<b>不立即中断</b>（当前回复继续流式，用户可从容编辑）；点击「保存并重新生成」那一刻才中断。
+        中断标注复用 iter-1 4.4 警告胶囊（<code>#FFF7E8</code> / <code>#B45309</code>），与用户主动「已停止」中性胶囊区分（iter-2）。<br>
+        <b>边界</b>：编辑点在「正在生成的回复」之前 → 中断该回复后，它也在编辑点之后，会被删除再重新生成（图中即此场景，展示中断瞬间）；
+        编辑点在「正在生成的回复」之后（更早轮次）→ 同样中断并删除重建。若编辑时当前会话无生成，走 2.3 普通确认。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.5 极端与边界态<span class="tag">空文本禁用 · 编辑最后一条 · 持久化失败</span></div>
+      <div class="stage white" style="max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:16px;">
+        <div class="msg msg-user">
+          <div class="msg-avatar">我</div>
+          <div class="msg-body">
+            <div class="msg-role">我</div>
+            <div class="edit-panel">
+              <textarea class="edit-textarea" rows="1" placeholder="修改此消息…"></textarea>
+              <div class="edit-actions">
+                <button class="btn-save-edit" disabled>保存并重新生成</button>
+                <button class="btn-cancel-edit">取消</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="msg msg-user">
+          <div class="msg-avatar">我</div>
+          <div class="msg-body">
+            <div class="msg-role">我</div>
+            <div class="edit-panel">
+              <textarea class="edit-textarea" rows="1">这是会话中最后一条用户消息</textarea>
+              <div class="edit-actions">
+                <button class="btn-save-edit">保存并重新生成</button>
+                <button class="btn-cancel-edit">取消</button>
+              </div>
+              <div class="edit-hint">此消息之后暂无内容，保存将仅重新生成该条回复。</div>
+            </div>
+          </div>
+        </div>
+        <div class="toast">本地存储写入失败：编辑结果已在内存中保留，本次使用不受影响</div>
+      </div>
+      <div class="ann">
+        <b>空 / 纯空白文本</b>：<b>「保存并重新生成」禁用</b>（<code>#C9CFDB</code>），不发请求、不删除消息（REQ-015 异常分支）。<br>
+        <b>编辑最后一条消息</b>（其后无消息）：提示文案降级为「此消息之后暂无内容，保存将仅重新生成该条回复」（N=0），仍正常重建上下文生成。<br>
+        <b>持久化写入失败</b>：toast 提示（复用 iter-1 深底 toast 3s），编辑结果在<b>内存中保留</b>，本次不中断、不静默丢数据（REQ-006/015）。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">3</span>触点三：会话搜索（REQ-016 / T3）</h2>
+    <div class="sec-desc">
+      侧栏会话列表顶部新增搜索框，输入关键词<b>实时过滤</b>「标题或消息正文含关键词」的会话（本地遍历 IndexedDB，不调 AI API），
+      <b>标题命中优先排序</b>。建议实现：<code>TheSidebar.vue</code> 加 <code>SearchBox.vue</code>，store 加 <code>filterSessions(keyword)</code>
+      遍历本地会话（含损坏会话判定），仅过滤不动数据。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">3.1 搜索框位置与交互<span class="tag">新建按钮下方 · 放大镜 + 清除按钮</span></div>
+      <div class="stage" style="display:flex;justify-content:center;">
+        <div class="sidebar-demo">
+          <div class="hd">
+            <div class="brand">
+              <svg viewBox="0 0 128 128"><path fill="none" stroke="#3370FF" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+              <span class="name">喵喵</span>
+            </div>
+            <div class="btn-new">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              新建会话
+            </div>
+          </div>
+          <div class="search-wrap">
+            <div class="search-box">
+              <span class="s-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.3"/><path d="M9 9l3 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></span>
+              <input class="search-input" type="text" placeholder="搜索会话" spellcheck="false">
+            </div>
+          </div>
+          <div class="session-list">
+            <div class="list-label">历史会话（按最近活跃排序）</div>
+            <div class="session-item active">
+              <div class="session-title">帮我写一封请假邮件，理由是家里…</div>
+              <div class="session-meta">内容摘要 · 14:32</div>
+            </div>
+            <div class="session-item">
+              <div class="session-title">流式请求的代码示例</div>
+              <div class="session-meta">给我一个用 JS 实… · 12:08</div>
+            </div>
+          </div>
+          <div class="ft">API 设置（已配置）<span class="api-dot ok"></span></div>
+        </div>
+      </div>
+      <div class="ann">
+        搜索框位于<b>新建按钮与列表之间</b>（<code>.search-wrap</code>，上下内边距 8px/4px）。<br>
+        <b>样式</b>：高 <b>32px</b>、圆角 <b>8px</b>、描边 <code>#E5E6EB</code>；左放大镜图标 14px <code>#8F959E</code>、
+        右清除按钮 20px（有输入时显示，hover 灰底 <code>#F2F3F5</code>）；输入 13px，placeholder <code>#8F959E</code>。
+        focus 态 = 主色描边 + 3px <code>rgba(51,112,255,.12)</code> 光晕（同 iter-1 输入框）。<br>
+        <b>交互</b>：输入即<b>实时过滤</b>（本地遍历，500ms 内返回，REQ-016 验收）；点击清除按钮或删空输入 = 恢复完整列表；
+        搜索中不打断任何会话生成、不修改数据。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">3.2 过滤结果：标题命中优先 + 高亮 + 正文命中片段<span class="tag">REQ-016 主流程</span></div>
+      <div class="stage" style="display:flex;justify-content:center;">
+        <div class="sidebar-demo">
+          <div class="hd">
+            <div class="brand">
+              <svg viewBox="0 0 128 128"><path fill="none" stroke="#3370FF" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+              <span class="name">喵喵</span>
+            </div>
+            <div class="btn-new">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              新建会话
+            </div>
+          </div>
+          <div class="search-wrap">
+            <div class="search-box" style="border-color:var(--c-primary);box-shadow:0 0 0 3px rgba(51,112,255,.12);">
+              <span class="s-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.3"/><path d="M9 9l3 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></span>
+              <input class="search-input" type="text" value="流式" spellcheck="false" readonly>
+              <button class="search-clear" style="display:flex"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></button>
+            </div>
+          </div>
+          <div class="session-list">
+            <div class="list-label">标题命中（2）</div>
+            <div class="session-item active">
+              <div class="session-title">用 JS 实现<span class="hl">流式</span>请求</div>
+              <div class="session-meta">内容摘要 · 12:08</div>
+            </div>
+            <div class="session-item">
+              <div class="session-title"><span class="hl">流式</span>输出是什么意思</div>
+              <div class="session-meta">内容摘要 · 昨天</div>
+            </div>
+            <div class="list-label">正文命中（2）</div>
+            <div class="session-item">
+              <div class="session-title">多轮上下文演示</div>
+              <div class="session-meta">…<span class="hl">流式</span>输出就是服务器边生成… · 14:32</div>
+            </div>
+            <div class="session-item">
+              <div class="session-title">超长消息与代码块演示</div>
+              <div class="session-meta">…用一句话解释什么是<span class="hl">流式</span>… · 昨天</div>
+            </div>
+          </div>
+          <div class="ft">API 设置（已配置）<span class="api-dot ok"></span></div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>排序（REQ-016「标题命中优先」）</b>：命中分两组展示——<b>标题命中组</b>（标题含关键词）在前，
+        <b>正文命中组</b>（标题不含、正文含）在后；组内仍按 <code>updatedAt</code> 倒序。<br>
+        <b>标题命中</b>：标题中命中的关键词以<b>主色 <code>#3370FF</code> 高亮</b>（可感知命中位置，见待澄清 5）。<br>
+        <b>正文命中</b>：meta 行以<b>命中片段</b>替代原摘要，截取关键词上下文（前 N 字 + 关键词 + 后 N 字，关键词主色高亮），
+        见待澄清 4。分组标签 12px <code>#8F959E</code>，命中计数实时显示。<br>
+        点击任一结果 = 切换到该会话（复用 <code>switchTo</code>）；搜索态下的选中项高亮规则与正常列表一致。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">3.3 无匹配空态 + 关键词为空恢复<span class="tag">REQ-016 异常分支</span></div>
+      <div class="stage" style="display:flex;justify-content:center;gap:24px;flex-wrap:wrap;">
+        <div class="sidebar-demo">
+          <div class="hd">
+            <div class="brand">
+              <svg viewBox="0 0 128 128"><path fill="none" stroke="#3370FF" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+              <span class="name">喵喵</span>
+            </div>
+            <div class="btn-new">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              新建会话
+            </div>
+          </div>
+          <div class="search-wrap">
+            <div class="search-box">
+              <span class="s-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.3"/><path d="M9 9l3 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></span>
+              <input class="search-input" type="text" value="xyz" spellcheck="false" readonly>
+              <button class="search-clear" style="display:flex"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></button>
+            </div>
+          </div>
+          <div class="search-empty">
+            <div class="se-title">无匹配会话</div>
+            没有标题或正文包含「xyz」的会话<br>换个关键词试试
+          </div>
+          <div class="ft">API 设置（已配置）<span class="api-dot ok"></span></div>
+        </div>
+        <div class="sidebar-demo">
+          <div class="hd">
+            <div class="brand">
+              <svg viewBox="0 0 128 128"><path fill="none" stroke="#3370FF" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+              <span class="name">喵喵</span>
+            </div>
+            <div class="btn-new">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              新建会话
+            </div>
+          </div>
+          <div class="search-wrap">
+            <div class="search-box">
+              <span class="s-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.3"/><path d="M9 9l3 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></span>
+              <input class="search-input" type="text" placeholder="搜索会话" spellcheck="false">
+            </div>
+          </div>
+          <div class="session-list">
+            <div class="list-label">历史会话（按最近活跃排序）</div>
+            <div class="session-item active">
+              <div class="session-title">帮我写一封请假邮件，理由是家里…</div>
+              <div class="session-meta">内容摘要 · 14:32</div>
+            </div>
+            <div class="session-item">
+              <div class="session-title">流式请求的代码示例</div>
+              <div class="session-meta">给我一个用 JS 实… · 12:08</div>
+            </div>
+          </div>
+          <div class="ft">API 设置（已配置）<span class="api-dot ok"></span></div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>无匹配</b>：显示空态「<b>无匹配会话</b>」+ 引导文案（含当前关键词），<b>不显示空白列表</b>（REQ-016 异常分支）；
+        点击清除按钮回到完整列表。<br>
+        <b>关键词为空</b>（清空输入）：<b>恢复完整列表</b>，重新显示「历史会话（按最近活跃排序）」分组标签，与搜索前一致。<br>
+        <b>损坏会话</b>（REQ-016 异常分支）：若损坏会话标题/正文命中，仍显示但带「无法读取」胶囊、点击不切换；
+        搜索遍历<b>跳过其 messages 解析失败</b>，不拖崩整体（开发侧 <code>filterSessions</code> 需 try/catch 单条损坏）。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">4</span>状态走查清单（完整走查，不抽查）</h2>
+    <div class="sec-desc">对齐 process/testing.md 完整走查要求。每条为一次走查，√ = 本稿已给出定稿视觉；QA 与视觉走查逐条打勾取证。</div>
+    <table>
+      <tr><th style="width:44px">序号</th><th>需求</th><th>触点</th><th>状态组合</th><th>期望表现（= 验收口径）</th><th style="width:52px">视觉</th><th>样件</th></tr>
+      <!-- DEF-011 -->
+      <tr><td>1</td><td>DEF-011</td><td>ComposerBox</td><td>默认两行结构</td><td>textarea 上 + 底部 bar（hint + 发送按钮 36px）；容器 12px 12px 8px + shadow-1</td><td>√</td><td>1.1</td></tr>
+      <tr><td>2</td><td>DEF-011</td><td>ComposerBox</td><td>textarea 字号/行高</td><td>14px / 1.6，无自身内边距（由容器提供）</td><td>√</td><td>1.1</td></tr>
+      <tr><td>3</td><td>DEF-011</td><td>ComposerBox</td><td>focus 态</td><td>主色描边 + 3px rgba(51,112,255,.12) 光晕</td><td>√</td><td>1.1</td></tr>
+      <tr><td>4</td><td>DEF-011</td><td>ComposerBox</td><td>空输入禁用 / 生成中禁用</td><td>发送按钮禁用 #C9CFDB；生成中底部 hint 切换「AI 正在生成…」</td><td>√</td><td>1.1</td></tr>
+      <tr><td>5</td><td>REQ-010</td><td>ComposerBox</td><td>生成中停止按钮位置</td><td>底部 bar 原位替换发送按钮，36px 红实底白字方块</td><td>√</td><td>1.1</td></tr>
+      <!-- REQ-015 -->
+      <tr><td>6</td><td>REQ-015</td><td>MessageBubble</td><td>用户消息 hover 编辑入口</td><td>气泡左缘铅笔图标 20px 显示；AI 消息无入口</td><td>√</td><td>2.1</td></tr>
+      <tr><td>7</td><td>REQ-015</td><td>MessageBubble</td><td>点击进入编辑态</td><td>气泡原位替换为回填 textarea（14px/主色描边）+ 操作栏</td><td>√</td><td>2.2</td></tr>
+      <tr><td>8</td><td>REQ-015</td><td>MessageBubble</td><td>编辑态空文本</td><td>「保存并重新生成」禁用 #C9CFDB，不发请求不删除</td><td>√</td><td>2.5</td></tr>
+      <tr><td>9</td><td>REQ-015</td><td>MessageBubble</td><td>确认重新生成</td><td>编辑点消息更新、其后消息删除、新回复流式；历史不变</td><td>√</td><td>2.3</td></tr>
+      <tr><td>10</td><td>REQ-015</td><td>MessageBubble</td><td>取消编辑</td><td>恢复原气泡，无改动不发请求不写库</td><td>√（行为）</td><td>2.3 注</td></tr>
+      <tr><td>11</td><td>REQ-015</td><td>MessageBubble</td><td>生成中编辑确认</td><td>中断当前生成（生成中断胶囊）→ 删除重建 → 从编辑点重新生成</td><td>√</td><td>2.4</td></tr>
+      <tr><td>12</td><td>REQ-015 × REQ-002</td><td>数据层（无 UI）</td><td>重建上下文请求体</td><td>编辑点前历史保留、之后不再出现；系统提示词仍居首</td><td>—（行为）</td><td>2.3 注</td></tr>
+      <tr><td>13</td><td>REQ-015 × REQ-006</td><td>AppToast</td><td>持久化写入失败</td><td>toast 提示，内存保留，不静默丢数据</td><td>√</td><td>2.5</td></tr>
+      <tr><td>14</td><td>REQ-015</td><td>数据层</td><td>编辑后刷新持久化</td><td>编辑结果与删除的后续消息刷新后保持一致</td><td>√（行为）</td><td>2.3 注</td></tr>
+      <!-- REQ-016 -->
+      <tr><td>15</td><td>REQ-016</td><td>Sidebar</td><td>搜索框位置/交互</td><td>新建按钮下、列表上；放大镜 + 清除按钮；focus 主色光晕</td><td>√</td><td>3.1</td></tr>
+      <tr><td>16</td><td>REQ-016</td><td>Sidebar</td><td>实时过滤时效</td><td>500ms 内返回标题/正文含关键词的会话（本地遍历）</td><td>√（行为）</td><td>3.2</td></tr>
+      <tr><td>17</td><td>REQ-016</td><td>Sidebar</td><td>标题命中优先排序</td><td>标题命中组在前、正文命中组在后；组内 updatedAt 倒序</td><td>√</td><td>3.2</td></tr>
+      <tr><td>18</td><td>REQ-016</td><td>Sidebar</td><td>标题命中高亮 / 正文命中片段</td><td>关键词主色高亮；正文命中 meta 行显示命中片段</td><td>√</td><td>3.2</td></tr>
+      <tr><td>19</td><td>REQ-016</td><td>Sidebar</td><td>点击结果切换</td><td>正确切换到目标会话，消息区加载该会话</td><td>√（行为）</td><td>3.2 注</td></tr>
+      <tr><td>20</td><td>REQ-016</td><td>Sidebar</td><td>无匹配空态</td><td>显示「无匹配会话」+ 引导文案，不显示空白列表</td><td>√</td><td>3.3</td></tr>
+      <tr><td>21</td><td>REQ-016</td><td>Sidebar</td><td>关键词为空恢复</td><td>恢复完整列表与「历史会话」分组标签</td><td>√</td><td>3.3</td></tr>
+      <tr><td>22</td><td>REQ-016</td><td>Sidebar</td><td>损坏会话不拖崩搜索</td><td>损坏会话命中仍标「无法读取」；单条损坏不炸整体</td><td>√（行为）</td><td>3.3 注</td></tr>
+    </table>
+    <div class="ann">共 <b>22</b> 条。第 10/12/14/16/19/22 条为行为断言，由 T1 自动化用例或手工走查取证，视觉部分对照样件打勾。</div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">5</span>新增令牌建议</h2>
+    <div class="sec-desc">对照 iter-1 基线令牌表逐项核对（颜色 / 字号 / 圆角 / 阴影 / 间距 / 动效）。</div>
+    <table>
+      <tr><th>项</th><th>结论</th></tr>
+      <tr>
+        <td>消息编辑入口 / 编辑态 / 搜索框 / 关键词高亮</td>
+        <td>全部复用既有令牌：铅笔图标复用会话重命名 <code>#8F959E→#F0F4FF/#2E5FDF</code>；
+        编辑输入框复用主色描边 <code>#3370FF</code> + 焦点环 <code>rgba(51,112,255,.12)</code> + 14px/1.6；
+        操作按钮复用 <code>#3370FF/#2E5FDF/#2860D8</code>（保存）与 ghost 描边（取消）；
+        搜索框复用输入框 8px 圆角/描边/焦点环；关键词高亮复用主色 <code>#3370FF</code>。
+        <b>零新增令牌</b>——均为既有令牌的新组合，按 iter-4 计划 T0「复用现有令牌」约定，走查即本文件。</td>
+      </tr>
+      <tr>
+        <td>design-system 沉淀建议（复盘时提）</td>
+        <td>「行内编辑面板」（消息就地编辑）+「搜索框」两组件态在 iter-4 落地后若走查无调整，
+        建议复盘时作为组件条目沉淀进 design-system <code>components.md</code>（经 CEO 批准）。关键词高亮 = 主色，无需新令牌。</td>
+      </tr>
+    </table>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">6</span>待澄清（已定夺：CEO 2026-08-15 全按默认方案批准）</h2>
+    <div class="sec-desc">本稿 6 项设计决策，CEO 已于 2026-08-15 逐条定夺，<b>全部采纳「设计师暂定方案」，无调整</b>。开发按下方定稿实现，零返工。</div>
+    <table>
+      <tr><th style="width:60px">编号</th><th>问题</th><th>设计师暂定方案（已落样件）</th></tr>
+      <tr>
+        <td>1</td>
+        <td>REQ-015 编辑态键盘行为：编辑 textarea 内 Enter 是「确认并重新生成」还是「换行」？spec 未定义。</td>
+        <td><b>Enter = 确认并重新生成，Shift+Enter = 换行，Esc = 取消</b>（与主输入框约定完全一致，底部按钮兜底）。</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td>REQ-015 确认重新生成删除「编辑点及其后消息」不可逆，是否需要二次确认模态？</td>
+        <td><b>不弹二次确认</b>：按钮文案「保存并重新生成」已明示语义，编辑态另有提示文案（见 3），避免打断；若需撤销走变更流程。</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td>REQ-015 编辑态是否展示「将删除其后 N 条消息」提示？</td>
+        <td><b>展示</b>：操作栏下方 12px 弱化提示「保存后，此消息及其后的 N 条回复将被删除并重新生成」（N 实时计算；N=0 时降级为「仅重新生成该条回复」）。</td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td>REQ-016 搜索结果「正文命中」（标题不命中）如何展示命中信息？</td>
+        <td><b>meta 行显示命中片段</b>（截取关键词上下文，关键词主色高亮），比仅标「正文含关键词」更可感知。</td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td>REQ-016 标题命中关键词是否高亮？</td>
+        <td><b>主色 <code>#3370FF</code> 高亮</b>（可感知命中位置；复用既有主色，非新令牌）。</td>
+      </tr>
+      <tr>
+        <td>6</td>
+        <td>DEF-011 处置写「textarea 补内边距」，但 iter-1 基线 textarea 无自身 padding（由容器 <code>12px 12px 8px</code> 提供）。回基线以哪个为准？</td>
+        <td><b>严格按 iter-1 基线</b>：textarea 无自身内边距，容器内边距即文本内边距（本稿 1.1 已按此落样件）；DEF-011「textarea 补内边距」理解为「回基线后文本不再贴边」，不额外加 padding，避免二次偏离。</td>
+      </tr>
+    </table>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">7</span>基线声明</h2>
+    <div class="sec-desc">
+      本稿令牌与 <code>design/iter-1/index.html</code>（design-iter-1 基线）一致，<b>零新增令牌</b>；
+      <code>--c-success-on-dark #4CC38A</code> 为 iter-3 已批准既有令牌（本稿未用到，仅保留在 <code>:root</code> 供开发对照）。
+      第 6 节 6 项待澄清已于 2026-08-15 由 CEO 逐条定夺（全按默认方案，无调整），主会话打 <code>design-iter-4</code> tag，
+      开发（T1 输入框回基线 / T2 消息编辑 / T3 会话搜索）自 tag 后解锁（plans/iter-4.md 任务表约定）。
+    </div>
+  </section>
+
+</div>
+</body>
+</html>
