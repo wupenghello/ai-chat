@@ -19,7 +19,7 @@
 | REQ-011 | Markdown 渲染与代码块复制 | P1 | 待设计师产出 | - | - | 未开始 | - |
 | REQ-012 | 会话重命名 | P2 | 待设计师产出 | - | - | 未开始 | - |
 | REQ-013 | 导出会话 | P2 | 待设计师产出 | - | - | 未开始 | - |
-| REQ-014 | API 供应商与密钥可配置（OpenAI 兼容，DeepSeek/GLM） | P0 | design/iter-1（已基线） | stores/settings.ts, SettingsForm | settings.spec / settings-form.spec + 浏览器实测 | 已验证（DeepSeek 实测通过；**GLM 部分待 DEF-002 充值后补验**——QA 审计观察项 4 备注） | iter-1 |
+| REQ-014 | API 供应商与密钥可配置（OpenAI 兼容，DeepSeek/GLM） | P0 | design/iter-1（已基线） | stores/settings.ts, SettingsForm | settings.spec / settings-form.spec + 浏览器实测 | 已验证（DeepSeek 实测通过；**GLM 部分按 CEO 决策 2026-08-15 不补验、接受部分达成**——不充值，见 defects.md DEF-002） | iter-1 |
 
 ## 状态定义
 
