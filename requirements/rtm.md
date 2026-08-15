@@ -2,7 +2,7 @@
 
 双向可追溯：需求 → 设计稿 → 实现 → 测试 → 状态。迭代收尾时必须与实际代码一致。
 
-> 需求已基线（req-baseline-v1，2026-08-15 CEO 批准）。iter-1 已关闭（G4 过，v0.1.0 已发布）。当前迭代：**iter-2**（2026-08-15 ~ 08-28，计划见 plans/iter-2.md，CEO 已批准取舍）。
+> 需求已基线（req-baseline-v1，2026-08-15 CEO 批准）。iter-1 已关闭（G4 过，v0.1.0 已发布）。当前迭代：**iter-2**（2026-08-15，开发完成：T0~T4 全完成、36 测试全绿、24 条走查全过，见 plans/iter-2-verify.md；待 QA 审计 + 复盘关迭代）。
 
 | 需求 | 描述摘要 | 优先级 | 设计稿 | 实现（文件/模块） | 测试（用例/文件） | 状态 | 所在迭代 |
 |------|---------|--------|----------|-----------------|------------------|------|---------|
@@ -13,9 +13,9 @@
 | REQ-005 | 删除会话 | P0 | design/iter-1（已基线） | TheSidebar + ConfirmModal | sessions.spec | 已验证 | iter-1 |
 | REQ-006 | 会话本地持久化与恢复（IndexedDB） | P0 | 不涉及（数据层） | db/idb.ts, stores/sessions.ts | sessions.spec + 浏览器实测（修复 Proxy 克隆缺陷后端到端通过） | 已验证 | iter-1 |
 | REQ-007 | 调用异常与降级提示（401 引导至设置页） | P0 | design/iter-1（已基线） | api/client.ts, ErrorBubble, AppToast | client.spec / sessions.spec + 浏览器实测（未配置引导、429 原因透传） | 已验证 | iter-1 |
-| REQ-008 | 系统提示词设置 | P1（CEO 已确认降级） | design/iter-2（已基线） | - | - | 未开始（排入 iter-2，T3） | iter-2 |
+| REQ-008 | 系统提示词设置 | P1（CEO 已确认降级） | design/iter-2（已基线） | stores/settings.ts, SettingsForm, api/client.ts buildContext | settings.spec / sessions.spec + 走查（plans/iter-2-verify.md 24 条） | 已验证（"回复只用英文"端到端以请求体单测取证：system 恒居首位） | iter-2 |
 | REQ-009 | 会话自动命名 | P1 | 待设计师产出 | - | - | 未开始（iter-2 容量取舍砍掉，CEO 拍板排 iter-3 首选） | - |
-| REQ-010 | 停止生成 | P1 | design/iter-2（已基线） | - | - | 未开始（排入 iter-2，T2） | iter-2 |
+| REQ-010 | 停止生成 | P1 | design/iter-2（已基线） | stores/sessions.ts, ComposerBox, MessageBubble | sessions.spec / composer.spec / 集成用例 + 走查（含边界 19/20 实测） | 已验证 | iter-2 |
 | REQ-011 | Markdown 渲染与代码块复制 | P1 | 待设计师产出 | - | - | 未开始 | - |
 | REQ-012 | 会话重命名 | P2 | 待设计师产出 | - | - | 未开始 | - |
 | REQ-013 | 导出会话 | P2 | 待设计师产出 | - | - | 未开始 | - |
