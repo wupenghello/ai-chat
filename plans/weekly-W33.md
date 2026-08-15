@@ -30,18 +30,34 @@ git 提交 8 个（a192146~d689761），T0~T4 全部完成（Σ=10，容量守�
 
 测试结果（迭代末汇总，testing.md §4）：**iter-2 末 37/37 通过**（单测 35 + 集成 2）、跳过 0；走查 24/24（不抽查）。
 
+### iter-3（08-15 下午~晚间，开发完成，待 QA 审计 + 复盘关闭）
+
+git 提交 4 个（37ee268~fba475e），T0~T4 全部完成（Σ=9，容量 10 内）：
+
+- T0 设计基线（design-iter-3，6 项待澄清 CEO 逐条定夺，新增令牌 #4CC38A 已批准）
+- T1 REQ-009 会话自动命名（titleOf 超 20 字省略号 + renamed 标记防手动改名被覆盖）
+- T2 REQ-011 Markdown 渲染与代码复制（markdown-it + DOMPurify 净化，代码块深底+语言标签+复制按钮）
+- T3 REQ-012 会话重命名（双击/铅笔行内编辑，Enter 保存/Esc 取消/失焦保存）
+- T4 REQ-013 会话导出（顶栏导出按钮，转 Markdown 下载，空会话 toast）
+- 顺手修 iter-2 遗留类型缺口：PersistedMessage.status 补 'stopped'
+- 28 条走查全过（plans/iter-3-verify.md，DOM 实测 + 单测）
+- QA 审计（进行中，qa 员工后台运行）
+
+测试结果（迭代末汇总）：**iter-3 末 62/62 通过**（单测 58 + 集成 2 + 组件 8，较 iter-2 的 37 新增 25）、跳过 0；走查 28/28（不抽查）。
+
 ## 进行中与阻塞
 
 | 任务 | 状态 | 阻塞原因 / 需要的决策 |
 |------|------|---------------------|
-| iter-2 复盘 + G4 关闭 | 待办 | NCR-iter2-001~003 全部关闭（CEO 过目确认 2026-08-15），G4 前置条件满足，可走复盘关迭代 |
-| DEF-002 GLM 补验 | 已关闭（不验证） | CEO 决策（2026-08-15）：不充值、不补验，接受现状（defects.md 有留痕）——不再是阻塞项 |
+| iter-3 QA 审计 | 进行中 | qa 员工后台运行中，待出报告 |
+| iter-3 复盘 + G4 关闭 | 待办 | QA 审计报告 + NCR 处置完成后走 /mm-retrospective |
 
-（原表 DEF-001、集成用例两项已完成销账。）
+（iter-2 相关阻塞项已随 G4 关闭销账；DEF-001/002 已关闭。）
 
 ## 计划偏差
 
 iter-2 计划当日完成，无延期。容量 Σ=10 全部交付；REQ-009 按计划砍至 iter-3。
+iter-3 计划当日完成，无延期。容量 Σ=9 全部交付（≤10 上限）；无砍范围、无新增范围。
 
 ## Code Review 记录（development.md §3）
 
@@ -52,6 +68,13 @@ iter-2 计划当日完成，无延期。容量 Σ=10 全部交付；REQ-009 按�
   - 组装核对：system 前置仅非空时注入；30 轮截断用例保住首位（client.spec）
   - 无新发现缺陷；37/37 测试与 24 条走查为旁证
   - **CEO 过目确认：2026-08-15，已过目变更范围与 review 记录，确认**（G4 前置条件满足）
+- **iter-3（本次执行）**：范围 `37ee268..fba475e`（生产代码：sessions store、SessionListItem/MessageBubble/App、utils/markdown/export，测试 5 文件）。发现与结论：
+  - 状态机核对：renamed 标记生命周期（createSession 初始化 false → renameSession 置 true → send 仅 !renamed 时自动命名）无残留；空标题 rename 提前返回不误置
+  - 安全核对：markdown-it html:false + DOMPurify 双层净化；代码块复制按钮为受控注入 HTML（class 选择器，无内联事件），XSS 用例（script/img/javascript:）全过
+  - 依赖核对：新增 markdown-it/dompurify 为纯前端运行时依赖，不偏离"纯前端直连"架构
+  - 导出核对：文件名 sanitize + Blob 下载，空会话短路返回 false
+  - 无新发现缺陷；62/62 测试与 28 条走查为旁证
+  - **CEO 过目确认：待 CEO 过目**（G4 前置条件）
 
 ## QA 审计与 NCR 处置（iter-2）
 
@@ -67,10 +90,10 @@ iter-2 计划当日完成，无延期。容量 Σ=10 全部交付；REQ-009 按�
 |------|------|------|------|
 | 消息区 | interrupted/stopped（中断/停止）消息无重试入口，需发新消息继续 | 与基线一致（重试仅绑定错误气泡） | 保留（iter-3 评估） |
 | 全局 | 窄视口（<768px）无响应式 | spec 明确 MVP 不承诺 | 保留（需求变更时） |
-| 渲染 | AI 回复纯文本渲染，Markdown 源码可见 | REQ-011（P1）iter-2 容量不足未排入 | 保留（iter-3 首选评估，原"iter-2"预期已过时，销账更新） |
+| ~~渲染~~ | ~~AI 回复纯文本渲染，Markdown 源码可见~~ | ~~REQ-011（P1）iter-2 容量不足未排入~~ | **已销账（08-15）**：iter-3 T2 实现 Markdown 渲染（markdown-it + DOMPurify） |
 | ~~metrics~~ | ~~collect.sh 需人工绕行（DEF-001）~~ | ~~根因未明~~ | **已销账（08-15）**：根因查明并修复，采集恢复全自动 |
 
 ## 下周计划
 
-- iter-2 复盘 + G4 关闭（容量校准：计划 Σ10 vs 实际 Σ10，数据待复盘采集）
-- iter-3 计划：REQ-009 自动命名（CEO 已拍板首选）、REQ-011 Markdown 渲染评估
+- iter-3 复盘 + G4 关闭（容量校准：计划 Σ9 vs 实际 Σ9，数据待复盘采集）
+- 迭代后：REQ-001~014 全部达成，产品仅剩"暂缓想法池"（账号/RAG/暗色主题等），后续纳入走需求变更流程
