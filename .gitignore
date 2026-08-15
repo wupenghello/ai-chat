@@ -17,3 +17,12 @@ coverage/
 .DS_Store
 .idea/
 .vscode/
+
+# 后端（backend/，CHG-004 monorepo）
+backend/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+data/
+*.db

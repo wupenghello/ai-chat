@@ -1,0 +1,80 @@
+"""SQLite 访问层：连接工厂 + 带版本号的迁移（PRAGMA user_version，非功能「数据」条款）。
+
+迁移规则：MIGRATIONS 按版本号升序逐个应用，只应用大于当前库版本的迁移；
+每个迁移在事务内执行并更新 user_version，保证可断点续跑。
+"""
+
+import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import Annotated
+
+from fastapi import Depends, Request
+
+SCHEMA_VERSION = 1
+
+MIGRATIONS: dict[int, str] = {
+    1: """
+    CREATE TABLE users (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        username      TEXT    NOT NULL,             -- 展示用原名
+        username_key  TEXT    NOT NULL UNIQUE,      -- 小写归一，大小写不敏感唯一（REQ-020）
+        password_hash TEXT    NOT NULL,             -- bcrypt 哈希，绝无明文
+        is_admin      INTEGER NOT NULL DEFAULT 0,   -- 治理角色（REQ-025，iter-8 启用逻辑）
+        banned        INTEGER NOT NULL DEFAULT 0,   -- 封禁标记（REQ-025，iter-8 启用）
+        created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE auth_sessions (
+        token_hash TEXT    PRIMARY KEY,             -- SHA-256(token)，Cookie 只存原始 token
+        user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+        expires_at TEXT    NOT NULL
+    );
+    CREATE INDEX idx_auth_sessions_user ON auth_sessions(user_id);
+    """,
+}
+
+
+def connect(db_path: str) -> sqlite3.Connection:
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    return conn
+
+
+def init_db(conn: sqlite3.Connection) -> None:
+    current = conn.execute("PRAGMA user_version").fetchone()[0]
+    for version in sorted(MIGRATIONS):
+        if version <= current:
+            continue
+        with conn:  # 事务：DDL + 版本号一起提交
+            conn.executescript(MIGRATIONS[version])
+            conn.execute(f"PRAGMA user_version = {version}")
+
+
+def db_version(conn: sqlite3.Connection) -> int:
+    return conn.execute("PRAGMA user_version").fetchone()[0]
+
+
+@contextmanager
+def session_scope(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
+    """每请求一个事务：正常提交，异常回滚。"""
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def get_db(request: Request) -> Iterator[sqlite3.Connection]:
+    """每请求一个连接（SQLite 连接廉价；WAL 模式下读写并发安全）。"""
+    conn = connect(request.app.state.db_path)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+DatabaseDep = Annotated[sqlite3.Connection, Depends(get_db)]
