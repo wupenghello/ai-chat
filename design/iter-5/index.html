@@ -1,0 +1,1223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-chat · iter-5 设计稿（REQ-017 暗色主题 / REQ-018 多供应商档案，已定夺（CEO 预授权） 评审）</title>
+<!--
+  ============================================================
+  ai-chat 迭代 5 正式设计稿（设计稿即页面骨架，开发对照实现）
+  依据：requirements/spec.md（req-baseline-v2：REQ-017 暗色主题 / REQ-018 多供应商档案，CHG-002 已定案「生成中切换旧档案跑完、下次生效」）
+        plans/iter-5.md（T0：暗色令牌 + 两需求设计稿并基线 design-iter-5）
+        company design-system/tokens.md「暗色令牌（v1.3 提案，已定夺（CEO 预授权） 批准）」——本稿全部暗色色值来自该提案，零自造
+        design/iter-1~4 基线（组件形态沿用：侧栏/消息/输入区 CHG-003 单排/设置页/模态/toast）
+        iter-4 复盘遗留：--c-error/--c-danger 命名漂移（tokens.md v1.3 提案已给统一建议，T1 落地）
+  状态：已定夺（CEO 预授权） 评审 → 通过后由主会话打 design-iter-5 tag（设计师不打 tag）
+  可交互：右上「演示控制」一键亮/暗（写入 localStorage，即 REQ-017 持久化机制演示）；档案列表可点「设为当前」；
+          添加档案模态可开合、必填校验可触发。零外部依赖，直接双击打开。
+  ============================================================
+-->
+<style>
+/* ============================================================
+   一、文档外壳（说明页自身，浅色固定，不随演示切换；色值 = tokens v1.2 原值）
+   ============================================================ */
+:root {
+  --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-full: 999px;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-size: 14px; line-height: 1.6; color: #1F2329; background: #F5F6F7; padding: 40px 32px 80px;
+}
+.page { max-width: 1100px; margin: 0 auto; }
+h1 { font-size: 20px; font-weight: 600; }
+.sub { font-size: 13px; color: #8F959E; margin: 4px 0 8px; }
+.sub b { color: #646A73; }
+.badge {
+  display: inline-block; padding: 1px 10px; border-radius: var(--r-full);
+  font-size: 12px; font-weight: 500; background: #FFF7E8; color: #B45309; margin-bottom: 32px;
+}
+section { margin-bottom: 48px; }
+h2 { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+h2 .no { color: #3370FF; margin-right: 4px; }
+.sec-desc { font-size: 13px; color: #8F959E; margin-bottom: 16px; }
+.sec-desc b { color: #646A73; }
+
+table { width: 100%; border-collapse: collapse; background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-md); overflow: hidden; font-size: 13px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #E5E6EB; vertical-align: top; }
+th { color: #8F959E; font-weight: 500; background: #FAFBFC; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+td code, li code, .ann code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; background: #F2F3F5; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
+
+.spec { background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-lg); padding: 24px; box-shadow: 0 1px 2px rgba(31,35,41,.06); margin-bottom: 16px; }
+.spec-title { font-size: 13px; font-weight: 600; color: #646A73; margin-bottom: 12px; }
+.spec-title .tag { font-weight: 400; color: #8F959E; margin-left: 8px; }
+.stage { border: 1px dashed #E5E6EB; border-radius: var(--r-md); padding: 16px; background: #F5F6F7; }
+.stage.white { background: #FFFFFF; }
+.ann { font-size: 12px; color: #8F959E; margin-top: 8px; line-height: 1.8; }
+.ann b { color: #646A73; font-weight: 600; }
+
+/* ============================================================
+   二、演示令牌作用域 .tk（组件全部引用 var()，同 src 范式）
+   浅色 = tokens v1.2 现值 + 新增令牌；暗色 .dark = v1.3 提案值。
+   实现侧对应 :root / [data-theme="dark"] 两段变量覆盖。
+   注意：本稿令牌命名已按 v1.3 提案统一 —— 危险色用 --c-danger(-l/-solid)，
+   警告色用 --c-warning(-l) 全称（iter-2~4 稿内 --c-warn/-error 为历史漂移，不回改）。
+   ============================================================ */
+.tk {
+  --c-bg: #F5F6F7; --c-surface: #FFFFFF; --c-border: #E5E6EB;
+  --c-text-1: #1F2329; --c-text-2: #646A73; --c-text-3: #8F959E;
+  --c-primary: #3370FF; --c-primary-h: #2E5FDF; --c-primary-a: #2860D8; --c-primary-l: #F0F4FF;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #2E5FDF; --c-primary-solid-a: #2860D8;
+  --c-danger: #D93025; --c-danger-l: #FDECEA; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #1A9E5C; --c-success-on-dark: #4CC38A;
+  --c-warning: #B45309; --c-warning-l: #FFF7E8;
+  --c-code-head: #23272E; --c-code-bg: #2B303A; --c-code-head-text: #9AA4B2; --c-code-text: #E6EAF0;
+  --c-hover-bg: #F2F3F5; --c-disabled-bg: #C9CFDB; --c-subtle-bg: #FAFBFC; --c-avatar-bg: #E8EBF2;
+  --c-scrollbar: #D5D9E0; --c-toast-bg: #23272E; --c-toast-border: transparent;
+  --c-mask: rgba(31,35,41,.4); --c-focus-ring: rgba(51,112,255,.12);
+  --shadow-1: 0 1px 2px rgba(31,35,41,.06);
+  --shadow-2: 0 4px 16px rgba(31,35,41,.10);
+  --shadow-3: 0 12px 40px rgba(31,35,41,.16);
+  color: var(--c-text-1);
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+.tk.dark {
+  --c-bg: #131417; --c-surface: #1E2026; --c-border: #33363E;
+  --c-text-1: #E6EAF0; --c-text-2: #A2A9B6; --c-text-3: #808896;
+  --c-primary: #5C8DFF; --c-primary-h: #7AA4FF; --c-primary-a: #4C84FF; --c-primary-l: #1D2740;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #4C84FF; --c-primary-solid-a: #3D78FF;
+  --c-danger: #FF8073; --c-danger-l: #361B18; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #4CC38A;
+  --c-warning: #EDA23B; --c-warning-l: #38290F;
+  --c-code-head: #141518; --c-code-bg: #191B20;
+  --c-hover-bg: #262930; --c-disabled-bg: #3D414A; --c-subtle-bg: #24272E; --c-avatar-bg: #33363E;
+  --c-scrollbar: #3A3E46; --c-toast-bg: #2A2D34; --c-toast-border: #33363E;
+  --c-mask: rgba(0,0,0,.55); --c-focus-ring: rgba(92,141,255,.25);
+  --shadow-1: 0 1px 2px rgba(0,0,0,.4);
+  --shadow-2: 0 4px 16px rgba(0,0,0,.45);
+  --shadow-3: 0 12px 40px rgba(0,0,0,.6);
+}
+/* 并排对照帧：强制锁定，不随演示控制翻转（force-dark 重复声明暗色覆盖值，
+   且置于 .tk.dark 之后故优先级更高；force-light 仅重申使用浅色默认值） */
+.tk.force-dark {
+  --c-bg: #131417; --c-surface: #1E2026; --c-border: #33363E;
+  --c-text-1: #E6EAF0; --c-text-2: #A2A9B6; --c-text-3: #808896;
+  --c-primary: #5C8DFF; --c-primary-h: #7AA4FF; --c-primary-a: #4C84FF; --c-primary-l: #1D2740;
+  --c-primary-solid-h: #4C84FF; --c-primary-solid-a: #3D78FF;
+  --c-danger: #FF8073; --c-danger-l: #361B18; --c-success: #4CC38A;
+  --c-warning: #EDA23B; --c-warning-l: #38290F;
+  --c-code-head: #141518; --c-code-bg: #191B20;
+  --c-hover-bg: #262930; --c-disabled-bg: #3D414A; --c-subtle-bg: #24272E; --c-avatar-bg: #33363E;
+  --c-scrollbar: #3A3E46; --c-toast-bg: #2A2D34; --c-toast-border: #33363E; --c-mask: rgba(0,0,0,.55); --c-focus-ring: rgba(92,141,255,.25);
+}
+
+/* ============================================================
+   三、产品组件样式（沿用 iter-1~4 基线形态，仅令牌化）
+   ============================================================ */
+
+/* ---- 演示控制条（文档功能件，非产品组件） ---- */
+.demo-ctl {
+  position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 12px;
+  background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-md);
+  padding: 10px 16px; margin-bottom: 32px; box-shadow: 0 1px 2px rgba(31,35,41,.06);
+  font-size: 13px; color: #646A73; flex-wrap: wrap;
+}
+.demo-ctl .seg { display: inline-flex; border: 1px solid #E5E6EB; border-radius: var(--r-md); overflow: hidden; }
+.demo-ctl .seg button {
+  height: 30px; padding: 0 14px; border: none; background: #FFFFFF; color: #646A73;
+  font-size: 13px; cursor: pointer; transition: background .15s ease, color .15s ease;
+}
+.demo-ctl .seg button.on { background: #3370FF; color: #fff; font-weight: 600; }
+.demo-ctl .note { font-size: 12px; color: #8F959E; }
+
+/* ---- 色板条（令牌速览，静态双色对照） ---- */
+.swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.sw { border-radius: var(--r-md); overflow: hidden; border: 1px solid #E5E6EB; width: 148px; font-size: 12px; background: #fff; }
+.sw .cap { padding: 4px 8px; color: #646A73; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11px; border-bottom: 1px solid #E5E6EB; }
+.sw .pair { display: flex; height: 34px; }
+.sw .pair > div { flex: 1; display: flex; align-items: center; justify-content: center; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 10px; }
+
+/* ---- 全界面框架 ---- */
+.app-frame {
+  display: flex; width: 100%; height: 640px; border-radius: var(--r-lg);
+  border: 1px solid var(--c-border); background: var(--c-bg); overflow: hidden;
+  box-shadow: var(--shadow-1); position: relative;
+  font-size: 14px;
+}
+.app-frame .sb { width: 264px; flex: none; background: var(--c-surface); border-right: 1px solid var(--c-border); display: flex; flex-direction: column; }
+.app-frame .main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--c-bg); }
+
+/* 侧栏（沿用 iter-1/3/4 基线结构：品牌位 + 新建 + 搜索 + 列表 + 底栏） */
+.brand { display: flex; align-items: center; gap: 8px; }
+.brand svg { width: 24px; height: 24px; }
+.brand .name { font-size: 15px; font-weight: 600; color: var(--c-text-1); }
+.btn-new {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  width: 100%; height: 36px; margin-top: 12px;
+  background: var(--c-primary-solid); color: #fff;
+  border: none; border-radius: var(--r-md); font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: background .15s ease, transform .1s ease;
+}
+.btn-new:hover { background: var(--c-primary-solid-h); }
+.btn-new:active { background: var(--c-primary-solid-a); transform: scale(.98); }
+.sb .hd { padding: 16px 16px 8px; }
+.search-wrap { padding: 8px 12px 4px; }
+.search-box {
+  display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 8px;
+  background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-md);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.search-box:focus-within { border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-focus-ring); }
+.search-box .s-icon { display: flex; align-items: center; color: var(--c-text-3); }
+.search-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: 13px; line-height: 1.5; color: var(--c-text-1); font-family: inherit; }
+.search-input::placeholder { color: var(--c-text-3); }
+.session-list { flex: 1; overflow-y: auto; padding: 8px; scrollbar-width: thin; scrollbar-color: var(--c-scrollbar) transparent; }
+.list-label { font-size: 12px; color: var(--c-text-3); font-weight: 500; padding: 8px 8px 4px; }
+.session-item {
+  display: flex; flex-direction: column; justify-content: center; min-height: 48px; padding: 6px 10px;
+  border-radius: var(--r-md); cursor: pointer; transition: background .15s ease;
+}
+.session-item:hover { background: var(--c-hover-bg); }
+.session-item.active { background: var(--c-primary-l); }
+.session-title { font-size: 13px; font-weight: 500; color: var(--c-text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session-item.active .session-title { color: var(--c-primary-h); }
+.session-meta { font-size: 12px; color: var(--c-text-3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session-item.corrupt { opacity: .55; cursor: not-allowed; }
+.tagpill { display: inline-block; padding: 0 6px; height: 18px; line-height: 18px; border-radius: var(--r-full); font-size: 12px; font-weight: 500; vertical-align: middle; }
+.tag-corrupt { background: var(--c-danger-l); color: var(--c-danger); }
+.tag-interrupted { background: var(--c-warning-l); color: var(--c-warning); }
+.sb .ft { border-top: 1px solid var(--c-border); padding: 8px 16px; display: flex; align-items: center; gap: 8px; height: 56px; font-size: 13px; font-weight: 500; color: var(--c-text-2); }
+.api-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c-danger); margin-left: auto; }
+.api-dot.ok { background: var(--c-success); }
+
+/* 顶栏（iter-3 基线 + ★本稿新增主题快捷按钮，见 2.1） */
+.chat-header {
+  flex: none; height: 56px; display: flex; align-items: center; gap: 8px; padding: 0 20px;
+  border-bottom: 1px solid var(--c-border); background: var(--c-surface);
+}
+.chat-title { font-size: 15px; font-weight: 600; color: var(--c-text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-header .sp { flex: 1; }
+.btn-ghost {
+  height: 32px; padding: 0 12px; display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-2);
+  border-radius: var(--r-md); font-size: 13px; cursor: pointer;
+  transition: border-color .15s ease, color .15s ease, background .15s ease, transform .1s ease;
+}
+.btn-ghost:hover { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-l); }
+.btn-ghost:active { transform: scale(.98); }
+/* ★ 主题快捷按钮：32px 方形 icon-only ghost（与设置/导出同族，仅图标） */
+.btn-theme {
+  width: 32px; height: 32px; padding: 0; justify-content: center;
+  display: inline-flex; align-items: center;
+  border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-2);
+  border-radius: var(--r-md); cursor: pointer;
+  transition: border-color .15s ease, color .15s ease, background .15s ease, transform .1s ease;
+}
+.btn-theme:hover { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-l); }
+.btn-theme:active { transform: scale(.94); }
+.btn-theme svg { display: block; }
+
+/* 消息区（iter-1/3/4 基线） */
+.msg-area { flex: 1; overflow-y: auto; padding: 24px 20px; scrollbar-width: thin; scrollbar-color: var(--c-scrollbar) transparent; }
+.msg-col { max-width: 760px; margin: 0 auto; }
+.msg { display: flex; gap: 12px; margin-bottom: 24px; }
+.msg-avatar { width: 28px; height: 28px; border-radius: var(--r-full); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; }
+.msg-ai .msg-avatar { background: var(--c-primary-l); color: var(--c-primary-h); }
+.msg-user { flex-direction: row-reverse; }
+.msg-user .msg-avatar { background: var(--c-avatar-bg); color: var(--c-text-2); }
+.msg-body { max-width: calc(100% - 80px); min-width: 0; }
+.msg-role { font-size: 12px; color: var(--c-text-3); margin-bottom: 4px; }
+.msg-user .msg-role { text-align: right; }
+.bubble-ai { font-size: 15px; line-height: 1.75; white-space: pre-wrap; word-break: break-word; color: var(--c-text-1); }
+.bubble-ai a { color: var(--c-primary); }
+.bubble-user { background: var(--c-primary-solid); color: #fff; font-size: 15px; line-height: 1.7; padding: 10px 14px; border-radius: var(--r-lg); border-top-right-radius: 4px; white-space: pre-wrap; word-break: break-word; }
+.cursor { display: inline-block; width: 2px; height: 1em; background: var(--c-primary); vertical-align: -2px; margin-left: 2px; animation: blink .8s step-end infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.msg-status-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.status-generating { font-size: 12px; color: var(--c-text-3); display: flex; align-items: center; gap: 6px; }
+.spinner { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--c-border); border-top-color: var(--c-primary); animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.status-interrupted { display: inline-flex; align-items: center; gap: 4px; background: var(--c-warning-l); color: var(--c-warning); font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: var(--r-full); }
+
+/* 代码块（iter-3 基线：头部深底 + 复制按钮三态） */
+.codeblk { border-radius: var(--r-md); overflow: hidden; border: 1px solid var(--c-border); margin: 8px 0; max-width: 100%; }
+.code-head { display: flex; align-items: center; justify-content: space-between; height: 32px; padding: 0 8px 0 12px; background: var(--c-code-head); color: var(--c-code-head-text); font-size: 12px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+.code-copy { height: 22px; padding: 0 8px; border: none; border-radius: var(--r-sm); background: transparent; color: var(--c-code-head-text); font-size: 12px; cursor: pointer; transition: background .15s ease, color .15s ease; }
+.code-copy:hover { background: rgba(255,255,255,.12); color: var(--c-code-text); }
+.code-copy.done { color: var(--c-success-on-dark); }
+.code-body { background: var(--c-code-bg); color: var(--c-code-text); padding: 12px; font-size: 13px; line-height: 1.7; font-family: "SF Mono", Menlo, Consolas, monospace; overflow-x: auto; white-space: pre; }
+
+/* 错误气泡（REQ-007 基线：危险浅底 + 重试 + 去设置） */
+.err-bubble { background: var(--c-danger-l); color: var(--c-danger); border: 1px solid var(--c-danger); border-radius: var(--r-lg); border-bottom-left-radius: 4px; padding: 10px 14px; font-size: 15px; line-height: 1.7; }
+.err-bubble .err-title { font-weight: 600; }
+.err-actions { display: flex; gap: 8px; margin-top: 8px; }
+.btn-retry { height: 28px; padding: 0 12px; border: none; border-radius: var(--r-sm); background: var(--c-danger-solid); color: #fff; font-size: 12px; font-weight: 600; cursor: pointer; transition: background .15s ease; }
+.btn-retry:hover { background: var(--c-danger-solid-h); }
+.btn-goto-set { height: 28px; padding: 0 12px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-text-2); font-size: 12px; cursor: pointer; transition: border-color .15s ease, color .15s ease; }
+.btn-goto-set:hover { border-color: var(--c-primary); color: var(--c-primary); }
+
+/* 输入区（CHG-003 单排顶对齐基线） */
+.composer-wrap { flex: none; padding: 12px 20px 16px; }
+.composer-box { max-width: 760px; margin: 0 auto; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); padding: 12px; box-shadow: var(--shadow-1); transition: border-color .15s ease, box-shadow .15s ease; }
+.composer-box.focus { border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-focus-ring); }
+.composer-main { display: flex; align-items: flex-start; gap: 8px; }
+.composer-demo { flex: 1; min-width: 0; border: none; outline: none; resize: none; font-size: 14px; line-height: 1.6; background: transparent; color: var(--c-text-1); display: block; font-family: inherit; padding-top: 7px; }
+.composer-demo::placeholder { color: var(--c-text-3); }
+.composer-hint { font-size: 12px; color: var(--c-text-3); margin-top: 6px; }
+.btn-send { flex: none; width: 36px; height: 36px; border-radius: var(--r-md); border: none; background: var(--c-primary-solid); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background .15s ease, transform .1s ease; }
+.btn-send:hover { background: var(--c-primary-solid-h); }
+.btn-send:active { transform: scale(.94); }
+.btn-send:disabled { background: var(--c-disabled-bg); cursor: not-allowed; }
+.btn-stop { flex: none; height: 36px; padding: 0 16px; border: none; border-radius: var(--r-md); background: var(--c-danger-solid); color: #fff; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; transition: background .15s ease, transform .1s ease; }
+.btn-stop:hover { background: var(--c-danger-solid-h); }
+.btn-stop:active { transform: scale(.94); }
+
+/* 空态（iter-1 会话空态基线） */
+.empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--c-text-3); font-size: 13px; line-height: 1.8; text-align: center; padding: 24px; }
+.empty-state .e-title { font-size: 14px; font-weight: 600; color: var(--c-text-2); }
+.empty-state svg { opacity: .6; }
+
+/* 模态（iter-1 基线：遮罩 + surface 面板 + shadow-3） */
+.modal-stage { position: relative; min-height: 300px; border-radius: var(--r-lg); overflow: hidden; background: var(--c-bg); }
+.modal-mask { position: absolute; inset: 0; background: var(--c-mask); display: flex; align-items: center; justify-content: center; }
+.modal { width: 400px; max-width: calc(100% - 32px); background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: var(--shadow-3); padding: 20px; }
+.modal h3 { font-size: 15px; font-weight: 600; margin-bottom: 8px; color: var(--c-text-1); }
+.modal .m-body { font-size: 13px; color: var(--c-text-2); line-height: 1.7; }
+.modal .m-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.btn-danger-solid { height: 32px; padding: 0 14px; border: none; border-radius: var(--r-md); background: var(--c-danger-solid); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s ease; }
+.btn-danger-solid:hover { background: var(--c-danger-solid-h); }
+.btn-cancel { height: 32px; padding: 0 12px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-2); border-radius: var(--r-md); font-size: 13px; cursor: pointer; transition: border-color .15s ease, color .15s ease; }
+.btn-cancel:hover { border-color: var(--c-primary); color: var(--c-primary); }
+.btn-primary { height: 36px; padding: 0 20px; background: var(--c-primary-solid); color: #fff; border: none; border-radius: var(--r-md); font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s ease, transform .1s ease; }
+.btn-primary:hover { background: var(--c-primary-solid-h); }
+.btn-primary:active { background: var(--c-primary-solid-a); transform: scale(.98); }
+.btn-primary:disabled { background: var(--c-disabled-bg); cursor: not-allowed; }
+
+/* toast（iter-1 深底基线；暗色下加描边分层） */
+.toast { display: inline-flex; align-items: center; gap: 8px; background: var(--c-toast-bg); border: 1px solid var(--c-toast-border); color: #fff; font-size: 13px; padding: 10px 16px; border-radius: var(--r-md); box-shadow: var(--shadow-2); }
+.toast .t-ok { color: var(--c-success-on-dark); font-weight: 600; }
+.toast .t-link { color: #A3BCFF; text-decoration: underline; cursor: pointer; }
+.toast-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
+
+/* ---- 设置页（iter-2 基线：表单 max-width 420px；★本稿扩展档案区） ---- */
+.settings-pane { flex: 1; overflow-y: auto; padding: 24px 20px; scrollbar-width: thin; scrollbar-color: var(--c-scrollbar) transparent; }
+.settings-form { max-width: 420px; margin: 0 auto; }
+.settings-section-label { font-size: 13px; font-weight: 600; color: var(--c-text-2); padding: 20px 0 12px; border-top: 1px solid var(--c-border); margin-top: 20px; }
+.settings-section-label:first-child { border-top: none; margin-top: 0; padding-top: 0; }
+.field { margin-bottom: 20px; }
+.field label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: var(--c-text-1); }
+.field label .req { color: var(--c-danger); margin-left: 2px; }
+.field input {
+  width: 100%; height: 36px; padding: 0 12px; font-size: 16px; font-family: inherit;
+  border: 1px solid var(--c-border); border-radius: var(--r-md); outline: none;
+  color: var(--c-text-1); background: var(--c-surface);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.field input:focus { border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-focus-ring); }
+.field.invalid input { border-color: var(--c-danger); }
+.field.invalid input:focus { box-shadow: 0 0 0 3px var(--c-danger-l); }
+.hint { font-size: 12px; color: var(--c-text-3); margin-top: 4px; }
+.hint.err { color: var(--c-danger); display: none; }
+.field.invalid .hint.err { display: block; }
+.key-row { position: relative; }
+.key-row input { padding-right: 56px; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 14px; }
+.key-eye { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 24px; height: 24px; border: none; border-radius: var(--r-sm); background: transparent; color: var(--c-text-3); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background .15s ease, color .15s ease; }
+.key-eye:hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+
+/* ★ REQ-018：外观字段（主题切换，segmented 二选） */
+.seg-picker { display: inline-flex; border: 1px solid var(--c-border); border-radius: var(--r-md); overflow: hidden; background: var(--c-surface); }
+.seg-picker button {
+  height: 36px; padding: 0 20px; border: none; background: transparent; color: var(--c-text-2);
+  font-size: 13px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.seg-picker button.on { background: var(--c-primary-solid); color: #fff; font-weight: 600; }
+.seg-picker button:not(.on):hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+
+/* ★ REQ-018：供应商档案列表 */
+.profile-list { display: flex; flex-direction: column; gap: 8px; }
+.profile-item {
+  display: flex; align-items: center; gap: 12px; padding: 12px;
+  border: 1px solid var(--c-border); border-radius: var(--r-md); background: var(--c-surface);
+  transition: border-color .15s ease, background .15s ease;
+}
+.profile-item:hover { background: var(--c-hover-bg); }
+.profile-item.current { border-color: var(--c-primary); background: var(--c-primary-l); }
+.p-radio { flex: none; width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--c-border); display: flex; align-items: center; justify-content: center; transition: border-color .15s ease; }
+.profile-item.current .p-radio { border-color: var(--c-primary); }
+.profile-item.current .p-radio::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c-primary); }
+.p-info { flex: 1; min-width: 0; }
+.p-name-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.p-name { font-size: 13px; font-weight: 600; color: var(--c-text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.p-meta { font-size: 12px; color: var(--c-text-3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: "SF Mono", Menlo, Consolas, monospace; }
+.tag-current { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 0 8px; height: 20px; border-radius: var(--r-full); font-size: 12px; font-weight: 500; background: var(--c-primary-solid); color: #fff; }
+.tag-pending { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 0 8px; height: 20px; border-radius: var(--r-full); font-size: 12px; font-weight: 500; background: var(--c-warning-l); color: var(--c-warning); }
+.p-actions { flex: none; display: flex; align-items: center; gap: 4px; }
+.btn-use { height: 26px; padding: 0 10px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-primary); font-size: 12px; font-weight: 500; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+.btn-use:hover { border-color: var(--c-primary); background: var(--c-primary-l); }
+.btn-p-act { width: 26px; height: 26px; padding: 0; border: none; border-radius: var(--r-sm); background: transparent; color: var(--c-text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .15s ease, color .15s ease; }
+.btn-p-act:hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+.btn-p-act.del { color: var(--c-danger); }
+.btn-p-act.del:hover { background: var(--c-danger-l); color: var(--c-danger); }
+.btn-p-act:disabled { color: var(--c-text-3); opacity: .45; cursor: not-allowed; }
+.btn-p-act.del:disabled:hover { background: transparent; }
+.btn-add-profile {
+  display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; height: 36px;
+  border: 1px dashed var(--c-border); border-radius: var(--r-md); background: transparent;
+  color: var(--c-text-2); font-size: 13px; cursor: pointer;
+  transition: border-color .15s ease, color .15s ease, background .15s ease;
+}
+.btn-add-profile:hover { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-l); }
+.list-hint { font-size: 12px; color: var(--c-text-3); margin-top: 8px; line-height: 1.7; }
+.list-hint b { color: var(--c-text-2); font-weight: 500; }
+
+/* 档案空态 */
+.p-empty { border: 1px dashed var(--c-border); border-radius: var(--r-md); padding: 24px 16px; text-align: center; font-size: 13px; color: var(--c-text-3); line-height: 1.8; }
+.p-empty .e-title { font-size: 13px; color: var(--c-text-2); font-weight: 600; margin-bottom: 2px; }
+
+/* 可滚动多档案演示 */
+.p-scroll { max-height: 240px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--c-scrollbar) transparent; }
+
+/* 生成中切换演示的模拟开关（文档功能件） */
+.sim-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #646A73; margin-bottom: 12px; }
+
+/* 页面级 toast 容器（交互反馈用） */
+#toastHost { position: fixed; left: 50%; bottom: 32px; transform: translateX(-50%); z-index: 100; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
+#toastHost .toast { background: #23272E; border-color: transparent; animation: toastIn .2s ease; }
+@keyframes toastIn { from { opacity: 0; transform: translateY(6px); } }
+
+.frame-cap { text-align: center; font-size: 12px; color: #8F959E; margin-bottom: 8px; }
+.cols { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+.cols > div { flex: 1; min-width: 380px; max-width: 560px; }
+</style>
+</head>
+<body>
+<div id="toastHost"></div>
+<div class="page">
+
+  <h1>ai-chat · iter-5 设计稿</h1>
+  <div class="sub">
+    依据：<b>req-baseline-v2</b>（REQ-017 暗色主题 · REQ-018 多供应商档案，CHG-002「生成中切换旧档案跑完、下次生效」已定案）·
+    <b>plans/iter-5.md</b> T0（暗色令牌 + 设计稿并基线 design-iter-5）·
+    色值全部来自公司 <b>design-system/tokens.md「暗色令牌（v1.3 提案，已定夺（CEO 预授权） 批准）」</b>，本稿零自造 ·
+    组件形态沿用 <b>iter-1~4 基线</b>（侧栏/消息/输入区 CHG-003 单排/设置页/模态/toast）
+  </div>
+  <div class="badge">状态：已定夺（CEO 预授权） 评审 → 通过后由主会话打 design-iter-5 tag（含第 7 节待澄清逐条定夺）</div>
+
+  <!-- 演示控制 -->
+  <div class="demo-ctl">
+    <b>演示控制：</b>
+    <span class="seg">
+      <button id="btnLight" class="on">浅色</button>
+      <button id="btnDark">暗色</button>
+    </span>
+    <span class="note">一键切换下方全部可翻转样件（「亮暗对照」区两帧为锁定帧，不随动）；选择写入 localStorage，刷新保持 —— 即 REQ-017 持久化机制的演示。</span>
+  </div>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">0</span>暗色令牌速览（tokens.md v1.3 提案，已定夺（CEO 预授权） 批准）</h2>
+    <div class="sec-desc">
+      完整浅↔暗对照表、新增令牌、关键组合 WCAG 计算见公司 <code>design-system/tokens.md</code>「暗色令牌（v1.3 提案）」一节。
+      此处仅列设计稿内高频使用的核心对照，供走查速查。左半 = 浅色（v1.2），右半 = 暗色（提案）。
+    </div>
+    <div class="spec">
+      <div class="swatches">
+        <div class="sw"><div class="cap">--c-bg</div><div class="pair"><div style="background:#F5F6F7;color:#1F2329">#F5F6F7</div><div style="background:#131417;color:#E6EAF0">#131417</div></div></div>
+        <div class="sw"><div class="cap">--c-surface</div><div class="pair"><div style="background:#FFFFFF;color:#1F2329">#FFFFFF</div><div style="background:#1E2026;color:#E6EAF0">#1E2026</div></div></div>
+        <div class="sw"><div class="cap">--c-border</div><div class="pair"><div style="background:#E5E6EB;color:#1F2329">#E5E6EB</div><div style="background:#33363E;color:#E6EAF0">#33363E</div></div></div>
+        <div class="sw"><div class="cap">--c-text-1/2/3</div><div class="pair"><div style="background:#FFFFFF;color:#1F2329">#1F2329…</div><div style="background:#1E2026;color:#E6EAF0">#E6EAF0…</div></div></div>
+        <div class="sw"><div class="cap">--c-primary（前景）</div><div class="pair"><div style="background:#FFFFFF;color:#3370FF">#3370FF</div><div style="background:#1E2026;color:#5C8DFF">#5C8DFF</div></div></div>
+        <div class="sw"><div class="cap">--c-primary-solid（实底）</div><div class="pair"><div style="background:#3370FF;color:#fff">#3370FF</div><div style="background:#3370FF;color:#fff">#3370FF 不变</div></div></div>
+        <div class="sw"><div class="cap">--c-primary-l（选中底）</div><div class="pair"><div style="background:#F0F4FF;color:#2E5FDF">#F0F4FF</div><div style="background:#1D2740;color:#7AA4FF">#1D2740</div></div></div>
+        <div class="sw"><div class="cap">--c-danger（前景）</div><div class="pair"><div style="background:#FFFFFF;color:#D93025">#D93025</div><div style="background:#1E2026;color:#FF8073">#FF8073</div></div></div>
+        <div class="sw"><div class="cap">--c-danger-l</div><div class="pair"><div style="background:#FDECEA;color:#D93025">#FDECEA</div><div style="background:#361B18;color:#FF8073">#361B18</div></div></div>
+        <div class="sw"><div class="cap">--c-warning / -l</div><div class="pair"><div style="background:#FFF7E8;color:#B45309">#B45309</div><div style="background:#38290F;color:#EDA23B">#EDA23B</div></div></div>
+        <div class="sw"><div class="cap">--c-success</div><div class="pair"><div style="background:#FFFFFF;color:#1A9E5C">#1A9E5C</div><div style="background:#1E2026;color:#4CC38A">#4CC38A</div></div></div>
+        <div class="sw"><div class="cap">--c-code-bg / head</div><div class="pair"><div style="background:#2B303A;color:#E6EAF0">#2B303A</div><div style="background:#191B20;color:#E6EAF0">#191B20</div></div></div>
+        <div class="sw"><div class="cap">--c-hover-bg</div><div class="pair"><div style="background:#F2F3F5;color:#1F2329">#F2F3F5</div><div style="background:#262930;color:#E6EAF0">#262930</div></div></div>
+        <div class="sw"><div class="cap">--c-toast-bg</div><div class="pair"><div style="background:#23272E;color:#fff">#23272E</div><div style="background:#2A2D34;color:#fff;border-left:2px solid #33363E">#2A2D34</div></div></div>
+      </div>
+      <div class="ann">
+        <b>核心结构（v1.3 提案，已定夺（CEO 预授权） 批准）</b>：主色/危险色拆「前景族 / 实底族」——实底（按钮、用户气泡、停止按钮）两模式同值保白字对比度；
+        前景（链接、高亮、描边、图标）暗色提亮达 AA。<b>暗色正文对比度</b>：text-1/surface 13.5:1、text-1/bg 15.3:1、text-2/surface 6.9:1、
+        text-3/surface 4.6:1、primary/surface 5.2:1，全部 ≥4.5:1（完整计算见 tokens.md 提案节）。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">1</span>REQ-017 触点一：主题切换入口</h2>
+    <div class="sec-desc">
+      spec REQ-017 主流程写「用户在<b>设置/顶栏</b>切换主题」。暂定<b>双入口</b>（见待澄清 1）：顶栏快捷图标（即时切换、最高频路径）+
+      设置页「外观」字段（可发现性兜底），两处状态始终同步、共用同一持久化存储。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.1 顶栏快捷入口<span class="tag">32px icon-only ghost · 与设置/导出同族 · 图标随主题二态</span></div>
+      <div class="stage">
+        <div class="tk app-frame" style="height:200px;">
+          <div class="main">
+            <div class="chat-header">
+              <span class="chat-title">帮我写一封请假邮件，理由是家里有事</span>
+              <span class="sp"></span>
+              <button class="btn-theme" id="hdrThemeBtn" title="切换主题（浅色/深色）"></button>
+              <button class="btn-ghost"><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>导出</button>
+              <button class="btn-ghost"><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="2.6" stroke="currentColor" stroke-width="1.3"/><path d="M7 1.2v1.6M7 11.2v1.6M1.2 7h1.6M11.2 7h1.6M2.9 2.9l1.2 1.2M9.9 9.9l1.2 1.2M11.1 2.9L9.9 4.1M4.1 9.9l-1.2 1.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>设置</button>
+            </div>
+            <div class="empty-state" style="flex:1;">
+              <svg width="40" height="40" viewBox="0 0 128 128"><path fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" style="color:var(--c-text-3)" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+              <div class="e-title">还没有会话</div>
+              点击左侧「新建会话」开始对话
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>位置</b>：顶栏右侧按钮组<b>最左</b>（「导出」「设置」之前），与既有 ghost 按钮同族：32px 方形、icon-only、描边 <code>--c-border</code>；
+        hover = 主色描边 + <code>--c-primary-l</code> 底 + 主色图标；active <code>scale .94</code>。<br>
+        <b>图标二态</b>：浅色下显示<b>月亮</b>（点击 → 暗色），暗色下显示<b>太阳</b>（点击 → 浅色）——图标表示「点击后去往的主题」，
+        与演示控制条行为一致（点击本页样件里的顶栏图标即可翻转全部样件）。<br>
+        <b>反馈</b>：点击后全界面颜色经 <code>.15s ease</code> 过渡即时切换（REQ-017 验收：200ms 内全部生效、无硬编码亮色残留）；
+        选择写入 localStorage，刷新保持。<b>组件建议</b>：新增 <code>ThemeToggle.vue</code>，store 增 <code>theme</code> 状态与 <code>toggleTheme()</code>。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.2 设置页「外观」字段<span class="tag">segmented 二选 · 与顶栏入口状态同步</span></div>
+      <div class="stage">
+        <div class="tk settings-pane" style="border-radius:var(--r-lg);border:1px solid var(--c-border);height:220px;">
+          <div class="settings-form">
+            <div class="settings-section-label">外观</div>
+            <div class="field">
+              <label>主题</label>
+              <div class="seg-picker" id="setSeg">
+                <button class="on" data-set-theme="light"><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="2.6" stroke="currentColor" stroke-width="1.3"/><path d="M7 1.2v1.6M7 11.2v1.6M1.2 7h1.6M11.2 7h1.6M2.9 2.9l1.2 1.2M9.9 9.9l1.2 1.2M11.1 2.9L9.9 4.1M4.1 9.9l-1.2 1.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>浅色</button>
+                <button data-set-theme="dark"><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M12 8.5A5.5 5.5 0 1 1 5.5 2 4.3 4.3 0 0 0 12 8.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>深色</button>
+              </div>
+              <div class="hint">选择持久化，下次打开保持。<b>跟随系统</b>本期不提供（见待澄清 2）。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>形态</b>：segmented 单选（36px 高，选中段 = <code>--c-primary-solid</code> 实底白字，与「外观」语义的即选即生效匹配，无「保存」步骤）；
+        未选中段 hover = <code>--c-hover-bg</code>。<br>
+        <b>同步</b>：与顶栏图标互斥同步（同一 store 状态两个视图）；在任一处切换，另一处与全界面同帧更新。字段位于设置页「供应商档案」区之前。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">2</span>REQ-017 触点二：暗色全界面（亮暗对照）</h2>
+    <div class="sec-desc">
+      全界面框架一屏走查：侧栏（选中/hover/损坏/中断胶囊）· 顶栏 · 消息区（用户气泡 / AI 文字+代码块 / 生成中 / 错误气泡）· 输入区。
+      两帧锁定亮/暗并排对照（不随演示控制翻转），其余样件均可用演示控制或顶栏图标翻转。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.1 全界面框架：浅色（design-iter-1~4 基线，仅令牌化）<span class="tag">锁定帧</span></div>
+      <div class="cols">
+        <div>
+          <div class="frame-cap">浅色（现状基线 = T1 令牌化后的外观，应与当前产品逐像素一致）</div>
+          <div class="tk force-light app-frame" style="height:680px;">
+            <div class="sb">
+              <div class="hd">
+                <div class="brand">
+                  <svg viewBox="0 0 128 128"><path fill="none" stroke="#3370FF" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+                  <span class="name">喵喵</span>
+                </div>
+                <div class="btn-new"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>新建会话</div>
+              </div>
+              <div class="search-wrap">
+                <div class="search-box">
+                  <span class="s-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.3"/><path d="M9 9l3 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></span>
+                  <input class="search-input" type="text" placeholder="搜索会话" spellcheck="false">
+                </div>
+              </div>
+              <div class="session-list">
+                <div class="list-label">历史会话（按最近活跃排序）</div>
+                <div class="session-item active">
+                  <div class="session-title">帮我写一封请假邮件，理由是家里…</div>
+                  <div class="session-meta">内容摘要 · 14:32</div>
+                </div>
+                <div class="session-item">
+                  <div class="session-title">流式请求的代码示例</div>
+                  <div class="session-meta"><span class="tagpill tag-interrupted">生成中断</span> 给我一个用 JS 实… · 12:08</div>
+                </div>
+                <div class="session-item corrupt">
+                  <div class="session-title">数据损坏的会话</div>
+                  <div class="session-meta"><span class="tagpill tag-corrupt">无法读取</span> · 昨天</div>
+                </div>
+              </div>
+              <div class="ft">GLM · 已配置<span class="api-dot ok"></span></div>
+            </div>
+            <div class="main">
+              <div class="chat-header">
+                <span class="chat-title">帮我写一封请假邮件，理由是家里有事</span>
+                <span class="sp"></span>
+                <button class="btn-theme" title="切换主题"><svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M12 8.5A5.5 5.5 0 1 1 5.5 2 4.3 4.3 0 0 0 12 8.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></button>
+                <button class="btn-ghost"><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>导出</button>
+                <button class="btn-ghost"><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="2.6" stroke="currentColor" stroke-width="1.3"/><path d="M7 1.2v1.6M7 11.2v1.6M1.2 7h1.6M11.2 7h1.6M2.9 2.9l1.2 1.2M9.9 9.9l1.2 1.2M11.1 2.9L9.9 4.1M4.1 9.9l-1.2 1.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>设置</button>
+              </div>
+              <div class="msg-area">
+                <div class="msg-col">
+                  <div class="msg msg-user">
+                    <div class="msg-avatar">我</div>
+                    <div class="msg-body">
+                      <div class="msg-role">我</div>
+                      <div class="bubble-user">给我一个用 JS 实现流式输出的最小示例。</div>
+                    </div>
+                  </div>
+                  <div class="msg msg-ai">
+                    <div class="msg-avatar">AI</div>
+                    <div class="msg-body">
+                      <div class="msg-role">AI</div>
+                      <div class="bubble-ai">下面是一个用 fetch + ReadableStream 实现的最小示例：</div>
+                      <div class="codeblk">
+                        <div class="code-head"><span>javascript</span><button class="code-copy">复制</button></div>
+                        <div class="code-body">const res = await fetch(url, { stream: true });
+const reader = res.body.getReader();
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  render(new TextDecoder().decode(value));
+}</div>
+                      </div>
+                      <div class="msg-status-row"><span class="status-generating"><span class="spinner"></span>正在生成…</span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="composer-wrap">
+                <div class="composer-box">
+                  <div class="composer-main">
+                    <textarea class="composer-demo" rows="1" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
+                    <button class="btn-stop"><svg width="10" height="10" viewBox="0 0 10 10"><rect width="10" height="10" rx="1.5" fill="currentColor"/></svg>停止</button>
+                  </div>
+                  <div class="composer-hint">AI 回复生成中，发送暂不可用…</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="frame-cap">暗色（v1.3 提案令牌，同一 DOM 仅变量覆盖）</div>
+          <div class="tk force-dark app-frame" style="height:680px;">
+            <div class="sb">
+              <div class="hd">
+                <div class="brand">
+                  <svg viewBox="0 0 128 128"><path fill="none" stroke="#5C8DFF" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+                  <span class="name">喵喵</span>
+                </div>
+                <div class="btn-new"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>新建会话</div>
+              </div>
+              <div class="search-wrap">
+                <div class="search-box">
+                  <span class="s-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.3"/><path d="M9 9l3 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></span>
+                  <input class="search-input" type="text" placeholder="搜索会话" spellcheck="false">
+                </div>
+              </div>
+              <div class="session-list">
+                <div class="list-label">历史会话（按最近活跃排序）</div>
+                <div class="session-item active">
+                  <div class="session-title">帮我写一封请假邮件，理由是家里…</div>
+                  <div class="session-meta">内容摘要 · 14:32</div>
+                </div>
+                <div class="session-item">
+                  <div class="session-title">流式请求的代码示例</div>
+                  <div class="session-meta"><span class="tagpill tag-interrupted">生成中断</span> 给我一个用 JS 实… · 12:08</div>
+                </div>
+                <div class="session-item corrupt">
+                  <div class="session-title">数据损坏的会话</div>
+                  <div class="session-meta"><span class="tagpill tag-corrupt">无法读取</span> · 昨天</div>
+                </div>
+              </div>
+              <div class="ft">GLM · 已配置<span class="api-dot ok"></span></div>
+            </div>
+            <div class="main">
+              <div class="chat-header">
+                <span class="chat-title">帮我写一封请假邮件，理由是家里有事</span>
+                <span class="sp"></span>
+                <button class="btn-theme" title="切换主题"><svg width="15" height="15" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="2.6" stroke="currentColor" stroke-width="1.3"/><path d="M7 1.2v1.6M7 11.2v1.6M1.2 7h1.6M11.2 7h1.6M2.9 2.9l1.2 1.2M9.9 9.9l1.2 1.2M11.1 2.9L9.9 4.1M4.1 9.9l-1.2 1.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></button>
+                <button class="btn-ghost"><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>导出</button>
+                <button class="btn-ghost"><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="2.6" stroke="currentColor" stroke-width="1.3"/><path d="M7 1.2v1.6M7 11.2v1.6M1.2 7h1.6M11.2 7h1.6M2.9 2.9l1.2 1.2M9.9 9.9l1.2 1.2M11.1 2.9L9.9 4.1M4.1 9.9l-1.2 1.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>设置</button>
+              </div>
+              <div class="msg-area">
+                <div class="msg-col">
+                  <div class="msg msg-user">
+                    <div class="msg-avatar">我</div>
+                    <div class="msg-body">
+                      <div class="msg-role">我</div>
+                      <div class="bubble-user">给我一个用 JS 实现流式输出的最小示例。</div>
+                    </div>
+                  </div>
+                  <div class="msg msg-ai">
+                    <div class="msg-avatar">AI</div>
+                    <div class="msg-body">
+                      <div class="msg-role">AI</div>
+                      <div class="bubble-ai">下面是一个用 fetch + ReadableStream 实现的最小示例：</div>
+                      <div class="codeblk">
+                        <div class="code-head"><span>javascript</span><button class="code-copy">复制</button></div>
+                        <div class="code-body">const res = await fetch(url, { stream: true });
+const reader = res.body.getReader();
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  render(new TextDecoder().decode(value));
+}</div>
+                      </div>
+                      <div class="msg-status-row"><span class="status-generating"><span class="spinner"></span>正在生成…</span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="composer-wrap">
+                <div class="composer-box">
+                  <div class="composer-main">
+                    <textarea class="composer-demo" rows="1" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
+                    <button class="btn-stop"><svg width="10" height="10" viewBox="0 0 10 10"><rect width="10" height="10" rx="1.5" fill="currentColor"/></svg>停止</button>
+                  </div>
+                  <div class="composer-hint">AI 回复生成中，发送暂不可用…</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>实现口径（T1+T2 给开发）</b>：两帧为<b>同一 DOM 结构</b>，差异仅在根节点变量覆盖（<code>:root</code> / <code>[data-theme="dark"]</code>）——
+        这即「无硬编码亮色残留」的走查方法：暗色帧中任何肉眼发白的块都意味着一处漏改的裸色值。<br>
+        <b>关键暗色取值</b>：选中会话 = <code>--c-primary-l #1D2740</code> 底 + 标题 <code>--c-primary-h #7AA4FF</code>（6.1:1）；
+        侧栏 surface <code>#1E2026</code> / 页面 bg <code>#131417</code> / 描边 <code>#33363E</code>；用户气泡实底 <code>#3370FF</code> 不变（白字 4.3:1 与浅色一致）；
+        代码块改 <code>#191B20/#141518</code>（比页面底更深，靠描边分层，正文 14.3:1）；品牌 logo 描边暗色用前景主色 <code>#5C8DFF</code>（见待澄清 3）。<br>
+        <b>侧栏底栏</b>：多档案后显示当前档案名「GLM · 已配置」（见待澄清 6）；未配置时维持现状红点文案。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.2 模态 + toast + 错误气泡（暗色样件，可用演示控制翻转对照）<span class="tag">遮罩加深 · toast 加描边 · 错误深红底</span></div>
+      <div class="stage" style="display:flex;gap:20px;flex-wrap:wrap;">
+        <div class="tk modal-stage" style="flex:1;min-width:360px;height:300px;">
+          <div class="modal-mask">
+            <div class="modal">
+              <h3>删除会话？</h3>
+              <div class="m-body">删除后「流式请求的代码示例」将无法恢复。</div>
+              <div class="m-actions">
+                <button class="btn-cancel">取消</button>
+                <button class="btn-danger-solid">删除</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="tk" style="flex:1;min-width:360px;border-radius:var(--r-lg);border:1px solid var(--c-border);padding:16px;display:flex;flex-direction:column;gap:12px;background:var(--c-bg);">
+          <div class="toast-row">
+            <div class="toast"><span class="t-ok">✓</span>已保存</div>
+            <div class="toast">本地存储写入失败：内容已在内存中保留</div>
+            <div class="toast">API 密钥无效<span class="t-link">去设置更新</span></div>
+          </div>
+          <div class="msg msg-ai" style="margin:0;">
+            <div class="msg-avatar">AI</div>
+            <div class="msg-body">
+              <div class="msg-role">AI</div>
+              <div class="err-bubble">
+                <div class="err-title">请求失败：网络连接中断</div>
+                请检查网络后重试。
+                <div class="err-actions">
+                  <button class="btn-retry">重试</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>模态</b>：面板 surface <code>#1E2026</code> + 描边 <code>#33363E</code> + shadow-3（暗色 <code>rgba(0,0,0,.6)</code>）；遮罩 <code>rgba(0,0,0,.55)</code>（浅色 .4 加深）。<br>
+        <b>toast</b>：两模式均深底；暗色底 <code>#2A2D34</code> 并<b>加描边 <code>#33363E</code></b> 与深色背景分层（浅色下无描边）。白字 13.8:1，
+        深底成功绿 <code>#4CC38A</code>、链接 <code>#A3BCFF</code> 两模式不变。<br>
+        <b>错误气泡</b>：暗色深红底 <code>#361B18</code> + 危险前景 <code>#FF8073</code>（6.5:1）+ 危险描边；重试按钮实底 <code>#D93025</code> 不变（白字 4.8:1）。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">3</span>REQ-018 触点：多供应商档案管理（设置页内）</h2>
+    <div class="sec-desc">
+      REQ-014 的单套三要素表单升级为<b>档案列表</b>：每组 = 档案名 + base URL + 模型名 + API key；单选其一为「当前生效」，
+      后续请求使用之。生成中切换 = 当前回复用旧档案跑完、自下一次请求生效（CHG-002 已定案，<b>不打断生成</b>）。
+      组件建议：<code>SettingsForm.vue</code> 内新增 <code>ProfileList.vue</code> 与 <code>ProfileModal.vue</code>，store 增 <code>profiles[] / activeProfileId / setActiveProfile()</code>。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">3.1 档案列表 + 当前生效标记（可交互）<span class="tag">单选 radio 语义 · 主色描边选中态 · 密文 key</span></div>
+      <div class="stage">
+        <div class="sim-row">
+          <label><input type="checkbox" id="simGen"> 模拟「生成中」切换档案（勾选后点「设为当前」看 CHG-002 提示）</label>
+        </div>
+        <div class="tk settings-pane" style="border-radius:var(--r-lg);border:1px solid var(--c-border);height:auto;">
+          <div class="settings-form">
+            <div class="settings-section-label">供应商档案</div>
+            <div class="profile-list" id="profileList">
+              <div class="profile-item current" data-pname="GLM">
+                <span class="p-radio"></span>
+                <div class="p-info">
+                  <div class="p-name-row"><span class="p-name">GLM</span><span class="tag-current">✓ 当前生效</span></div>
+                  <div class="p-meta">https://open.bigmodel.cn/api/paas/v4 · glm-4.6 · sk-****f2a9</div>
+                </div>
+                <div class="p-actions">
+                  <button class="btn-p-act" title="编辑"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>
+                  <button class="btn-p-act del" disabled title="当前生效档案不可删除，请先切换到其他档案"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>
+                </div>
+              </div>
+              <div class="profile-item" data-pname="DeepSeek">
+                <span class="p-radio"></span>
+                <div class="p-info">
+                  <div class="p-name-row"><span class="p-name">DeepSeek</span></div>
+                  <div class="p-meta">https://api.deepseek.com/v1 · deepseek-chat · sk-****3c71</div>
+                </div>
+                <div class="p-actions">
+                  <button class="btn-use" data-use>设为当前</button>
+                  <button class="btn-p-act" title="编辑"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>
+                  <button class="btn-p-act del" title="删除"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>
+                </div>
+              </div>
+              <div class="profile-item" data-pname="Kimi">
+                <span class="p-radio"></span>
+                <div class="p-info">
+                  <div class="p-name-row"><span class="p-name">Kimi</span></div>
+                  <div class="p-meta">https://api.moonshot.cn/v1 · moonshot-v1-8k · sk-****9de0</div>
+                </div>
+                <div class="p-actions">
+                  <button class="btn-use" data-use>设为当前</button>
+                  <button class="btn-p-act" title="编辑"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>
+                  <button class="btn-p-act del" title="删除"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>
+                </div>
+              </div>
+            </div>
+            <div style="margin-top:8px;"><button class="btn-add-profile" id="btnAddProfile"><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>添加供应商档案</button></div>
+            <div class="list-hint">后续请求使用<b>当前生效</b>档案；密钥仅存本地浏览器。<b>当前生效的档案不可删除</b>，请先切换到其他档案。</div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>列表项</b>：卡片式行（描边 <code>--c-border</code>、圆角 8px、内边距 12px）；左 radio 圆点表单选语义；当前生效行 = 主色描边 +
+        <code>--c-primary-l</code> 底（暗色 <code>#1D2740</code>）+ 「<b>✓ 当前生效</b>」实底主色胶囊。行 hover = <code>--c-hover-bg</code>。<br>
+        <b>信息密度</b>：名称 13px/600；meta 一行等宽字体 <code>base URL · 模型名 · sk-****后4位</code>（key 一律密文展示，编辑时才回填明文，见 3.3），
+        超长整体 ellipsis（见 3.5）。<br>
+        <b>操作</b>：非当前行「设为当前」（26px 主色描边小按钮）+ 每行 icon-only「编辑/删除」（26px，hover 灰底；删除 hover = 危险浅底）。
+        <b>当前生效行的删除按钮禁用</b>（opacity .45 + title 提示），列表下方常驻 hint 一并说明（spec 异常分支「提示需先切换」）。<br>
+        <b>可交互</b>：点击「设为当前」移动当前标记（本页即演示 <code>setActiveProfile</code>）；勾选「模拟生成中」再切换可看 3.2 的 CHG-002 提示。
+        当前档案持久化（<code>activeProfileId</code> 入本地存储），刷新保持。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">3.2 生成中切换档案（CHG-002：不打断生成）<span class="tag">toast + 待生效胶囊</span></div>
+      <div class="stage tk" style="border-radius:var(--r-md);display:flex;flex-direction:column;gap:12px;align-items:flex-start;padding:20px;">
+        <div class="profile-list" style="width:100%;max-width:520px;">
+          <div class="profile-item current" data-pname="GLM">
+            <span class="p-radio"></span>
+            <div class="p-info">
+              <div class="p-name-row"><span class="p-name">GLM</span><span class="tag-current">✓ 当前生效</span></div>
+              <div class="p-meta">https://open.bigmodel.cn/api/paas/v4 · glm-4.6 · sk-****f2a9</div>
+            </div>
+          </div>
+          <div class="profile-item">
+            <span class="p-radio"></span>
+            <div class="p-info">
+              <div class="p-name-row"><span class="p-name">DeepSeek</span><span class="tag-pending">↻ 待生效（本轮完成后）</span></div>
+              <div class="p-meta">https://api.deepseek.com/v1 · deepseek-chat · sk-****3c71</div>
+            </div>
+          </div>
+        </div>
+        <div class="toast-row">
+          <div class="toast">已切换到 DeepSeek：当前回复将用 GLM 完成，<b>自下一条消息生效</b></div>
+        </div>
+        <div class="msg msg-ai" style="margin:0;max-width:100%;">
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body">
+            <div class="msg-role">AI</div>
+            <div class="bubble-ai">本轮回复继续由 GLM 生成完毕<span class="cursor"></span></div>
+            <div class="msg-status-row"><span class="status-generating"><span class="spinner"></span>正在生成…（旧档案）</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>时序（CHG-002 定案语义）</b>：生成中点「设为当前」→ <b>不打断</b>当前流式回复（与 CHG-001「切换会话不中断」一致）；
+        当前请求沿用<b>发起时</b>的旧档案跑完，新档案自<b>下一次请求</b>生效。<br>
+        <b>反馈两处</b>：① toast（深底，3s）明示「当前回复将用 X 完成，自下一条消息生效」；② 若生成仍在进行，被选中新档案行显示
+        「<b>↻ 待生效（本轮完成后）</b>」警告胶囊（<code>--c-warning-l/-warning</code>），生成结束即转为正常「当前生效」标记——避免用户以为切换未生效。
+        非生成中切换：无 toast 打扰、无待生效胶囊，直接换标记（3.1 即此形态）。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">3.3 添加 / 编辑档案（模态表单，可交互）<span class="tag">四字段 · 必填校验 · key 密文/明文切换</span></div>
+      <div class="stage tk modal-stage" style="height:520px;">
+        <div class="modal-mask">
+          <div class="modal" style="width:440px;">
+            <h3 id="modalTitle">添加供应商档案</h3>
+            <div class="m-body" style="margin-bottom:16px;">按 OpenAI 兼容协议填写三项；密钥仅存本地浏览器。</div>
+            <div class="field" id="fName">
+              <label>档案名称<span class="req">*</span></label>
+              <input type="text" id="inName" placeholder="如：DeepSeek / GLM / 公司中转">
+              <div class="hint">列表中显示，用于区分多套档案</div>
+              <div class="hint err">必填：请输入档案名称（见待澄清 4）</div>
+            </div>
+            <div class="field" id="fUrl">
+              <label>Base URL<span class="req">*</span></label>
+              <input type="text" id="inUrl" placeholder="https://api.deepseek.com/v1">
+              <div class="hint err">必填：请输入 Base URL</div>
+            </div>
+            <div class="field" id="fModel">
+              <label>模型名<span class="req">*</span></label>
+              <input type="text" id="inModel" placeholder="deepseek-chat">
+              <div class="hint err">必填：请输入模型名</div>
+            </div>
+            <div class="field" id="fKey">
+              <label>API Key<span class="req">*</span></label>
+              <div class="key-row">
+                <input type="password" id="inKey" placeholder="sk-…">
+                <button class="key-eye" id="keyEye" title="显示/隐藏密钥"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M1.5 8S3.8 3.5 8 3.5 14.5 8 14.5 8 12.2 12.5 8 12.5 1.5 8 1.5 8z" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.2"/></svg></button>
+              </div>
+              <div class="hint err">必填：请输入 API Key</div>
+            </div>
+            <div class="m-actions" style="margin-top:8px;">
+              <button class="btn-cancel" id="btnCancelProfile">取消</button>
+              <button class="btn-primary" id="btnSaveProfile">保存档案</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>形态</b>：模态（surface + shadow-3 + 遮罩，同 2.2），宽 440px；字段沿用 REQ-014 三要素（36px 输入框、16px 字号防 iOS 缩放、
+        focus 主色描边 + 光晕）+ <b>新增「档案名称」</b>（必填与否见待澄清 4）。<br>
+        <b>校验（可交互）</b>：点「保存档案」时逐项 trim 校验，空必填项 = 危险描边 + 红色提示文字（<code>--c-danger</code>，暗色 <code>#FF8073</code>），
+        <b>不保存不完整档案</b>（spec 异常分支）；补填后即时消除。<br>
+        <b>key 展示</b>：默认密文（<code>type=password</code>），行尾眼睛按钮切换明/密文；列表中一律 <code>sk-****后4位</code>。
+        <b>编辑</b>：同一模态回填（key 回填明文、标题改「编辑供应商档案」、主按钮「保存修改」）；另提供「清除密钥」入口（沿用 REQ-014 既有红色文字按钮，未入样件）。<br>
+        <b>Esc = 取消</b>（与既有模态约定一致）。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">3.4 删除档案：非当前 = 确认模态；当前生效 = 禁用 + 提示<span class="tag">spec 异常分支逐条落样</span></div>
+      <div class="stage" style="display:flex;gap:20px;flex-wrap:wrap;">
+        <div class="tk modal-stage" style="flex:1;min-width:340px;height:240px;">
+          <div class="modal-mask">
+            <div class="modal">
+              <h3>删除档案？</h3>
+              <div class="m-body">将删除「Kimi」的 base URL、模型名与密钥（仅本地），不可恢复。</div>
+              <div class="m-actions">
+                <button class="btn-cancel">取消</button>
+                <button class="btn-danger-solid">删除</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="tk" style="flex:1;min-width:340px;border-radius:var(--r-lg);border:1px solid var(--c-border);padding:16px;background:var(--c-bg);">
+          <div class="profile-list">
+            <div class="profile-item current">
+              <span class="p-radio"></span>
+              <div class="p-info">
+                <div class="p-name-row"><span class="p-name">GLM</span><span class="tag-current">✓ 当前生效</span></div>
+                <div class="p-meta">https://open.bigmodel.cn/api/paas/v4 · glm-4.6 · sk-****f2a9</div>
+              </div>
+              <div class="p-actions">
+                <button class="btn-p-act" title="编辑"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>
+                <button class="btn-p-act del" disabled title="当前生效档案不可删除，请先切换到其他档案"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>
+              </div>
+            </div>
+          </div>
+          <div class="list-hint" style="color:var(--c-text-3);">当前生效的档案<b style="color:var(--c-danger);">不可删除</b>（删除按钮已禁用），请先切换到其他档案。</div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>非当前档案</b>：点删除 → 二次确认模态（危险实底主按钮，复用 REQ-005 确认模态范式）→ 确认后本地清除该组三项。<br>
+        <b>当前生效档案</b>：删除按钮<b>禁用</b>（不可点击）+ title 悬停提示 + 列表下方 hint 文案 —— 即 spec 异常分支「删除当前生效档案：提示需先切换到其他档案」。
+        删除其余档案不影响当前生效与生成中请求。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">3.5 空态 + 极端态<span class="tag">无档案引导 · 超长名/URL ellipsis · 多档案滚动</span></div>
+      <div class="stage" style="display:flex;gap:20px;flex-wrap:wrap;">
+        <div class="tk" style="flex:1;min-width:300px;border-radius:var(--r-lg);border:1px solid var(--c-border);padding:16px;background:var(--c-bg);">
+          <div class="settings-form" style="max-width:none;">
+            <div class="settings-section-label" style="border-top:none;margin-top:0;padding-top:0;">供应商档案</div>
+            <div class="p-empty">
+              <div class="e-title">暂无供应商档案</div>
+              添加一套 base URL / 模型名 / API Key 后即可开始对话<br>
+              支持 DeepSeek、GLM 等 OpenAI 兼容服务
+            </div>
+            <div style="margin-top:8px;"><button class="btn-add-profile"><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>添加供应商档案</button></div>
+          </div>
+        </div>
+        <div class="tk" style="flex:1.4;min-width:340px;border-radius:var(--r-lg);border:1px solid var(--c-border);padding:16px;background:var(--c-bg);">
+          <div class="settings-form" style="max-width:none;">
+            <div class="settings-section-label" style="border-top:none;margin-top:0;padding-top:0;">供应商档案（8 套，超长内容 ellipsis）</div>
+            <div class="p-scroll profile-list">
+              <div class="profile-item current">
+                <span class="p-radio"></span>
+                <div class="p-info">
+                  <div class="p-name-row"><span class="p-name">这是一个特别特别特别长的档案名称用于验证省略号</span><span class="tag-current">✓ 当前生效</span></div>
+                  <div class="p-meta">https://api.my-company-internal-gateway.example.com/openai-compatible/v1 · my-custom-fine-tuned-model-v3-long-name · sk-****aaaa</div>
+                </div>
+                <div class="p-actions"><button class="btn-p-act" title="编辑">✎</button><button class="btn-p-act del" disabled title="当前生效档案不可删除">🗑</button></div>
+              </div>
+              <div class="profile-item"><span class="p-radio"></span><div class="p-info"><div class="p-name-row"><span class="p-name">DeepSeek</span></div><div class="p-meta">https://api.deepseek.com/v1 · deepseek-chat · sk-****3c71</div></div><div class="p-actions"><button class="btn-use" data-use>设为当前</button></div></div>
+              <div class="profile-item"><span class="p-radio"></span><div class="p-info"><div class="p-name-row"><span class="p-name">Kimi</span></div><div class="p-meta">https://api.moonshot.cn/v1 · moonshot-v1-8k · sk-****9de0</div></div><div class="p-actions"><button class="btn-use" data-use>设为当前</button></div></div>
+              <div class="profile-item"><span class="p-radio"></span><div class="p-info"><div class="p-name-row"><span class="p-name">Qwen</span></div><div class="p-meta">https://dashscope.aliyuncs.com/compatible-mode/v1 · qwen-plus · sk-****11be</div></div><div class="p-actions"><button class="btn-use" data-use>设为当前</button></div></div>
+              <div class="profile-item"><span class="p-radio"></span><div class="p-info"><div class="p-name-row"><span class="p-name">测试-本地代理</span></div><div class="p-meta">http://localhost:11434/v1 · llama3 · sk-****local</div></div><div class="p-actions"><button class="btn-use" data-use>设为当前</button></div></div>
+              <div class="profile-item"><span class="p-radio"></span><div class="p-info"><div class="p-name-row"><span class="p-name">档案 F</span></div><div class="p-meta">https://a.example.com/v1 · m · sk-****0001</div></div><div class="p-actions"><button class="btn-use" data-use>设为当前</button></div></div>
+              <div class="profile-item"><span class="p-radio"></span><div class="p-info"><div class="p-name-row"><span class="p-name">档案 G</span></div><div class="p-meta">https://b.example.com/v1 · m · sk-****0002</div></div><div class="p-actions"><button class="btn-use" data-use>设为当前</button></div></div>
+              <div class="profile-item"><span class="p-radio"></span><div class="p-info"><div class="p-name-row"><span class="p-name">档案 H</span></div><div class="p-meta">https://c.example.com/v1 · m · sk-****0003</div></div><div class="p-actions"><button class="btn-use" data-use>设为当前</button></div></div>
+            </div>
+            <div style="margin-top:8px;"><button class="btn-add-profile">+ 添加供应商档案</button></div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>空态</b>：虚线框引导（同会话空态语义），主 CTA 直接给「添加供应商档案」；此时发送消息仍走 REQ-014 既有链路
+        （提示「请先完成 API 配置」并引导来此页）。<br>
+        <b>超长内容</b>：名称与 meta 各自 <code>text-overflow: ellipsis</code> 单行截断，行高与「当前生效」胶囊位置不因内容长度跳动。<br>
+        <b>多档案</b>：列表区<b>内部滚动</b>（max-height，滚动条 <code>--c-scrollbar</code>），不撑爆设置页；排序 = 创建时间正序、切换不改顺序（见待澄清 5）。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">4</span>状态走查清单（完整走查，不抽查）</h2>
+    <div class="sec-desc">对齐 process/testing.md 完整走查要求。亮/暗两态均需逐条过（暗色列为本稿新增验收口径）；QA 与视觉走查逐条打勾取证。</div>
+    <table>
+      <tr><th style="width:44px">序号</th><th>需求</th><th>触点</th><th>状态组合</th><th>期望表现（= 验收口径）</th><th style="width:52px">视觉</th><th>样件</th></tr>
+      <tr><td>1</td><td>REQ-017</td><td>顶栏</td><td>主题快捷入口</td><td>32px icon-only ghost，月亮/太阳二态，hover 主色描边</td><td>√</td><td>1.1</td></tr>
+      <tr><td>2</td><td>REQ-017</td><td>设置页</td><td>「外观」字段</td><td>segmented 浅色/深色即选即生效，与顶栏状态同步</td><td>√</td><td>1.2</td></tr>
+      <tr><td>3</td><td>REQ-017</td><td>全局</td><td>切换即时性</td><td>点击后 200ms 内全界面颜色生效（.15s 过渡）</td><td>√（行为）</td><td>演示控制</td></tr>
+      <tr><td>4</td><td>REQ-017</td><td>全局</td><td>持久化</td><td>刷新后主题保持（localStorage）</td><td>√（行为）</td><td>演示控制</td></tr>
+      <tr><td>5</td><td>REQ-017</td><td>全局</td><td>无亮色残留</td><td>暗色下无任何硬编码亮色块（对照 2.1 双帧走查）</td><td>√（行为）</td><td>2.1</td></tr>
+      <tr><td>6</td><td>REQ-017</td><td>全局</td><td>暗色 AA 对比度</td><td>正文 ≥4.5:1（text-1 13.5 / text-2 6.9 / text-3 4.6 / primary 5.2，见 tokens v1.3 提案计算）</td><td>√</td><td>0 / 2.1</td></tr>
+      <tr><td>7</td><td>REQ-017</td><td>侧栏</td><td>暗色各态</td><td>选中（#1D2740+#7AA4FF）/ hover（#262930）/ 损坏 / 中断胶囊均令牌化</td><td>√</td><td>2.1</td></tr>
+      <tr><td>8</td><td>REQ-017</td><td>消息区</td><td>暗色各态</td><td>用户气泡实底 #3370FF 不变、AI 正文、代码块 #191B20、生成中 spinner、错误气泡 #361B18</td><td>√</td><td>2.1 / 2.2</td></tr>
+      <tr><td>9</td><td>REQ-017</td><td>输入区</td><td>暗色各态</td><td>focus 光晕 rgba(92,141,255,.25)、禁用 #3D414A、停止实底 #D93025 不变</td><td>√</td><td>2.1</td></tr>
+      <tr><td>10</td><td>REQ-017</td><td>模态/toast</td><td>暗色分层</td><td>模态 surface+加深阴影+遮罩 .55；toast #2A2D34 加描边</td><td>√</td><td>2.2</td></tr>
+      <tr><td>11</td><td>REQ-018</td><td>设置页</td><td>档案列表 + 当前生效</td><td>卡片行 + radio + 主色描边选中 + 密文 key（sk-****后4位）</td><td>√</td><td>3.1</td></tr>
+      <tr><td>12</td><td>REQ-018</td><td>设置页</td><td>一键切换</td><td>点「设为当前」即时换标记；非生成中无打扰</td><td>√（可交互）</td><td>3.1</td></tr>
+      <tr><td>13</td><td>REQ-018</td><td>数据层</td><td>当前档案持久化</td><td>activeProfileId 刷新后保持</td><td>√（行为）</td><td>3.1 注</td></tr>
+      <tr><td>14</td><td>REQ-018</td><td>设置页</td><td>生成中切换（CHG-002）</td><td>toast + 「待生效（本轮完成后）」胶囊；当前回复旧档案跑完、下次请求生效</td><td>√</td><td>3.2</td></tr>
+      <tr><td>15</td><td>REQ-018</td><td>模态</td><td>添加档案表单</td><td>名称+三要素、key 密/明文切换、Esc 取消</td><td>√（可交互）</td><td>3.3</td></tr>
+      <tr><td>16</td><td>REQ-018</td><td>模态</td><td>必填校验错误态</td><td>空必填项红描边+提示，不保存不完整档案；补填即时消除</td><td>√（可交互）</td><td>3.3</td></tr>
+      <tr><td>17</td><td>REQ-018</td><td>模态</td><td>编辑档案</td><td>同一模态回填（key 回填明文），保存修改</td><td>√（行为）</td><td>3.3 注</td></tr>
+      <tr><td>18</td><td>REQ-018</td><td>设置页</td><td>删除非当前档案</td><td>二次确认模态 → 确认后本地清除三项</td><td>√</td><td>3.4</td></tr>
+      <tr><td>19</td><td>REQ-018</td><td>设置页</td><td>删除当前生效档案</td><td>删除按钮禁用 + title + 列表 hint「需先切换」（spec 异常分支）</td><td>√</td><td>3.4</td></tr>
+      <tr><td>20</td><td>REQ-018</td><td>设置页</td><td>空态</td><td>「暂无供应商档案」虚线框引导 + 添加 CTA；发送仍走 REQ-014 未配置引导</td><td>√</td><td>3.5</td></tr>
+      <tr><td>21</td><td>REQ-018</td><td>设置页</td><td>极端：超长名/URL</td><td>名称与 meta 各自单行 ellipsis，行结构不跳动</td><td>√</td><td>3.5</td></tr>
+      <tr><td>22</td><td>REQ-018</td><td>设置页</td><td>极端：多档案</td><td>列表内部滚动（滚动条 --c-scrollbar），不撑爆页面</td><td>√</td><td>3.5</td></tr>
+      <tr><td>23</td><td>REQ-018 × REQ-007</td><td>错误引导</td><td>401 联动</td><td>密钥失效 toast「去设置更新」跳设置页，落地即档案列表（沿用既有链路）</td><td>√（行为）</td><td>2.2 注</td></tr>
+      <tr><td>24</td><td>REQ-018</td><td>侧栏</td><td>当前档案外显</td><td>底栏显示「档案名 · 已配置」+ 绿点；未配置维持现状</td><td>√</td><td>2.1</td></tr>
+    </table>
+    <div class="ann">共 <b>24</b> 条。标注「行为」的由自动化用例或手工走查取证；「可交互」样件在本页可直接操作复核。</div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">5</span>新增令牌说明</h2>
+    <div class="sec-desc">本稿全部色值（含暗色与新增中性令牌）均取自公司 tokens.md「暗色令牌（v1.3 提案，已定夺（CEO 预授权） 批准）」，本稿零自造。</div>
+    <table>
+      <tr><th>项</th><th>结论</th></tr>
+      <tr>
+        <td>暗色全套</td>
+        <td>来源 = tokens.md v1.3 提案（含前景/实底拆分：<code>--c-primary-solid</code> 族、<code>--c-danger-solid</code> 族、
+        <code>--c-hover-bg / --c-disabled-bg / --c-subtle-bg / --c-avatar-bg / --c-scrollbar / --c-toast-bg / --c-mask / --c-focus-ring</code> 等沉淀自 iter-1~4 硬编码）。
+        本稿侧无新增色值；v1.3 提案经 CEO 批准后，T1/T2 按其落地。</td>
+      </tr>
+      <tr>
+        <td>命名统一（iter-4 复盘遗留）</td>
+        <td>本稿已按提案统一命名：危险色 <code>--c-danger(-l)</code>（弃 <code>--c-error</code>）、警告色 <code>--c-warning(-l)</code> 全称（弃 iter-2~4 稿内 <code>--c-warn</code> 缩写）。
+        落地于 T1（App.vue <code>--c-error → --c-danger</code> 重命名 + 全组件同步，浅色外观不变）。</td>
+      </tr>
+    </table>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">6</span>待澄清（需 CEO 逐条定夺，一次定夺零返工）</h2>
+    <div class="sec-desc">沿用 iter-1~4 固化模式：设计师暂定方案已落样件，CEO 定夺后本节固化为决策记录；未定夺前开发不得先行实现对应细节。</div>
+    <table>
+      <tr><th style="width:60px">编号</th><th>问题</th><th>设计师暂定方案（已落样件）</th></tr>
+      <tr>
+        <td>1</td>
+        <td>主题切换入口位置：spec 写「设置/顶栏」二选一还是双入口？</td>
+        <td><b>双入口</b>：顶栏快捷图标（1.1，高频即时路径）+ 设置页「外观」segmented 字段（1.2，可发现性兜底），共用同一 store 状态与持久化，永远同步。</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td>是否跟随系统 <code>prefers-color-scheme</code>？spec REQ-017 未定义。</td>
+        <td><b>本期不做</b>：仅「浅色 / 深色」手动二选（默认浅色，与现状一致）。若要三态「浅色/深色/跟随系统」，走需求变更（含默认值语义：首次打开跟随系统还是浅色）。</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td>暗色下品牌蓝是否微调？（tokens v1.3 提案待定夺 1/2 同源）</td>
+        <td><b>拆分而非整体提亮</b>：前景（链接/高亮/描边/logo 线条）暗色用 <code>#5C8DFF</code> 达 AA；实底（发送/新建按钮、用户气泡）两模式维持 <code>#3370FF</code>，保白字对比度与品牌观感一致。暗色实底 hover 提亮为 <code>#4C84FF</code>（白字瞬时 3.5:1，非稳态，暂定接受）。</td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td>档案名称是否必填？（REQ-018 只定义三要素必填）</td>
+        <td><b>必填</b>（trim 非空）：列表靠名称区分多套档案，留空将退化为不可辨认的 URL 行；不做「缺省自动取 模型名@域名」的隐式命名（备选方案，如 CEO 倾向少填一项可选它，但空态与重名展示需再议）。</td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td>档案列表排序规则：切换是否置顶？</td>
+        <td><b>按创建时间正序、切换不重排</b>：避免一键切换时列表跳动、误点错行；当前生效靠描边+胶囊足够醒目。</td>
+      </tr>
+      <tr>
+        <td>6</td>
+        <td>侧栏底栏是否外显当前档案名？</td>
+        <td><b>显示</b>：「GLM · 已配置」+ 绿点（2.1 样件），一眼确认当前用的是哪套档案，与 REQ-018 一键切换的可感知性闭环；未配置时维持现状红点文案。</td>
+      </tr>
+      <tr>
+        <td>7</td>
+        <td>生成中切换档案，除 toast 外是否在档案行内标注？</td>
+        <td><b>标注</b>：被选中新档案行显示「↻ 待生效（本轮完成后）」警告胶囊（3.2），生成结束自动转正常标记；避免 toast 消失后用户以为切换丢失。非生成中切换仅换标记、无 toast。</td>
+      </tr>
+    </table>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">7</span>基线声明</h2>
+    <div class="sec-desc">
+      本稿形态沿用 design-iter-1~4 基线（侧栏 / 消息 / CHG-003 单排输入区 / 设置页 / 模态 / toast），全部色值取自公司
+      <code>design-system/tokens.md</code>「暗色令牌（v1.3 提案，已定夺（CEO 预授权） 批准）」，本稿零自造色值。
+      前置依赖：v1.3 提案（含前景/实底拆分、--c-error→--c-danger 统一）与第 6 节 7 项待澄清<b>需 CEO 一并定夺</b>后，
+      主会话打 <code>design-iter-5</code> tag 进入 T1/T2/T3 开发；设计师不打 tag。亮色外观与基线一致（T1 令牌化不改视觉），
+      暗色为新态。走查方法：2.1 双帧同 DOM 对照，任何暗色帧内发亮残留即为漏改裸色值。
+    </div>
+  </section>
+
+</div>
+
+<script>
+/* ============================================================
+   演示交互（文档功能件）：主题切换持久化 / 档案切换 / 模态表单
+   ============================================================ */
+(function () {
+  var SUN = '<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="2.6" stroke="currentColor" stroke-width="1.3"/><path d="M7 1.2v1.6M7 11.2v1.6M1.2 7h1.6M11.2 7h1.6M2.9 2.9l1.2 1.2M9.9 9.9l1.2 1.2M11.1 2.9L9.9 4.1M4.1 9.9l-1.2 1.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+  var MOON = '<svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M12 8.5A5.5 5.5 0 1 1 5.5 2 4.3 4.3 0 0 0 12 8.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>';
+  var KEY = 'mm-demo-theme';
+
+  var flippables = document.querySelectorAll('.tk:not(.force-light):not(.force-dark)');
+  var btnLight = document.getElementById('btnLight');
+  var btnDark = document.getElementById('btnDark');
+  var hdrBtn = document.getElementById('hdrThemeBtn');
+  var segBtns = document.querySelectorAll('#setSeg button');
+
+  function applyTheme(t) {
+    flippables.forEach(function (f) { f.classList.toggle('dark', t === 'dark'); });
+    btnLight.classList.toggle('on', t === 'light');
+    btnDark.classList.toggle('on', t === 'dark');
+    if (hdrBtn) hdrBtn.innerHTML = t === 'dark' ? SUN : MOON; /* 图标 = 点击后去往的主题 */
+    segBtns.forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-set-theme') === t); });
+    try { localStorage.setItem(KEY, t); } catch (e) {}
+  }
+  var saved = 'light';
+  try { saved = localStorage.getItem(KEY) || 'light'; } catch (e) {}
+  applyTheme(saved);
+
+  btnLight.addEventListener('click', function () { applyTheme('light'); });
+  btnDark.addEventListener('click', function () { applyTheme('dark'); });
+  if (hdrBtn) hdrBtn.addEventListener('click', function () {
+    applyTheme(document.getElementById('btnDark').classList.contains('on') ? 'light' : 'dark');
+  });
+  segBtns.forEach(function (b) {
+    b.addEventListener('click', function () { applyTheme(b.getAttribute('data-set-theme')); });
+  });
+
+  /* 页面级 toast（文档反馈） */
+  function toast(text) {
+    var host = document.getElementById('toastHost');
+    var el = document.createElement('div');
+    el.className = 'toast';
+    el.textContent = text;
+    host.appendChild(el);
+    setTimeout(function () { host.removeChild(el); }, 3000);
+  }
+
+  /* 档案「设为当前」：移动当前标记；模拟生成中时按 CHG-002 提示 */
+  var simGen = document.getElementById('simGen');
+  document.querySelectorAll('.btn-use[data-use]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var item = btn.closest('.profile-item');
+      var list = btn.closest('.profile-list');
+      if (!item || !list || item.classList.contains('current')) return;
+      var name = (item.getAttribute('data-pname') || '新档案');
+      if (simGen && simGen.checked) {
+        toast('已切换到 ' + name + '：当前回复将用原档案完成，自下一条消息生效（CHG-002 演示）');
+      } else {
+        toast('已切换到 ' + name + '（非生成中：立即生效）');
+      }
+      /* 仅 3.1 交互列表内做标记移动，避免影响 3.2/3.5 静态样件 */
+      if (list.id === 'profileList') {
+        list.querySelectorAll('.profile-item').forEach(function (p) {
+          p.classList.remove('current');
+          var badge = p.querySelector('.tag-current'); if (badge) badge.remove();
+          var del = p.querySelector('.btn-p-act.del'); if (del) del.disabled = false;
+          var use = p.querySelector('.btn-use'); if (use) use.style.display = '';
+        });
+        item.classList.add('current');
+        var nr = item.querySelector('.p-name-row');
+        var tag = document.createElement('span');
+        tag.className = 'tag-current'; tag.textContent = '✓ 当前生效';
+        nr.appendChild(tag);
+        var delBtn = item.querySelector('.btn-p-act.del'); if (delBtn) delBtn.disabled = true;
+        btn.style.display = 'none';
+      }
+    });
+  });
+
+  /* 添加档案模态：开合 + 必填校验 */
+  var addBtn = document.getElementById('btnAddProfile');
+  if (addBtn) {
+    addBtn.addEventListener('click', function () {
+      toast('演示：打开「添加供应商档案」模态（见 3.3 样件）');
+      document.querySelector('.modal-stage.tk').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }
+  var saveBtn = document.getElementById('btnSaveProfile');
+  var cancelBtn = document.getElementById('btnCancelProfile');
+  function fieldOf(id) { return document.getElementById(id); }
+  if (saveBtn) {
+    saveBtn.addEventListener('click', function () {
+      var ok = true;
+      [['fName', 'inName'], ['fUrl', 'inUrl'], ['fModel', 'inModel'], ['fKey', 'inKey']].forEach(function (pair) {
+        var input = fieldOf(pair[1]);
+        var invalid = !input.value.trim();
+        fieldOf(pair[0]).classList.toggle('invalid', invalid);
+        if (invalid) ok = false;
+      });
+      if (ok) toast('演示：档案已保存（必填校验通过）');
+      else toast('演示：必填项为空，未保存（spec 异常分支）');
+    });
+  }
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', function () {
+      ['fName', 'fUrl', 'fModel', 'fKey'].forEach(function (id) { fieldOf(id).classList.remove('invalid'); });
+      toast('演示：取消，无任何改动');
+    });
+  }
+  var keyEye = document.getElementById('keyEye');
+  var inKey = document.getElementById('inKey');
+  if (keyEye && inKey) {
+    keyEye.addEventListener('click', function () {
+      inKey.type = inKey.type === 'password' ? 'text' : 'password';
+    });
+  }
+})();
+</script>
+</body>
+</html>
