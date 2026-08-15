@@ -1,0 +1,25 @@
+# ai-chat 本地编排（CHG-004 部署条款：本地一键起，不锁死云环境）
+# iter-6：仅后端 + 数据卷；iter-7 扩为全链路（前端构建产物 + backend + DB）
+services:
+  backend:
+    build: ./backend
+    container_name: ai-chat-backend
+    ports:
+      - "8000:8000"
+    environment:
+      AI_CHAT_DB_PATH: /data/ai-chat.db
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
