@@ -2,7 +2,7 @@
 
 双向可追溯：需求 → 设计稿 → 实现 → 测试 → 状态。迭代收尾时必须与实际代码一致。
 
-> 需求已基线（req-baseline-v1，2026-08-15 CEO 批准）。iter-1 已关闭（G4 过，v0.1.0 已发布）。iter-2 已关闭（2026-08-15，G4 过：开发 T0~T4 全完成、37/37 测试、24 条走查、QA 审计 3 NCR 全整改、复盘完成，见 retros/iter-2.md）。iter-3 计划已批准（Σ9，REQ-009/011/012/013，2026-08-15 CEO 确认，见 plans/iter-3.md）。设计稿 design-iter-3 已基线（2026-08-15 CEO 批准，6 项待澄清定夺）。iter-3 已关闭（2026-08-15，G4 过：开发 T0~T4 全完成、62/62 测试、28 条走查、QA 审计 0 NCR 符合、复盘完成，见 retros/iter-3.md）。REQ-001~014 全部达成。iter-4 计划已批准（Σ9，REQ-015/016 + DEF-011，2026-08-15 CEO 确认，见 plans/iter-4.md）。iter-4 开发完成（T0~T3 全完成、79/79 测试、设计基线 design-iter-4）。iter-4 已关闭（2026-08-15，G4 过：开发 T0~T3 + CHG-003 全完成、79/79 测试、走查 28 条、QA 审计 5 NCR 全整改、周报含 Code Review、生产构建通过、复盘完成，见 retros/iter-4.md）。v0.3.0 已发布（CEO 批准，releases/v0.3.0.md）。iter-5 计划已批准（Σ8，REQ-017/018 + 复盘遗留 token 化，2026-08-15 CEO 确认，见 plans/iter-5.md）。iter-5 已关闭（2026-08-15，G4 过：T0~T3 全完成、85/85 测试、走查 17 条、QA 审计 5 NCR 全整改、周报含 Code Review（CEO 过目 2026-08-15）、生产构建通过、复盘完成，见 retros/iter-5.md）。v0.4.0 已发布（CEO 批准，releases/v0.4.0.md）。基线 v2 需求 REQ-001~019 全部达成。
+> 需求已基线（req-baseline-v1，2026-08-15 CEO 批准）。iter-1 已关闭（G4 过，v0.1.0 已发布）。iter-2 已关闭（2026-08-15，G4 过：开发 T0~T4 全完成、37/37 测试、24 条走查、QA 审计 3 NCR 全整改、复盘完成，见 retros/iter-2.md）。iter-3 计划已批准（Σ9，REQ-009/011/012/013，2026-08-15 CEO 确认，见 plans/iter-3.md）。设计稿 design-iter-3 已基线（2026-08-15 CEO 批准，6 项待澄清定夺）。iter-3 已关闭（2026-08-15，G4 过：开发 T0~T4 全完成、62/62 测试、28 条走查、QA 审计 0 NCR 符合、复盘完成，见 retros/iter-3.md）。REQ-001~014 全部达成。iter-4 计划已批准（Σ9，REQ-015/016 + DEF-011，2026-08-15 CEO 确认，见 plans/iter-4.md）。iter-4 开发完成（T0~T3 全完成、79/79 测试、设计基线 design-iter-4）。iter-4 已关闭（2026-08-15，G4 过：开发 T0~T3 + CHG-003 全完成、79/79 测试、走查 28 条、QA 审计 5 NCR 全整改、周报含 Code Review、生产构建通过、复盘完成，见 retros/iter-4.md）。v0.3.0 已发布（CEO 批准，releases/v0.3.0.md）。iter-5 计划已批准（Σ8，REQ-017/018 + 复盘遗留 token 化，2026-08-15 CEO 确认，见 plans/iter-5.md）。iter-5 已关闭（2026-08-15，G4 过：T0~T3 全完成、85/85 测试、走查 17 条、QA 审计 5 NCR 全整改、周报含 Code Review（CEO 过目 2026-08-15）、生产构建通过、复盘完成，见 retros/iter-5.md）。v0.4.0 已发布（CEO 批准，releases/v0.4.0.md）。基线 v2 需求 REQ-001~019 全部达成。CHG-004 已批准（req-baseline-v3，2026-08-15），REQ-020~025 进入排期；REQ-006/014/018 正文已按澄清结论改写。
 
 | 需求 | 描述摘要 | 优先级 | 设计稿 | 实现（文件/模块） | 测试（用例/文件） | 状态 | 所在迭代 |
 |------|---------|--------|----------|-----------------|------------------|------|---------|
@@ -25,6 +25,12 @@
 | REQ-017 | 暗色主题 | P2 | design/iter-5（已基线） | App.vue 令牌根 [data-theme=dark] 覆盖, composables/useTheme, 顶栏主题按钮 + SettingsForm 外观 segmented | 浏览器实测（暗色 #131417/#1E2026/#E6EAF0 命中令牌、切换即变、刷新保持）+ 全组件 token 化走查 | 已验证 | iter-5 |
 | REQ-018 | 多供应商档案一键切换（REQ-014 增强） | P2 | design/iter-5（已基线） | stores/settings（profiles + 旧格式迁移 + setActiveProfile/removeProfile）, SettingsForm 档案列表/模态, TheSidebar 当前档案标签 | settings.spec（4 档案用例）/ settings-form.spec（4 用例）+ 浏览器实测（迁移/添加/切换/删除边界） | 已验证（**GLM 真实流式按 DEF-002 CEO 决策 2026-08-15 不补验、接受部分达成**——多档案切换性由配置/协议层与单测承载，参照 REQ-014 行注记） | iter-5 |
 | REQ-019 | 版本切换（编辑/重生成后切换新旧分支） | P1 | design/iter-4（已同步） | stores/sessions.ts（toggleVersion + branches + forkId） | sessions.spec（版本切换用例）+ MessageBubble.spec | 已验证 | iter-4 |
+| REQ-020 | 注册与登录（用户名+密码，会话 token）〔CHG-004〕 | P0（CEO 已确认） | 待设计师产出（登录/注册原型） | 待排期（FastAPI 后端 + 前端） | 待设计 | 未开始（基线 v3） | 待排期（iter-6 起） |
+| REQ-021 | 账号管理（改密码、注销/删号）〔CHG-004〕 | P1（CEO 已确认） | 待设计师产出（账号管理原型） | 待排期 | 待设计 | 未开始（基线 v3） | 待排期 |
+| REQ-022 | 服务端会话云存储与多设备同步（LWW + 一次性本地迁移，REQ-006 承接）〔CHG-004〕 | P0（CEO 已确认） | 迁移入口（首次登录提示，待设计） | 待排期（替换 db/idb 读写层） | 待设计 | 未开始（基线 v3） | 待排期 |
+| REQ-023 | API 密钥服务端代管与流式代理（双模式：统一 key / 自填 key 解锁高配额）〔CHG-004〕 | P0（CEO 已确认） | 高级设置待重设计（随 REQ-014） | 待排期（FastAPI 代理层 + api/client.ts 切换） | 待设计 | 未开始（基线 v3） | 待排期 |
+| REQ-024 | 用量配额与滥用防护（注册限频/每用户配额/统一 key 总量保护，配额与密钥模式联动）〔CHG-004〕 | P0（CEO 已确认） | 不涉及（复用错误提示体系） | 待排期（FastAPI quota 层） | 待设计 | 未开始（基线 v3） | 待排期 |
+| REQ-025 | 管理员 Web 后台（封禁/解封、按用户调配额、按用户按日用量列表）〔CHG-004〕 | P1（CEO 已确认） | 待设计师产出（管理后台原型） | 待排期（FastAPI admin 层 + 后台前端） | 待设计 | 未开始（基线 v3） | 待排期 |
 
 ## 状态定义
 
@@ -36,3 +42,5 @@
 | 需求 | 动作 | 对应变更记录 | 日期 |
 |------|------|-------------|------|
 | （基线前无变更记录；CEO 决策记录见 spec.md 末节） | | | |
+| REQ-006 / REQ-014 / REQ-018 / REQ-007 | 受 CHG-004 影响，正文与验收标准已按澄清结论正式改写（CHG-004 已批准，req-baseline-v3；影响明细见 changes.md CHG-004 影响评估） | CHG-004 | 2026-08-15 |
+| REQ-020 ~ REQ-025 | CHG-004 新增，已批准（基线 v3），进入排期 | CHG-004 | 2026-08-15 |
