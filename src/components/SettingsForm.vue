@@ -710,6 +710,9 @@ async function confirmDeleteAccount(password: string) {
   position: relative;
   width: 720px;
   max-width: calc(100vw - 32px);
+  /* R2（CEO 2026-08-16）：高度固定不随内容变化（切换分区弹窗不跳变，参考 DeepSeek）；
+     max-height 仅作矮视口保护 */
+  height: 560px;
   max-height: calc(100vh - 64px);
   display: flex;
   flex-direction: column;

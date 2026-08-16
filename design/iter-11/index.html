@@ -24,6 +24,10 @@
         ② 设置弹窗「不要都放在一个弹框里面…拆分一下」——单列滚动改左侧分区导航（定夺⑤按 CEO 指示反转，已定夺）：
         720px = 左导航 168px（五分区，role=tablist，方向键切换）+ 右分区面板；头部长提示移除（语义并入密钥模式分区说明）；
         「前往高级设置」由滚动定位改为分区直达 + 高亮（locateAdvanced prop 语义不变）。
+  R2 修订（2026-08-16 CEO 试用反馈两条）：① 设置弹窗高度改为<b>固定 560px</b>（max-height calc(100vh-64px) 仅矮视口保护）——
+        不随分区内容变大变小，切换分区弹窗尺寸稳定（参考 DeepSeek；§4.2 尺寸行同步）。② 实现偏差修复登记：底部账户区
+        头像+用户名+「···」全挤左侧——DropdownMenu 包裹 span 未拉伸所致（基线本意为「···」靠右），实现侧加 .dd{flex:1} 修复，
+        非基线变更。
   可交互：右上「演示控制」一键亮/暗（写 localStorage）——下方全部可翻转样件同步（第 5 节锁定帧不随动）；
         §1 侧栏主样件（分组列表渲染 / hover「···」/ 下拉菜单 / 行内重命名 / 删除确认 / 搜索态 / 收起 rail 切换 + 持久化 / 账户菜单 / 管理员条件渲染）；
         §2 下拉菜单键盘演练台（↑↓/Enter/Esc/Tab/外点/滚动关闭）；
@@ -335,7 +339,7 @@ mark.hl { background: transparent; color: var(--c-primary); font-weight: 600; }
 /* ---- 3d. 设置弹窗（REQ-028：模态 720px/80vh 左右分栏，遮罩 --c-mask z-100；内层模态 z 叠层） ---- */
 .smask { position: absolute; inset: 0; background: var(--c-mask); display: flex; align-items: center; justify-content: center; z-index: 100; }
 .smodal {
-  position: relative; width: 720px; max-width: calc(100% - 32px); max-height: calc(100% - 32px);
+  position: relative; width: 720px; max-width: calc(100% - 32px); height: 560px; max-height: calc(100% - 32px);
   display: flex; flex-direction: column; background: var(--c-surface); border: 1px solid var(--c-border);
   border-radius: var(--r-lg); box-shadow: var(--shadow-3); overflow: hidden;
   animation: modalin .15s ease;
@@ -935,7 +939,7 @@ mark.hl { background: transparent; color: var(--c-primary); font-weight: 600; }
       <div class="spec-title">4.2 容器规格：尺寸 / 滚动 / 遮罩 / 关闭 / 未保存处置<span class="tag">未保存拦截为待定夺 ⑥ 推荐落形</span></div>
       <table>
         <tr><th style="width:130px">项</th><th>规格</th></tr>
-        <tr><td>尺寸</td><td><b>宽 720px</b>（R1 左右分栏：左导航 168px + 右分区面板；内容列 ~504px）；<code>max-width: calc(100vw - 48px)</code>；<b>高 ≤ 80vh</b>（<code>max-height: calc(100vh - 64px)</code> 等效；窄屏不溢出视口，REQ-028 异常分支）；r-lg + <code>--shadow-3</code> + <code>--c-surface</code> 底 + 1px <code>--c-border</code></td></tr>
+        <tr><td>尺寸</td><td><b>宽 720px</b>（R1 左右分栏：左导航 168px + 右分区面板；内容列 ~504px）；<code>max-width: calc(100vw - 48px)</code>；<b>高固定 560px</b>（R2 CEO 定夺：不随分区内容变化，切换分区尺寸稳定，参考 DeepSeek；<code>max-height: calc(100vh - 64px)</code> 仅矮视口保护——窄屏不溢出视口，REQ-028 异常分支）；r-lg + <code>--shadow-3</code> + <code>--c-surface</code> 底 + 1px <code>--c-border</code></td></tr>
         <tr><td>头部</td><td>sticky（面板内不随内容滚动）：标题「设置」17px/600 + 右端关闭钮（28px icon，aria-label「关闭设置」）；头部下缘 <code>--c-border</code> 分隔；R1 后头部不再放提示文案（密钥模式说明随分区呈现，去拥挤）</td></tr>
         <tr><td>分区（R1）</td><td>左导航 <code>role=tablist</code> 五项（外观/密钥模式/高级设置/对话设置/账号），<code>--c-subtle-bg</code> 底 + 右缘 <code>--c-border</code>；选中态 <code>--c-primary-l</code> 底主色字；一次仅显示一个分区面板（<code>role=tabpanel</code>），各面板独立滚动；键盘 ↑↓←→ 循环切换分区（与「演示控制」无冲突）；切分区不丢表单状态（面板隐藏不销毁）</td></tr>
         <tr><td>滚动</td><td>仅右侧当前分区面板滚动（<code>overflow-y: auto</code>，细滚动条 <code>--c-scrollbar</code>）；档案内层模态打开时外层不滚动</td></tr>

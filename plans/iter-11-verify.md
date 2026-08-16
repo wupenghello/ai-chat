@@ -132,3 +132,16 @@ T3 设置弹窗化后入口随弹窗迁移（走查 39 届时复验）。登录�
 - `src/App.vue`：view 切换模型 → settingsOpen 叠加模型（chat 常驻）；SettingsForm v-if 卸载重建；openSettings(locate) 语义不变
 - `src/components/DropdownMenu.vue`：focus preventScroll 修复（2 处）
 - `src/stores/__tests__/settings-form.spec.ts`：mountForm 传 open:true + 直挂载点适配 + 新增 T3 describe（7 用例）
+
+---
+
+# R2 修订复验（2026-08-16 CEO 试用反馈两条，iter-11 收尾前）
+
+> CEO 试用反馈：① 底部账户区头像+用户名+「···」全挤左侧；② 设置弹窗高度随内容变化，要求固定高度（参考 DeepSeek）。
+> 处置：① 为实现偏差（基线本意「···」靠右）——TheSidebar 加 `.acct :deep(.dd){flex:1}`（DropdownMenu 包裹 span 未拉伸致 width:100% 失效）；② 为基线级调整——design-iter-11 落 **R2 修订**（§4.2 尺寸行 + 演示件 .smodal 同步），实现侧 `height: 560px`（max-height calc(100vh-64px) 仅矮视口保护）。
+> 测试终态：前端 247/247 + guard:style + 生产构建（R2 后复跑全绿）。
+
+| 项 | 取证 | 结果 |
+|---|------|------|
+| footer 整行布局 | 浏览器实测（1280px）：触发钮宽 = 账户区宽（差 <6px）、「···」svg 右缘贴合账户区右缘（<40px）、头像居左（8px 内边距） | ✅ |
+| 弹窗固定高度 | 浏览器实测：外观（内容最少）/账号（改密+注销）/高级设置（档案列表，内容最多）三分区切换，`height` 恒 **560px**；高级设置面板 overflow-y:auto 独立滚动 | ✅ |

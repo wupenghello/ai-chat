@@ -379,7 +379,13 @@ const avatarChar = computed(() => (auth.user?.username ?? '未').charAt(0))
 .session-list .group-label:first-child {
   padding-top: 4px;
 }
-/* REQ-026.3 账户区（§1.4 走查 14） */
+/* REQ-026.3 账户区（§1.4 走查 14）。R2 修复：DropdownMenu 包裹 span（.dd）须 flex:1 拉满——
+   否则 span 按内容收缩、width:100% 的触发钮失效，头像+用户名+「···」全挤左侧（CEO 走查反馈） */
+.acct :deep(.dd) {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
 .acct {
   flex: none;
   border-top: 1px solid var(--c-border);
