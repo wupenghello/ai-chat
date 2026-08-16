@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-chat · iter-9 设计稿（REQ-021 账号管理：修改密码 + 注销账号，已基线）</title>
+<!--
+  ============================================================
+  ai-chat 迭代 9 T0 设计稿（设计稿即页面骨架，开发对照实现）
+  依据：plans/iter-9.md T0（验收：设计稿经 CEO 批准并打 design-iter-9 tag，含 §7.x 走查清单——v1.4.4 硬要求；
+        T0 定夺项 4 项随设计基线由 CEO 拍板，见第 8 节）
+        requirements/spec.md（req-baseline-v3：REQ-021 账号管理——修改密码（需验证旧密码，更新后除当前设备外其他设备
+        会话失效）+ 注销账号（删除账号及其全部云端数据，不可恢复，需输入登录密码二次确认））
+        company design-system/tokens.md v1.3/v1.3.1 + components.md v1.0 —— 本稿只用既有令牌，零新增（见第 6 节）
+        design/iter-8（走查清单格式 + 令牌作用域 .tk 范式 + 登录页 auth-card 基线引用）
+        design/iter-5（设置页 SettingsForm 基线：settings-pane/settings-section-label/field/密码显隐 key-eye/分段控件）
+        design/iter-6（登录页 auth-card 与 banner 基线——「账号已删除」落地登录页沿其 auth-frame）
+        brand 约束（CEO 既定）：主色飞书蓝 #3370FF（暗色前景 #5C8DFF）
+  状态：已基线（2026-08-16 CEO 批准，4 项定夺全按推荐方案定案，tag design-iter-9）。
+  可交互：右上「演示控制」一键亮/暗（写 localStorage）；改密表单完整校验（必填/旧密码错误/强度/一致性/成功反馈）；
+          注销强确认模态可开合（二次确认密码校验、生成中分支、成功跳登录页 + 账号已删除提示）。
+          样件内用户名/密码均为演示数据（非真实凭据，铁律 5 口径见第 5 节注记）。零外部依赖，双击即开。
+  ============================================================
+-->
+<style>
+/* ============================================================
+   一、文档外壳（说明页自身，浅色固定，不随演示切换；色值 = tokens 浅色原值，沿 iter-5/6/7/8 惯例）
+   ============================================================ */
+:root { --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-full: 999px; }
+:root {
+  /* 深底 toast 令牌（tokens.md v1.3.1 on-dark 族；值主题相关，暗色在 html.mm-dark 覆盖） */
+  --toast-bg: #23272E; --toast-border: #23272E;
+  --success-on-dark: #4CC38A; --primary-on-dark: #A3BCFF;
+}
+html.mm-dark { --toast-bg: #2A2D34; --toast-border: #33363E; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-size: 14px; line-height: 1.6; color: #1F2329; background: #F5F6F7; padding: 40px 32px 80px;
+}
+.page { max-width: 1160px; margin: 0 auto; }
+h1 { font-size: 20px; font-weight: 600; }
+.sub { font-size: 13px; color: #8F959E; margin: 4px 0 8px; }
+.sub b { color: #646A73; }
+.badge {
+  display: inline-block; padding: 1px 10px; border-radius: var(--r-full);
+  font-size: 12px; font-weight: 500; background: #FFF7E8; color: #B45309; margin-bottom: 32px;
+}
+section { margin-bottom: 48px; }
+h2 { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+h2 .no { color: #3370FF; margin-right: 4px; }
+.sec-desc { font-size: 13px; color: #8F959E; margin-bottom: 16px; }
+.sec-desc b { color: #646A73; }
+
+table { width: 100%; border-collapse: collapse; background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-md); overflow: hidden; font-size: 13px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #E5E6EB; vertical-align: top; }
+th { color: #8F959E; font-weight: 500; background: #FAFBFC; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+td code, li code, .ann code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; background: #F2F3F5; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
+
+.spec { background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-lg); padding: 24px; box-shadow: 0 1px 2px rgba(31,35,41,.06); margin-bottom: 16px; }
+.spec-title { font-size: 13px; font-weight: 600; color: #646A73; margin-bottom: 12px; }
+.spec-title .tag { font-weight: 400; color: #8F959E; margin-left: 8px; }
+.stage { border: 1px dashed #E5E6EB; border-radius: var(--r-md); padding: 16px; background: #F5F6F7; }
+.ann { font-size: 12px; color: #8F959E; margin-top: 8px; line-height: 1.8; }
+.ann b { color: #646A73; font-weight: 600; }
+
+/* ============================================================
+   二、演示令牌作用域 .tk（组件全部引用 var()，同 src 范式；浅色 = tokens v1.3 浅色值，暗色 = v1.3 暗色值，零自造）
+   ============================================================ */
+.tk {
+  --c-bg: #F5F6F7; --c-surface: #FFFFFF; --c-border: #E5E6EB;
+  --c-text-1: #1F2329; --c-text-2: #646A73; --c-text-3: #8F959E;
+  --c-primary: #3370FF; --c-primary-h: #2E5FDF; --c-primary-a: #2860D8; --c-primary-l: #F0F4FF;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #2E5FDF; --c-primary-solid-a: #2860D8;
+  --c-danger: #D93025; --c-danger-l: #FDECEA; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #1A9E5C; --c-success-on-dark: #4CC38A;
+  --c-warning: #B45309; --c-warning-l: #FFF7E8;
+  --c-hover-bg: #F2F3F5; --c-disabled-bg: #C9CFDB; --c-subtle-bg: #FAFBFC;
+  --c-avatar-bg: #E8EBF2; --c-scrollbar: #D5D9E0;
+  --c-toast-bg: #23272E; --c-toast-border: #23272E; --c-primary-on-dark: #A3BCFF;
+  --c-mask: rgba(31,35,41,.4); --c-focus-ring: rgba(51,112,255,.12);
+  --shadow-1: 0 1px 2px rgba(31,35,41,.06);
+  --shadow-2: 0 4px 16px rgba(31,35,41,.10);
+  --shadow-3: 0 12px 40px rgba(31,35,41,.16);
+  color: var(--c-text-1);
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+.tk.dark {
+  --c-bg: #131417; --c-surface: #1E2026; --c-border: #33363E;
+  --c-text-1: #E6EAF0; --c-text-2: #A2A9B6; --c-text-3: #808896;
+  --c-primary: #5C8DFF; --c-primary-h: #7AA4FF; --c-primary-a: #4C84FF; --c-primary-l: #1D2740;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #4C84FF; --c-primary-solid-a: #3D78FF;
+  --c-danger: #FF8073; --c-danger-l: #361B18; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #4CC38A;
+  --c-warning: #EDA23B; --c-warning-l: #38290F;
+  --c-hover-bg: #262930; --c-disabled-bg: #3D414A; --c-subtle-bg: #24272E;
+  --c-avatar-bg: #33363E; --c-scrollbar: #3A3E46;
+  --c-toast-bg: #2A2D34; --c-toast-border: #33363E; --c-primary-on-dark: #A3BCFF;
+  --c-mask: rgba(0,0,0,.55); --c-focus-ring: rgba(92,141,255,.25);
+  --shadow-1: 0 1px 2px rgba(0,0,0,.4);
+  --shadow-2: 0 4px 16px rgba(0,0,0,.45);
+  --shadow-3: 0 12px 40px rgba(0,0,0,.6);
+}
+.tk.force-dark {
+  --c-bg: #131417; --c-surface: #1E2026; --c-border: #33363E;
+  --c-text-1: #E6EAF0; --c-text-2: #A2A9B6; --c-text-3: #808896;
+  --c-primary: #5C8DFF; --c-primary-h: #7AA4FF; --c-primary-a: #4C84FF; --c-primary-l: #1D2740;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #4C84FF; --c-primary-solid-a: #3D78FF;
+  --c-danger: #FF8073; --c-danger-l: #361B18; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #4CC38A;
+  --c-warning: #EDA23B; --c-warning-l: #38290F;
+  --c-hover-bg: #262930; --c-disabled-bg: #3D414A; --c-subtle-bg: #24272E;
+  --c-avatar-bg: #33363E; --c-scrollbar: #3A3E46;
+  --c-toast-bg: #2A2D34; --c-toast-border: #33363E; --c-primary-on-dark: #A3BCFF;
+  --c-mask: rgba(0,0,0,.55); --c-focus-ring: rgba(92,141,255,.25);
+  --shadow-1: 0 1px 2px rgba(0,0,0,.4);
+  --shadow-2: 0 4px 16px rgba(0,0,0,.45);
+  --shadow-3: 0 12px 40px rgba(0,0,0,.6);
+}
+
+/* ============================================================
+   三、产品组件样式（全部 var() 引用，零裸色值）
+   3a. 演示控制（文档功能件）
+   3b. 设置页骨架（iter-5 基线引用）+ 账号区（本稿新增）
+   3c. 表单 / 校验 / 密码显隐（iter-5 基线引用）
+   3d. 模态确认 confirm（components.md：标题 17px / 正文 14px text-2 / 动作右对齐 / 危险实底）
+   3e. 深底 toast + 成功横幅 + 登录页（iter-6 auth-card 基线引用）
+   ============================================================ */
+
+/* ---- 演示控制条（文档功能件，非产品组件） ---- */
+.demo-ctl {
+  position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 12px;
+  background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-md);
+  padding: 10px 16px; margin-bottom: 32px; box-shadow: 0 1px 2px rgba(31,35,41,.06);
+  font-size: 13px; color: #646A73; flex-wrap: wrap;
+}
+.demo-ctl .seg { display: inline-flex; border: 1px solid #E5E6EB; border-radius: var(--r-md); overflow: hidden; }
+.demo-ctl .seg button {
+  height: 30px; padding: 0 14px; border: none; background: #FFFFFF; color: #646A73;
+  font-size: 13px; cursor: pointer; transition: background .15s ease, color .15s ease;
+}
+.demo-ctl .seg button.on { background: #3370FF; color: #fff; font-weight: 600; }
+.demo-ctl .note { font-size: 12px; color: #8F959E; }
+.sim-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; font-size: 12px; color: #646A73; margin-bottom: 12px; }
+.sim-row label { cursor: pointer; white-space: nowrap; }
+.lnk-reset { display: inline-block; margin-top: 8px; font-size: 12px; color: #3370FF; cursor: pointer; }
+.lnk-reset:hover { text-decoration: underline; color: #2E5FDF; }
+
+/* ---- 应用外壳（CEO 2026-08-16 基调变更：侧栏灰 --c-bg + 正文白 --c-surface，参考 DeepSeek 管理页） ---- */
+.app-shell { position: relative; display: flex; overflow: hidden; background: var(--c-bg); }
+.side-rail { flex: none; width: 232px; background: var(--c-bg); border-right: 1px solid var(--c-border); display: flex; flex-direction: column; padding: 14px 12px; gap: 8px; }
+.rail-brand { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; color: var(--c-text-1); padding: 2px 6px 8px; }
+.btn-rail-new { height: 34px; padding: 0 14px; border: none; border-radius: var(--r-md); background: var(--c-primary-solid); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; justify-content: center; transition: background .15s ease, transform .1s ease; }
+.btn-rail-new:hover { background: var(--c-primary-solid-h); }
+.btn-rail-new:active { transform: scale(.98); }
+.rail-list { flex: 1; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+.rail-item { min-height: 34px; padding: 7px 10px; border-radius: var(--r-md); font-size: 13px; color: var(--c-text-2); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: background .15s ease, color .15s ease; }
+.rail-item:hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+.rail-item.on { background: var(--c-primary-l); color: var(--c-primary-h); font-weight: 500; }
+.rail-ft { flex: none; border-top: 1px solid var(--c-border); padding: 10px 6px 0; display: flex; align-items: center; gap: 8px; }
+.rail-ft .ft-user { font-size: 13px; font-weight: 500; color: var(--c-text-2); max-width: 84px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rail-ft .ft-sp { flex: 1; }
+.btn-rail-icon { width: 26px; height: 26px; padding: 0; border: none; border-radius: var(--r-sm); background: transparent; color: var(--c-text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; transition: background .15s ease, color .15s ease; }
+.btn-rail-icon:hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+
+/* ---- 设置页（iter-5 基线：表单 max-width 420px / 分区 label；正文白底 --c-surface） ---- */
+.settings-pane { position: relative; flex: 1; min-width: 0; overflow-y: auto; padding: 24px 20px; background: var(--c-surface); scrollbar-width: thin; scrollbar-color: var(--c-scrollbar) transparent; }
+.settings-form { max-width: 420px; margin: 0 auto; }
+.settings-section-label { font-size: 13px; font-weight: 600; color: var(--c-text-2); padding: 20px 0 12px; border-top: 1px solid var(--c-border); margin-top: 20px; }
+.settings-section-label:first-child { border-top: none; margin-top: 0; padding-top: 0; }
+
+/* ---- 字段 / 校验 / 密码显隐（iter-5 设置页基线） ---- */
+.field { margin-bottom: 16px; }
+.field label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: var(--c-text-1); }
+.field label .req { color: var(--c-danger); margin-left: 2px; }
+.field input {
+  width: 100%; height: 36px; padding: 0 12px; font-size: 16px; font-family: inherit;
+  border: 1px solid var(--c-border); border-radius: var(--r-md); outline: none;
+  color: var(--c-text-1); background: var(--c-surface);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.field input:focus { border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-focus-ring); }
+.field.invalid input { border-color: var(--c-danger); }
+.field.invalid input:focus { box-shadow: 0 0 0 3px var(--c-danger-l); }
+.hint { font-size: 12px; color: var(--c-text-3); margin-top: 4px; }
+.hint.err { color: var(--c-danger); display: none; }
+.field.invalid .hint.err { display: block; }
+.key-row { position: relative; }
+.key-row input { padding-right: 52px; }
+.key-eye { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 24px; height: 24px; border: none; border-radius: var(--r-sm); background: transparent; color: var(--c-text-3); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background .15s ease, color .15s ease; }
+.key-eye:hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+
+/* 分段控件（iter-5 外观字段基线；本稿用于设置页骨架「外观」区示意） */
+.seg-picker { display: inline-flex; border: 1px solid var(--c-border); border-radius: var(--r-md); overflow: hidden; background: var(--c-surface); }
+.seg-picker button {
+  height: 36px; padding: 0 20px; border: none; background: transparent; color: var(--c-text-2);
+  font-size: 13px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.seg-picker button.on { background: var(--c-primary-solid); color: #fff; font-weight: 600; }
+.seg-picker button:not(.on):hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+
+/* ---- 按钮（iter-5/8 基线） ---- */
+.btn-cancel { height: 32px; padding: 0 12px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-2); border-radius: var(--r-md); font-size: 13px; cursor: pointer; transition: border-color .15s ease, color .15s ease; }
+.btn-cancel:hover { border-color: var(--c-primary); color: var(--c-primary); }
+.btn-primary { height: 36px; padding: 0 20px; background: var(--c-primary-solid); color: #fff; border: none; border-radius: var(--r-md); font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s ease, transform .1s ease; }
+.btn-primary:hover { background: var(--c-primary-solid-h); }
+.btn-primary:active { background: var(--c-primary-solid-a); transform: scale(.98); }
+.btn-danger { height: 32px; padding: 0 16px; background: var(--c-danger-solid); color: #fff; border: none; border-radius: var(--r-md); font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s ease, transform .1s ease; }
+.btn-danger:hover { background: var(--c-danger-solid-h); }
+.btn-danger:active { transform: scale(.98); }
+.btn-danger:disabled { background: var(--c-disabled-bg); cursor: not-allowed; }
+.btn-danger:disabled:hover { background: var(--c-disabled-bg); }
+
+/* ---- 账号区（本稿新增：改密表单 + 注销危险区） ---- */
+.danger-zone { border: 1px solid var(--c-danger); border-radius: var(--r-md); background: var(--c-danger-l); padding: 14px 16px; }
+.danger-zone .dz-title { font-size: 13px; font-weight: 600; color: var(--c-danger); display: flex; align-items: center; gap: 6px; }
+.danger-zone .dz-desc { font-size: 12px; color: var(--c-danger); opacity: .92; line-height: 1.7; margin-top: 4px; }
+.danger-zone .dz-actions { margin-top: 12px; }
+
+/* ---- 成功横幅（改密成功反馈；subtle-bg + success 描边/标题，沿 iter-8 成功态组合） ---- */
+.ok-banner { display: flex; align-items: flex-start; gap: 8px; border-radius: var(--r-md); padding: 10px 12px; font-size: 13px; line-height: 1.7; background: var(--c-subtle-bg); border: 1px solid var(--c-success); color: var(--c-text-2); }
+.ok-banner .ob-ico { flex: none; color: var(--c-success); font-weight: 600; }
+.ok-banner .ob-title { color: var(--c-success); font-weight: 600; }
+
+/* ---- 表单级提示条（iter-6 form-banner 基线） ---- */
+.form-banner { display: flex; align-items: flex-start; gap: 8px; border-radius: var(--r-md); padding: 8px 12px; font-size: 13px; line-height: 1.6; margin-bottom: 12px; flex-wrap: wrap; }
+.form-banner .b-ico { flex: none; font-weight: 600; }
+.form-banner.warn { background: var(--c-warning-l); color: var(--c-warning); }
+.form-banner.ok { background: var(--c-subtle-bg); border: 1px solid var(--c-success); color: var(--c-text-2); }
+.form-banner.ok .b-ico { color: var(--c-success); }
+
+/* ---- 模态（components.md：遮罩 + surface 面板 + shadow-3；confirm 标题 17px / 正文 14px text-2） ---- */
+.modal-mask { position: absolute; inset: 0; background: var(--c-mask); display: flex; align-items: center; justify-content: center; z-index: 20; }
+.modal { width: 420px; max-width: calc(100% - 32px); background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: var(--shadow-3); padding: 24px; }
+.modal h3 { font-size: 17px; font-weight: 600; margin-bottom: 8px; color: var(--c-text-1); }
+.modal .m-body { font-size: 14px; color: var(--c-text-2); line-height: 1.7; }
+.modal .m-note { font-size: 12px; color: var(--c-text-3); line-height: 1.7; margin-top: 10px; }
+.modal .m-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.modal-stage { position: relative; min-height: 320px; border-radius: var(--r-md); overflow: hidden; background: var(--c-bg); border: 1px solid var(--c-border); }
+/* confirm 模态内的密码字段 label 用 13px text-2（components.md 表单模态 label 口径） */
+.modal .field label { color: var(--c-text-2); }
+.modal .field { margin-bottom: 14px; }
+.modal .field:last-of-type { margin-bottom: 0; }
+/* 生成中警告条（注销模态内；warning-l/warning 既有组合） */
+.gen-warn { display: flex; align-items: flex-start; gap: 8px; border-radius: var(--r-md); padding: 8px 12px; font-size: 12px; line-height: 1.7; background: var(--c-warning-l); color: var(--c-warning); margin-top: 12px; }
+.gen-warn .b-ico { flex: none; font-weight: 600; }
+
+/* ---- 深底 toast（tokens v1.3.1 on-dark 族；暗色加描边分层） ---- */
+.toast { display: inline-flex; align-items: center; gap: 8px; background: var(--toast-bg); border: 1px solid var(--toast-border); color: #fff; font-size: 13px; padding: 10px 16px; border-radius: var(--r-md); box-shadow: var(--shadow-2); }
+.toast .t-ok { color: var(--success-on-dark); font-weight: 600; }
+.toast .t-link { color: var(--primary-on-dark); text-decoration: underline; cursor: pointer; }
+
+/* ---- 登录页（iter-6 auth-card 基线引用，注销后落地） ---- */
+.auth-frame { position: relative; width: 100%; min-height: 470px; border-radius: var(--r-lg); border: 1px solid var(--c-border); background: var(--c-bg); overflow: hidden; }
+.auth-center { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; overflow-y: auto; }
+.auth-col { width: 340px; max-width: 100%; }
+.auth-brand { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-bottom: 16px; }
+.auth-brand .name { font-size: 17px; font-weight: 600; color: var(--c-text-1); letter-spacing: .5px; }
+.auth-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: var(--shadow-1); padding: 24px; }
+.auth-title { font-size: 17px; font-weight: 600; color: var(--c-text-1); }
+.auth-sub { font-size: 13px; color: var(--c-text-3); margin: 4px 0 16px; }
+.auth-switch { margin-top: 14px; text-align: center; font-size: 13px; color: var(--c-text-3); }
+.auth-switch a { color: var(--c-primary); font-weight: 500; cursor: pointer; }
+
+/* ---- 布局工具 ---- */
+.frame-cap { text-align: center; font-size: 12px; color: #8F959E; margin-bottom: 8px; }
+.cols { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+.cols > div { flex: 1; min-width: 380px; max-width: 560px; }
+</style>
+</head>
+<body>
+<div id="toastHost" style="position:fixed;left:50%;bottom:32px;transform:translateX(-50%);z-index:100;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none;"></div>
+<div class="page">
+
+  <h1>ai-chat · iter-9 设计稿（账号管理）</h1>
+  <div class="sub">
+    依据：<b>plans/iter-9.md</b> T0（REQ-021 账号管理原型——修改密码 + 注销账号；
+    <b>v1.4.4 硬要求：含 §7.x 走查清单</b>；4 项 T0 定夺随基线由 CEO 拍板——见第 8 节）·
+    <b>req-baseline-v3</b>（REQ-021：改密需验证旧密码、更新后除当前设备外其他设备会话失效；注销删除账号及全部云端数据、不可恢复、需输入登录密码二次确认）·
+    令牌全部来自公司 <b>design-system/tokens.md v1.3/v1.3.1</b> + <b>components.md v1.0</b>，本稿零新增 ·
+    设置页骨架/密码显隐沿 <b>design-iter-5 基线</b>引用，登录页沿 <b>design-iter-6 基线</b>引用，走查清单格式沿 <b>design-iter-8</b>
+  </div>
+  <div class="badge">状态：设计稿 iter-9（账号管理）— 已基线（2026-08-16 CEO 批准，4 项定夺全按推荐定案，tag design-iter-9）</div>
+  <div style="font-size:12px;color:#3370FF;background:#F0F4FF;border:1px solid #E5E6EB;border-radius:8px;padding:8px 12px;margin:-20px 0 28px;line-height:1.7;">
+    <b>视觉基调变更（CEO 2026-08-16 拍板）：</b>正文白底 <code>--c-surface</code>（浅 #FFFFFF / 暗 #1E2026）+ 侧栏灰底 <code>--c-bg</code>（浅 #F5F6F7 / 暗 #131417），
+    参考 DeepSeek 管理页；偏离 iter-1~8「侧栏白底 + 正文灰底」基线，T2/T3 实现时主界面 / 设置页 / 管理后台统一按此基调。
+  </div>
+
+  <!-- 演示控制 -->
+  <div class="demo-ctl">
+    <b>演示控制：</b>
+    <span class="seg">
+      <button id="btnLight" class="on">浅色</button>
+      <button id="btnDark">暗色</button>
+    </span>
+    <span class="note">一键切换下方全部可翻转样件（第 4 节锁定帧不随动）；选择写入 localStorage 刷新保持（REQ-017 机制演示）。
+    改密表单 / 注销模态均可直接交互。<b>演示数据：用户名「猫南北」；旧密码与登录密码均为 <code>mm2026</code>；新密码须 ≥8 位且含字母与数字</b>。
+    <b>样件内用户名/密码均为演示数据（铁律 5：线上凭据与密码哈希只由后端处理）</b>。</span>
+  </div>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">1</span>账号管理落位与设置页骨架（REQ-021）</h2>
+    <div class="sec-desc">
+      spec REQ-021：设置内提供账号管理——<b>修改密码</b>（需验证旧密码，更新后除当前设备外其他设备会话失效）与<b>注销账号</b>（删除账号及其全部云端数据，不可恢复，需强确认）。
+      入口落在既有<b>设置页</b>（SettingsForm 所在，iter-5 基线），不新建独立页面；账号管理作为设置页内新增的「账号」区块（定夺 ③ 推荐口径见第 8 节）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.1 设置页骨架 + 「账号」区块落位<span class="tag">settings-pane/settings-form 基线 · 账号区置于供应商档案之后、页尾</span></div>
+      <div class="stage">
+        <div class="tk app-shell" style="border-radius:var(--r-lg);border:1px solid var(--c-border);min-height:520px;">
+          <aside class="side-rail">
+            <div class="rail-brand"><svg viewBox="0 0 128 128" width="20" height="20" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg><span>喵喵</span></div>
+            <button class="btn-rail-new"><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>新建会话</button>
+            <div class="rail-list">
+              <div class="rail-item on">帮我写一封请假邮件…</div>
+              <div class="rail-item">流式请求的代码示例</div>
+              <div class="rail-item">DeepSeek 接入配置</div>
+            </div>
+            <div class="rail-ft"><span class="ft-user" title="猫南北">猫南北</span><span class="ft-sp"></span><button class="btn-rail-icon" title="登出" aria-label="登出"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 17l5-5-5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 12H9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
+          </aside>
+          <div class="settings-pane">
+          <div class="settings-form">
+            <div class="settings-section-label">外观</div>
+            <div class="seg-picker" role="radiogroup" aria-label="主题">
+              <button class="on" role="radio" aria-checked="true">浅色</button>
+              <button role="radio" aria-checked="false">暗色</button>
+            </div>
+
+            <div class="settings-section-label">供应商档案</div>
+            <div style="font-size:12px;color:var(--c-text-3);border:1px dashed var(--c-border);border-radius:var(--r-md);padding:12px;line-height:1.8;">
+              供应商档案列表沿 design-iter-5 §3 基线（卡片行 + 当前生效标记 + 添加/编辑/删除），本稿不重画。<br>
+              <span style="color:var(--c-text-2);">（此处为占位示意——账号管理延续其同层级分区结构）</span>
+            </div>
+
+            <div class="settings-section-label">账号</div>
+            <div class="field" id="skOld">
+              <label>旧密码<span class="req">*</span></label>
+              <div class="key-row">
+                <input type="password" id="skOldIn" placeholder="输入当前登录密码">
+                <button class="key-eye" data-eye="skOldIn" title="显示/隐藏密码" aria-label="显示/隐藏密码"></button>
+              </div>
+              <div class="hint err" id="skOldErr">旧密码错误</div>
+            </div>
+            <div class="field" id="skNew">
+              <label>新密码<span class="req">*</span></label>
+              <div class="key-row">
+                <input type="password" id="skNewIn" placeholder="至少 8 位，含字母与数字">
+                <button class="key-eye" data-eye="skNewIn" title="显示/隐藏密码" aria-label="显示/隐藏密码"></button>
+              </div>
+              <div class="hint">至少 8 位，需包含字母与数字；不得与旧密码相同</div>
+              <div class="hint err" id="skNewErr">新密码至少 8 位，需包含字母与数字</div>
+            </div>
+            <div class="field" id="skCf">
+              <label>确认新密码<span class="req">*</span></label>
+              <div class="key-row">
+                <input type="password" id="skCfIn" placeholder="再次输入新密码">
+                <button class="key-eye" data-eye="skCfIn" title="显示/隐藏密码" aria-label="显示/隐藏密码"></button>
+              </div>
+              <div class="hint err" id="skCfErr">两次输入的密码不一致</div>
+            </div>
+            <div id="skSuccess" style="display:none;margin-bottom:16px;"></div>
+            <button class="btn-primary" id="skSubmit" style="width:100%;">更新密码</button>
+
+            <div style="margin-top:24px;" id="skDangerWrap">
+              <div class="danger-zone">
+                <div class="dz-title">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="flex:none;"><path fill="none" stroke="currentColor" stroke-width="1.6" d="M12 3l7 2.6v5.6c0 4.4-3 8.3-7 9.8-4-1.5-7-5.4-7-9.8V5.6L12 3z"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M9.2 9.2l5.6 5.6M14.8 9.2l-5.6 5.6"/></svg>
+                  注销账号
+                </div>
+                <div class="dz-desc">将删除账号与<b>全部云端数据</b>（会话、供应商档案、密钥等），此操作<b>不可恢复</b>。</div>
+                <div class="dz-actions"><button class="btn-danger" id="skDeleteBtn">注销账号</button></div>
+              </div>
+            </div>
+          </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>落位（定夺 ③ 推荐）</b>：设置页整体承载于新外壳 <code>app-shell</code>（<b>侧栏灰 <code>--c-bg</code> + 正文白 <code>--c-surface</code></b>，CEO 基调变更），正文继续沿用 <code>settings-pane</code>（迭代 5 基线）+ <code>settings-form</code>（max-width 420px）+ <code>settings-section-label</code>（13px/600 <code>--c-text-2</code>，上缘 <code>--c-border</code> 分隔线）分区；
+        「账号」作为<b>第三个独立区块</b>置于「供应商档案」之后、设置页末尾（账号级低频操作放页尾，符合危险操作远离高频操作的通识）。<br>
+        <b>本稿新增三子项</b>：① 应用外壳侧栏（简化：新建会话 + 会话列表占位 + 底栏用户）；② 修改密码表单（3 字段 + 密码显隐 + 行内校验 + 更新按钮）；③ 注销危险区（<code>--c-danger-l</code> 底 + <code>--c-danger</code> 描边/文字 + 危险实底按钮）。
+        均为既有令牌组合，零新增令牌。账号区交互细节见第 2 / 3 节。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">2</span>修改密码（REQ-021 主流程 + 异常分支，可交互）</h2>
+    <div class="sec-desc">
+      输入旧密码 + 新密码 + 确认新密码 → 验证旧密码通过后更新密码哈希 → <b>除当前设备外的其他设备会话 token 全部失效</b>（当前设备保持登录，定夺 ①）。
+      异常：旧密码错误提示「旧密码错误」不修改；新密码不达强度 / 两次不一致 / 必填缺失 → 行内提示不提交。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.1 改密表单全状态（可交互）<span class="tag">3 字段 + 行内校验 + 旧密码错误 + 成功反馈</span></div>
+      <div class="sim-row"><b>提示：</b>正确旧密码 = <code>mm2026</code>；填错看「旧密码错误」，新密码不足 8 位 / 不含字母数字 / 两次不一致分别看对应行内错误，全部正确看成功反馈。</div>
+      <div class="stage">
+        <div class="tk app-shell" style="border-radius:var(--r-lg);border:1px solid var(--c-border);min-height:420px;">
+          <aside class="side-rail">
+            <div class="rail-brand"><svg viewBox="0 0 128 128" width="20" height="20" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg><span>喵喵</span></div>
+            <button class="btn-rail-new"><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>新建会话</button>
+            <div class="rail-list">
+              <div class="rail-item on">帮我写一封请假邮件…</div>
+              <div class="rail-item">流式请求的代码示例</div>
+              <div class="rail-item">DeepSeek 接入配置</div>
+            </div>
+            <div class="rail-ft"><span class="ft-user" title="猫南北">猫南北</span><span class="ft-sp"></span><button class="btn-rail-icon" title="登出" aria-label="登出"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 17l5-5-5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 12H9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
+          </aside>
+          <div class="settings-pane">
+          <div class="settings-form">
+            <div class="settings-section-label">账号 · 修改密码</div>
+            <div class="field" id="cpOld">
+              <label>旧密码<span class="req">*</span></label>
+              <div class="key-row">
+                <input type="password" id="cpOldIn" placeholder="输入当前登录密码" autocomplete="current-password">
+                <button class="key-eye" data-eye="cpOldIn" title="显示/隐藏密码" aria-label="显示/隐藏密码"></button>
+              </div>
+              <div class="hint err" id="cpOldErr">旧密码错误</div>
+            </div>
+            <div class="field" id="cpNew">
+              <label>新密码<span class="req">*</span></label>
+              <div class="key-row">
+                <input type="password" id="cpNewIn" placeholder="至少 8 位，含字母与数字" autocomplete="new-password">
+                <button class="key-eye" data-eye="cpNewIn" title="显示/隐藏密码" aria-label="显示/隐藏密码"></button>
+              </div>
+              <div class="hint">至少 8 位，需包含字母与数字；不得与旧密码相同</div>
+              <div class="hint err" id="cpNewErr">新密码至少 8 位，需包含字母与数字</div>
+            </div>
+            <div class="field" id="cpCf">
+              <label>确认新密码<span class="req">*</span></label>
+              <div class="key-row">
+                <input type="password" id="cpCfIn" placeholder="再次输入新密码" autocomplete="new-password">
+                <button class="key-eye" data-eye="cpCfIn" title="显示/隐藏密码" aria-label="显示/隐藏密码"></button>
+              </div>
+              <div class="hint err" id="cpCfErr">两次输入的密码不一致</div>
+            </div>
+            <div id="cpSuccess" style="display:none;margin-bottom:16px;"></div>
+            <button class="btn-primary" id="cpSubmit" style="width:100%;">更新密码</button>
+          </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>字段</b>：label 13px/500 <code>--c-text-1</code>（iter-5 设置页基线，非模态故不用 text-2）+ 输入 36px <code>--r-md</code> 16px 字号（防 iOS 缩放）、focus 主色描边 + 3px <code>--c-focus-ring</code>；
+        密码默认密文，行尾眼睛按钮显隐（24px <code>--r-sm</code>，hover <code>--c-hover-bg</code> + <code>--c-text-1</code>，<code>title/aria-label</code>）。<br>
+        <b>校验（可交互，逐项）</b>：必填缺失 → 红描边 + 行内 12px <code>--c-danger</code>「必填：请输入…」；旧密码错误 → 仅旧密码字段红描边 + 「<b>旧密码错误</b>」（spec 原文）且不修改；
+        新密码不达强度 → 「新密码至少 8 位，需包含字母与数字」；新密码与旧密码相同 → 「新密码不能与旧密码相同」；两次不一致 → 「两次输入的密码不一致」；
+        补填/改对即时消除（移除 <code>.invalid</code>）。<br>
+        <b>提交</b>：全部通过 → 更新密码哈希，其他设备 token 失效；当前设备保持登录（定夺 ① 推荐）。成功反馈见 2.2。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.2 改密成功反馈<span class="tag">深底 toast + 成功横幅 · 明示其他设备已失效</span></div>
+      <div class="stage tk" style="border-radius:var(--r-md);display:flex;flex-direction:column;gap:12px;align-items:flex-start;padding:20px;min-height:140px;background:var(--c-surface);">
+        <div class="ok-banner" style="max-width:520px;">
+          <span class="ob-ico">✓</span>
+          <span><span class="ob-title">密码已更新。</span>除当前设备外的其他设备已退出登录，需重新登录后再使用。</span>
+        </div>
+        <div class="toast"><span class="t-ok">✓ 密码已更新</span>其他设备已退出登录</div>
+      </div>
+      <div class="ann">
+        <b>成功反馈两处</b>：① 表单内成功横幅（<code>--c-subtle-bg</code> 底 + <code>--c-success</code> 描边/标题，components.md 无 success 浅底令牌，沿 iter-8 成功态组合）——
+        常驻说明「<b>除当前设备外的其他设备已退出登录</b>」（spec 主流程「其他设备会话 token 全部失效」的用户侧对应）；② 深底 toast（<code>--c-toast-bg</code>，3s）即时反馈。
+        成功后表单字段清空，可再次修改。<b>当前设备不强制重新登录</b>（定夺 ① 推荐，见第 8 节）。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">3</span>注销账号（REQ-021 主流程 + 异常分支，可交互）</h2>
+    <div class="sec-desc">
+      进入注销入口，页面明示「将删除账号与全部云端会话数据，不可恢复」→ 输入登录密码二次确认 → 删除账号/会话/供应商档案等全部云端数据，登出回到登录页。
+      异常：二次确认输入不匹配 → 取消操作，账号与数据不变；注销时存在正在生成的回复 → 终止生成后继续注销流程。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">3.1 注销入口 + 强确认模态 + 成功跳转（可交互）<span class="tag">危险实底确认 · 密码二次确认 · 生成中分支</span></div>
+      <div class="sim-row">
+        <b>演示：</b>
+        <label><input type="checkbox" id="simDelGen"> 模拟注销时有「正在生成的回复」</label>
+        <span style="color:#8F959E;">（勾选后打开注销模态看生成中警告条；正确登录密码 = <code>mm2026</code>）</span>
+      </div>
+      <div class="stage">
+        <div class="tk" id="delStage" style="position:relative;overflow:hidden;border-radius:var(--r-lg);border:1px solid var(--c-border);min-height:520px;background:var(--c-bg);">
+          <!-- 设置视图：app-shell = 侧栏灰 + 正文白 -->
+          <div id="delSettingsView" class="app-shell" style="min-height:520px;">
+            <aside class="side-rail">
+              <div class="rail-brand"><svg viewBox="0 0 128 128" width="20" height="20" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg><span>喵喵</span></div>
+              <button class="btn-rail-new"><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>新建会话</button>
+              <div class="rail-list">
+                <div class="rail-item on">帮我写一封请假邮件…</div>
+                <div class="rail-item">流式请求的代码示例</div>
+                <div class="rail-item">DeepSeek 接入配置</div>
+              </div>
+              <div class="rail-ft"><span class="ft-user" title="猫南北">猫南北</span><span class="ft-sp"></span><button class="btn-rail-icon" title="登出" aria-label="登出"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 17l5-5-5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 12H9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
+            </aside>
+            <div class="settings-pane">
+            <div class="settings-form">
+              <div class="settings-section-label">账号 · 注销账号</div>
+            <div class="danger-zone">
+              <div class="dz-title">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="flex:none;"><path fill="none" stroke="currentColor" stroke-width="1.6" d="M12 3l7 2.6v5.6c0 4.4-3 8.3-7 9.8-4-1.5-7-5.4-7-9.8V5.6L12 3z"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M9.2 9.2l5.6 5.6M14.8 9.2l-5.6 5.6"/></svg>
+                注销账号
+              </div>
+              <div class="dz-desc">将删除账号「猫南北」与<b>全部云端数据</b>（会话、供应商档案、密钥等），此操作<b>不可恢复</b>。需输入登录密码确认。</div>
+              <div class="dz-actions"><button class="btn-danger" id="delOpenBtn">注销账号</button></div>
+            </div>
+            <div style="margin-top:12px;font-size:12px;color:var(--c-text-3);line-height:1.8;">点「注销账号」打开强确认模态；取消 / Esc 关闭不改动；确认成功后本页跳登录页（见下方同帧演示）。</div>
+          </div>
+          </div>
+          </div>
+          <!-- 登录视图（注销成功后） -->
+          <div id="delLoginView" class="auth-frame" style="display:none;border:none;border-radius:0;min-height:520px;">
+            <div class="auth-center">
+              <div class="auth-col">
+                <div class="auth-brand">
+                  <svg viewBox="0 0 128 128" width="36" height="36" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+                  <span class="name">喵喵</span>
+                </div>
+                <div class="auth-card">
+                  <div class="auth-title">登录</div>
+                  <div class="auth-sub">登录后继续你的对话</div>
+                  <div class="field"><label>用户名</label><input type="text" placeholder="输入用户名"></div>
+                  <div class="field"><label>密码</label><input type="password" placeholder="输入密码"></div>
+                  <div class="auth-switch">还没有账号？<a>注册</a></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- 注销强确认模态 -->
+          <div class="modal-mask" id="delMask" style="display:none;">
+            <div class="modal">
+              <h3>注销账号？</h3>
+              <div class="m-body">将删除账号「<b style="color:var(--c-text-1);">猫南北</b>」与<b>全部云端数据</b>（会话、供应商档案、密钥等）。此操作<b>不可恢复</b>，删除后无法找回。</div>
+              <div class="gen-warn" id="delGenWarn" style="display:none;">
+                <span class="b-ico">!</span><span>当前有正在生成的回复，注销前将<b>自动终止生成</b>，随后继续注销流程。</span>
+              </div>
+              <div class="field" style="margin-top:16px;">
+                <label>输入登录密码确认<span class="req">*</span></label>
+                <div class="key-row">
+                  <input type="password" id="delPwdIn" placeholder="输入当前登录密码" autocomplete="current-password">
+                  <button class="key-eye" data-eye="delPwdIn" title="显示/隐藏密码" aria-label="显示/隐藏密码"></button>
+                </div>
+                <div class="hint err" id="delPwdErr">密码不正确，账号与数据未发生任何变更</div>
+              </div>
+              <div class="m-actions">
+                <button class="btn-cancel" id="delCancelBtn">取消</button>
+                <button class="btn-danger" id="delConfirmBtn" disabled>永久注销账号</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <a class="lnk-reset" id="delReset">↺ 重置本演示（回到设置视图）</a>
+      </div>
+      <div class="ann">
+        <b>入口</b>：注销危险区（<code>--c-danger-l</code> 底 + <code>--c-danger</code> 描边/文字）明示「<b>将删除账号与全部云端数据，不可恢复</b>」（spec 原文入文案）+ 危险实底「注销账号」按钮。<br>
+        <b>强确认模态（components.md「模态确认」）</b>：标题 17px/600 <code>--c-text-1</code>、正文 14px <code>--c-text-2</code> 再次明示删除范围与不可恢复、动作右对齐；
+        <b>二次确认 = 输入登录密码</b>（label 13px <code>--c-text-2</code> + 输入 36px <code>--r-md</code> + 密码显隐）；确认按钮 <code>--c-danger-solid</code> 实底白字（4.8:1），
+        <b>密码为空 disabled</b>（<code>--c-disabled-bg</code>）。<br>
+        <b>二次确认不匹配</b>：行内 12px <code>--c-danger</code>「密码不正确，账号与数据未发生任何变更」，<b>不执行删除</b>；取消 / Esc 关闭不改动（spec 异常分支）。<br>
+        <b>生成中分支</b>：勾选「模拟生成中」后模态内多一条警告条（<code>--c-warning-l/-warning</code>）「<b>当前有正在生成的回复，注销前将自动终止生成</b>」——
+        「终止生成」为自动执行、不打断用户取消，随后进入密码确认（spec 异常分支「终止生成后继续注销流程」）。<br>
+        <b>成功</b>：删除账号/会话/供应商档案等全部云端数据 → 登出 → 跳登录页 + 「账号已删除」提示（本样件同帧演示，见 3.2）。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">3.2 注销成功 → 跳登录页 + 「账号已删除」提示（定夺 ④ 推荐）<span class="tag">登出回登录页 · 深底成功绿 toast</span></div>
+      <div class="stage">
+        <div class="tk auth-frame" style="min-height:340px;">
+          <div class="auth-center">
+            <div class="auth-col">
+              <div class="auth-brand">
+                <svg viewBox="0 0 128 128" width="36" height="36" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+                <span class="name">喵喵</span>
+              </div>
+              <div class="auth-card">
+                <div class="auth-title">登录</div>
+                <div class="auth-sub">登录后继续你的对话</div>
+                <div class="field"><label>用户名</label><input type="text" placeholder="输入用户名"></div>
+                <div class="field"><label>密码</label><input type="password" placeholder="输入密码"></div>
+                <div class="auth-switch">还没有账号？<a>注册</a></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>跳转</b>：注销成功 → 清除本地会话与凭据 → 跳登录页 <code>/login</code>（登录页沿 design-iter-6 auth-card 基线，空表单）。<br>
+        <b>「账号已删除」提示</b>：深底 toast（<code>--toast-bg</code> + <code>--success-on-dark #4CC38A</code>「✓ 账号已删除，再见」，3s）——
+        终态轻量反馈，不阻塞登录页；<b>不用琥珀 warning</b>（那是封禁等异常态的语义，注销是用户自主的正常终态）。详见 3.1 同帧演示（填对 <code>mm2026</code> 确认）。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">4</span>亮暗锁定对照（双帧并置，走查方法 = 找亮色残留）</h2>
+    <div class="sec-desc">改密表单 + 注销危险区一屏、注销强确认模态一屏：同一 DOM，仅根节点令牌覆盖；暗色帧内任何肉眼发白块即为漏改裸色值。</div>
+    <div class="spec">
+      <div class="spec-title">4.1 改密表单 + 注销危险区（浅 ↔ 暗）</div>
+      <div class="cols">
+        <div>
+          <div class="frame-cap">浅色（tokens v1.3 浅色值：侧栏灰 #F5F6F7 + 正文白 #FFFFFF）</div>
+          <div class="tk force-light app-shell" style="border-radius:var(--r-lg);border:1px solid var(--c-border);min-height:420px;" id="lockCPL"></div>
+        </div>
+        <div>
+          <div class="frame-cap">暗色（tokens v1.3 暗色值：侧栏灰 #131417 + 正文白 #1E2026，同一 DOM 仅变量覆盖）</div>
+          <div class="tk force-dark app-shell" style="border-radius:var(--r-lg);border:1px solid var(--c-border);min-height:420px;" id="lockCPD"></div>
+        </div>
+      </div>
+      <div class="ann">基调：<b>侧栏灰 <code>--c-bg</code>（浅 #F5F6F7 / 暗 #131417）+ 正文白 <code>--c-surface</code>（浅 #FFFFFF / 暗 #1E2026）</b>。暗色其余取值全为 tokens v1.3 既有值：
+      表面 <code>#1E2026</code> / 描边 <code>#33363E</code> / 正文 <code>#E6EAF0</code> / 次级 <code>#A2A9B6</code> /
+      危险区底 <code>#361B18</code> + 危险前景 <code>#FF8073</code>（6.5:1）/ 实底主按钮 <code>#3370FF</code> 白字（4.3:1）/ 实底危险 <code>#D93025</code> 白字（4.8:1）。</div>
+    </div>
+    <div class="spec">
+      <div class="spec-title">4.2 注销强确认模态（浅 ↔ 暗）</div>
+      <div class="cols">
+        <div>
+          <div class="frame-cap">浅色</div>
+          <div class="tk force-light modal-stage" style="min-height:0;height:360px;" id="lockML"></div>
+        </div>
+        <div>
+          <div class="frame-cap">暗色（遮罩 <code>rgba(0,0,0,.55)</code> / 面板 <code>#1E2026</code> / 危险实底 <code>#D93025</code> 不变）</div>
+          <div class="tk force-dark modal-stage" style="min-height:0;height:360px;" id="lockMD"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">5</span>适用性说明（不适用项注明，v1.4.4 口径）</h2>
+    <div class="spec">
+      <table>
+        <tr><th>项</th><th>结论</th><th>依据</th></tr>
+        <tr><td>移动端 ≤480px 适配</td><td><b>不适用</b>：设置页维持桌面优先，不做窄屏断点</td><td>spec 兼容条款（CEO 定 2026-08-15，随 design-iter-6 基线批准）：仅登录/注册两页承诺 ≤480px</td></tr>
+        <tr><td>密码强度计 / 复杂度实时指示条</td><td><b>不做</b>：用行内文案提示「至少 8 位，含字母与数字」，满足 spec「不达强度提示不提交」最小口径</td><td>components.md 无强度计模式；不新增组件</td></tr>
+        <tr><td>注销冷却期 / 导出数据 / 封禁注销兜底</td><td><b>不在范围</b>：spec REQ-021 未含；如需另立项</td><td>spec 最小口径</td></tr>
+        <tr><td>样件凭据</td><td>本稿用户名「猫南北」、密码 <code>mm2026</code> 均为<b>演示数据</b>；线上旧密码校验 / 密码哈希更新 / 会话 token 失效 / 账号数据删除全部由后端处理，前端不落地明文凭据</td><td>铁律 5「度量数据只允许机器采集」+ REQ-021 数据口径</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">6</span>令牌与组件使用说明</h2>
+    <div class="sec-desc">本稿零新增令牌；账号管理为既有令牌与设置页表单 / 模态确认 / 提示条语法的组合。</div>
+    <table>
+      <tr><th>项</th><th>结论</th></tr>
+      <tr>
+        <td>色值</td>
+        <td>全部取自 tokens.md v1.3/v1.3.1（浅色 + 暗色 + 前景/实底拆分族 + on-dark 族），本稿零新增、零裸色值（文档外壳沿惯例用浅色原值；产品组件一律 <code>var()</code> 引用语义令牌，含阴影/焦点环/遮罩/深底 toast）。无需 design-system 令牌变更。</td>
+      </tr>
+      <tr>
+        <td>组件模式</td>
+        <td>设置页分区 / 表单字段 / 密码显隐 / 分段控件 / 模态确认（危险实底）/ 表单级横幅 = components.md v1.0 + design-iter-5/6 既有模式；登录页 = design-iter-6 基线引用；走查清单格式 = design-iter-8。<br>
+        <b>基调变更（CEO 2026-08-16 拍板）</b>：应用外壳反转为「<b>侧栏灰 <code>--c-bg</code> + 正文白 <code>--c-surface</code></b>」（原 iter-1~8 为「侧栏白 + 正文灰」），令牌值不变、仅换「哪里用哪个令牌」；新增 <code>app-shell + side-rail</code> 外壳组件承载此布局。<br>
+        <b>新增形态三项</b>（纯既有令牌组合，建议随本基线批准后补登记 components.md——资产沉淀，不涉令牌批准，沿 iter-7 KeyModeCard / iter-8 数据表格惯例）：
+        ① <b>注销危险区</b>（danger-l 底 + danger 描边/文字 + 危险实底按钮）；② <b>成功横幅</b>（subtle-bg 底 + success 描边/标题，改密成功反馈）；③ <b>应用外壳（app-shell + side-rail）</b>（侧栏灰底 + 正文白底，DeepSeek 管理页式分层）。</td>
+      </tr>
+      <tr>
+        <td>success 浅底令牌</td>
+        <td>components.md 无 success 浅底令牌（tokens 仅 <code>--c-success</code> 前景）。改密成功横幅沿用 iter-8 同款组合：<b>subtle-bg 底 + success 描边/标题</b>（两模式对比度均 AA）。<b>本稿不提</b>新增 <code>--c-success-l</code>（保持零令牌变更）。</td>
+      </tr>
+      <tr>
+        <td>字号/间距/圆角/阴影/动效</td>
+        <td>全部在 tokens 既定值域内（正文 14px、辅助 12/13px、模态标题 17px、分区 label 13px、输入 36px、按钮 32/36px 阶梯、间距 8 基准栅格、圆角 r-sm/r-md/r-lg、阴影 shadow-1/2/3、过渡 .15s ease、按压 scale .98）。</td>
+      </tr>
+    </table>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">7</span>T0 验收对照 + 走查清单（v1.4.4 硬要求）</h2>
+    <div class="sec-desc">上半表对照 plans/iter-9.md T0 验收标准逐条落点；下半表为本稿全部触点与状态组合的走查清单——T2/T3 实现时对照逐条自查留档（development.md），QA 审计取证。<b>本清单所有条目均须在浅色与暗色两个主题下逐条通过</b>（暗色色值见各条目与 §4 双帧）。</div>
+
+    <div class="spec">
+      <div class="spec-title">7.1 T0 验收标准对照（plans/iter-9.md 原文）</div>
+      <table>
+        <tr><th>T0 验收标准（原文）</th><th>本稿落点</th><th>状态</th></tr>
+        <tr><td>设计稿经 CEO 批准并打 design-iter-9 tag</td><td>已批准（CEO 2026-08-16，tag design-iter-9）</td><td>☑ 已批准</td></tr>
+        <tr><td>含 §7.x 走查清单（v1.4.4 硬要求）</td><td>7.2（23 条，含亮暗双态、基调变更、引用基线条目与不适用注明）</td><td>☑ 已覆盖</td></tr>
+        <tr><td>T0 定夺项 4 项随设计基线由 CEO 拍板（① 改密后当前设备是否强制重登 ② 注销二次确认形态与文案 ③ 账号区呈现口径 ④ 注销后跳转与提示形态）</td><td>第 8 节定夺区块——4 项已定案（CEO 2026-08-16 全按推荐方案）</td><td>☑ 已定案</td></tr>
+      </table>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">7.2 走查清单（design-iter-9）</div>
+      <table>
+        <tr><th style="width:40px">序号</th><th>需求</th><th>触点</th><th>状态组合</th><th>期望表现（= 验收口径；浅 = tokens 浅值 / 暗 = tokens 暗值）</th><th>样件</th></tr>
+        <tr><td>1</td><td>REQ-021</td><td>设置页</td><td>「账号」区块落位</td><td>正文内容区 --c-surface 白底（#FFFFFF / #1E2026）；settings-section-label「账号」置于「供应商档案」后、页尾；13px/600 text-2（#646A73 / #A2A9B6）+ 上缘 --c-border 分隔线（#E5E6EB / #33363E）</td><td>1.1</td></tr>
+        <tr><td>2</td><td>REQ-021</td><td>改密表单</td><td>旧密码字段（默认/聚焦）</td><td>label 13px/500 text-1；输入 36px r-md 16px 字号；focus 主色描边（#3370FF / #5C8DFF）+ 3px 焦点环（rgba(51,112,255,.12) / rgba(92,141,255,.25)）</td><td>1.1/2.1</td></tr>
+        <tr><td>3</td><td>REQ-021</td><td>改密表单</td><td>旧密码错误</td><td>仅旧密码字段红描边（#D93025 / #FF8073）+ 行内 12px 错误「旧密码错误」；不提交、不修改；改对即时消除</td><td>2.1（可交互）</td></tr>
+        <tr><td>4</td><td>REQ-021</td><td>改密表单</td><td>新密码不达强度</td><td>行内 12px danger「新密码至少 8 位，需包含字母与数字」；不提交</td><td>2.1（可交互）</td></tr>
+        <tr><td>5</td><td>REQ-021</td><td>改密表单</td><td>新密码=旧密码</td><td>行内 12px danger「新密码不能与旧密码相同」；不提交</td><td>2.1（可交互）</td></tr>
+        <tr><td>6</td><td>REQ-021</td><td>改密表单</td><td>两次不一致</td><td>确认字段红描边 + 行内 12px danger「两次输入的密码不一致」；不提交</td><td>2.1（可交互）</td></tr>
+        <tr><td>7</td><td>REQ-021</td><td>改密表单</td><td>必填缺失</td><td>空必填项红描边 + 行内「必填：请输入…」；不入库（components.md「必填缺失不入库」）</td><td>2.1（可交互）</td></tr>
+        <tr><td>8</td><td>REQ-021</td><td>改密表单</td><td>密码显隐</td><td>行尾眼睛按钮 24px r-sm，默认 text-3，hover --c-hover-bg + text-1；title/aria-label「显示/隐藏密码」；切换 input type</td><td>2.1（可交互）</td></tr>
+        <tr><td>9</td><td>REQ-021</td><td>改密表单</td><td>提交按钮</td><td>更新密码 36px primary-solid 白字（#3370FF 4.3:1 两模式一致）；hover primary-solid-h（#2E5FDF / #4C84FF）；active primary-solid-a + scale .98</td><td>2.1（可交互）</td></tr>
+        <tr><td>10</td><td>REQ-021</td><td>改密成功</td><td>反馈</td><td>成功横幅（subtle-bg #FAFBFC/#24272E 底 + success #1A9E5C/#4CC38A 描边与标题）「密码已更新，除当前设备外其他设备已退出登录」+ 深底 toast（#23272E/#2A2D34 + success-on-dark #4CC38A）+ 表单清空</td><td>2.2/2.1</td></tr>
+        <tr><td>11</td><td>REQ-021</td><td>注销入口</td><td>危险区</td><td>danger-l 底（#FDECEA / #361B18）+ danger 描边/文字（#D93025 / #FF8073）；明示「删除账号与全部云端数据，不可恢复」+ 危险实底「注销账号」按钮</td><td>1.1/3.1</td></tr>
+        <tr><td>12</td><td>REQ-021</td><td>注销模态</td><td>标题/正文</td><td>标题 17px/600 text-1「注销账号？」；正文 14px text-2（#646A73 / #A2A9B6）明示删除范围与不可恢复；动作右对齐</td><td>3.1（可交互）</td></tr>
+        <tr><td>13</td><td>REQ-021</td><td>注销模态</td><td>密码二次确认</td><td>label 13px text-2 + 输入 36px r-md；focus 主色描边 + 3px 焦点环；默认密文 + 眼睛显隐</td><td>3.1（可交互）</td></tr>
+        <tr><td>14</td><td>REQ-021</td><td>注销模态</td><td>永久注销按钮</td><td>危险实底 --c-danger-solid（#D93025 两模式一致）白字 4.8:1；密码为空 disabled（--c-disabled-bg #C9CFDB/#3D414A）；hover danger-solid-h（#B7251C）</td><td>3.1（可交互）</td></tr>
+        <tr><td>15</td><td>REQ-021</td><td>注销模态</td><td>二次确认不匹配</td><td>行内 12px danger「密码不正确，账号与数据未发生任何变更」；不执行删除；取消/Esc 关闭不改动</td><td>3.1（可交互）</td></tr>
+        <tr><td>16</td><td>REQ-021</td><td>注销模态</td><td>生成中分支</td><td>警告条（warning-l #FFF7E8/#38290F + warning #B45309/#EDA23B）「当前有正在生成的回复，注销前将自动终止生成」；终止自动执行、不打断取消</td><td>3.1（可交互）</td></tr>
+        <tr><td>17</td><td>REQ-021</td><td>注销成功</td><td>跳登录页 + 提示</td><td>清除本地会话/凭据 → 跳 /login（auth-card 空表单）+ 深底 toast「✓ 账号已删除，再见」（success-on-dark #4CC38A）；不用琥珀 warning</td><td>3.1/3.2（可交互）</td></tr>
+        <tr><td>18</td><td>REQ-021</td><td>模态</td><td>遮罩/面板/阴影</td><td>遮罩 --c-mask（rgba(31,35,41,.4) / rgba(0,0,0,.55)）；面板 surface + r-lg + shadow-3（暗色加深）</td><td>3.1/4.2</td></tr>
+        <tr><td>19</td><td>REQ-017</td><td>全局</td><td>亮暗双态</td><td>第 4 节锁定双帧对照，暗色无亮色残留；<b>基调：侧栏灰 --c-bg（#F5F6F7 / #131417）+ 正文白 --c-surface（#FFFFFF / #1E2026）</b>；正文/说明对比度 ≥4.5:1（tokens v1.3 计算值：正文 13.5:1、次级 6.9:1、弱化 4.6:1、危险前景 6.7:1）</td><td>4</td></tr>
+        <tr><td>20</td><td>REQ-017</td><td>全局</td><td>主题持久化</td><td>刷新后主题保持（localStorage）；切换 .15s 过渡全界面生效</td><td>演示控制</td></tr>
+        <tr><td>21</td><td>铁律5</td><td>样件数据</td><td>全局</td><td>用户名「猫南北」/密码 mm2026 均为演示数据；线上旧密码校验、哈希更新、token 失效、账号删除全部由后端处理，前端不落地明文</td><td>§5 注</td></tr>
+        <tr><td>22</td><td>适用性</td><td>移动端 / 强度计 / 冷却期</td><td>不适用注明</td><td>移动端仅登录/注册承诺 ≤480px；密码强度用行内文案不做指示条；注销冷却期/导出不在范围</td><td>5</td></tr>
+        <tr><td>23</td><td>基调变更</td><td>全局布局</td><td>应用外壳</td><td>app-shell = 侧栏 .side-rail 灰底 --c-bg（#F5F6F7 / #131417）+ 正文 .settings-pane 白底 --c-surface（#FFFFFF / #1E2026）；侧栏宽 232px + 右缘 --c-border 分隔；「新建会话」primary-solid、会话列表项 hover --c-hover-bg / 选中 --c-primary-l（#F0F4FF/#1D2740 + #3370FF/#7AA4FF）</td><td>1.1/3.1/4.1</td></tr>
+      </table>
+      <div class="ann">共 <b>23</b> 条。「可交互」样件在本页可直接操作复核；「引用」条目按 design-iter-5/6/8 基线走查；
+      行为类（token 失效 / 账号删除）由 T1/T2/T3 自动化用例或手工走查取证。v1.4.4 口径：T2/T3 实现对照本清单逐条自查后再提交，留档供 QA 审计（iter-9.md 任务表验收标准明列「design-iter-9 走查清单留档」）。<b>所有条目须在浅色与暗色双主题下各过一遍</b>。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">8</span>CEO 定夺（4 项，已定案 2026-08-16）</h2>
+    <div class="sec-desc">沿 iter-1~8 固化模式：设计师给推荐方案与理由 → CEO 拍板 → 固化为决策记录，T1/T2/T3 按定案实现。<b>4 项已由 CEO 拍板定案（2026-08-16，全按推荐方案）。</b></div>
+
+    <div class="spec" style="border-color:#B45309;background:#FFF7E8;">
+      <div class="spec-title" style="color:#1F2329;">定夺区块（已定案 · CEO 批准 2026-08-16，全按推荐方案）</div>
+      <div class="ann" style="color:#646A73;">
+        <b>① 改密成功后当前设备是否强制重新登录</b>——推荐：<b>当前设备保持登录</b>，仅其他设备 token 失效（贴合 spec 主流程默认「除当前设备外其他设备失效」）；<br>
+        <b>② 注销二次确认的形态与文案</b>——推荐：<b>强确认模态 + 输入登录密码</b>，危险实底按钮「永久注销账号」，文案「将删除账号与全部云端数据，不可恢复」；<br>
+        <b>③ 账号区在设置页的呈现口径</b>——推荐：<b>独立「账号」区块</b>（settings-section-label 分隔，置供应商档案后页尾），不引入页签；<br>
+        <b>④ 注销后跳转与「账号已删除」提示</b>——推荐：注销成功 → 跳登录页 <code>/login</code> + 深底成功绿 toast「✓ 账号已删除，再见」。
+      </div>
+    </div>
+
+    <table>
+      <tr><th style="width:56px">编号</th><th>问题（iter-9.md T0 原文）</th><th>推荐方案（本稿样件已按此落形）</th><th>理由 / 备选（未采纳留档）</th></tr>
+      <tr>
+        <td>①</td>
+        <td>改密成功后当前设备是否强制重新登录（spec 主流程默认「除当前外其他设备失效」→ 当前设备保持登录；需确认）</td>
+        <td><b>当前设备保持登录，不强制重登</b>：更新密码哈希后，除当前设备外的其他设备会话 token 全部失效（需重新登录）；当前设备会话不受影响，改密成功后仅提示「其他设备已退出登录」。</td>
+        <td>与 spec 主流程字面一致（「除当前设备外的其他设备会话 token 全部失效」）；改密是安全操作但高频，强制重登体验重且无安全增益（当前设备已通过旧密码验证，可信）。<br>备选（未采纳）：全部设备强制重登（更保守但违反 spec 字面、体验重）。</td>
+      </tr>
+      <tr>
+        <td>②</td>
+        <td>注销二次确认的形态与文案（输入密码二次确认的具体措辞与层级）</td>
+        <td><b>强确认模态 + 输入登录密码</b>：模态标题「注销账号？」，正文「将删除账号与全部云端数据（会话、供应商档案、密钥等）。此操作不可恢复，删除后无法找回。」，密码字段 label「输入登录密码确认」，确认按钮危险实底「<b>永久注销账号</b>」；密码为空 disabled。</td>
+        <td>spec 明确「输入登录密码二次确认」；删除不可恢复需最强确认——密码输入是账号体系内最重的确认（优于 checkbox / 输入 DELETE 文案，无额外 UI 模式）；「永久」强调不可逆。<br>备选（未采纳）：checkbox 确认（太弱，配不上不可恢复）；输入「DELETE」文本（英文词对中文用户不友好）。</td>
+      </tr>
+      <tr>
+        <td>③</td>
+        <td>账号区在设置页的呈现口径（独立「账号」区块 vs 页签 vs 列表项）</td>
+        <td><b>独立「账号」区块</b>：延续既有设置页分区结构（settings-section-label），作为「外观」「供应商档案」之后的第三个区块，置于页尾；内含修改密码表单 + 注销危险区两个子区。</td>
+        <td>账号管理低频，分区即可满足发现性与信息架构；零新增信息架构，最小改动延续 iter-5 设置页基线。<br>备选（未采纳）：设置页顶部页签（重构整个设置页信息架构，超最小口径，且账号仅两项内容不足以撑起一个页签）；独立「账号」路由页面（spec 明确「设置内」，且拆分过多跳）。</td>
+      </tr>
+      <tr>
+        <td>④</td>
+        <td>注销后跳转与「账号已删除」提示的具体形态</td>
+        <td><b>跳登录页 + 深底成功绿 toast</b>：注销成功 → 清除本地会话/凭据 → 跳 <code>/login</code>（空表单）；登录页顶部深底 toast「✓ 账号已删除，再见」（<code>--success-on-dark #4CC38A</code>，3s）。</td>
+        <td>登出/账号终结是用户自主的正常终态，用轻量 toast 即可、不阻塞登录页；成功绿（success-on-dark）区分于封禁等异常态的琥珀 warning；清除本地数据防止残留。<br>备选（未采纳）：登录页常驻成功横幅（重，账号已删无后续操作）；弹窗（阻断登录流程）。</td>
+      </tr>
+    </table>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">9</span>基线声明（已基线）</h2>
+    <div class="sec-desc">
+      本稿为 <b>design-iter-9 已基线</b>（2026-08-16 CEO 批准，tag design-iter-9；4 项定夺全按推荐方案定案）：账号管理（REQ-021：修改密码表单与成功反馈 + 注销危险区与强确认模态 + 生成中分支 + 注销后跳登录页）+
+      §7.x 走查清单（23 条，v1.4.4），对应 iter-9.md T0 全部交付点；视觉基调变更（正文白底 + 侧栏灰底）同步定案。
+      全部色值取自公司 design-system tokens.md v1.3/v1.3.1，零新增令牌；设置页骨架/密码显隐沿 iter-5 基线，登录页沿 iter-6 基线，走查清单格式沿 iter-8。
+      <b>评审通过后由 CEO 批准并打 design-iter-9 tag，T1/T2/T3 按定案开发、对照 7.2 清单逐条自查留档。</b>
+      设计师不 commit、不打 tag、不改 spec/RTM。
+    </div>
+  </section>
+
+</div>
+
+<script>
+/* ============================================================
+   演示交互（文档功能件）：主题切换 / toast / 改密状态机 / 注销状态机
+   —— 样件数据均为演示数据（铁律 5：线上凭据只由后端处理）
+   ============================================================ */
+(function () {
+  var KEY = 'mm-demo-theme';
+  var flippables = document.querySelectorAll('.tk:not(.force-light):not(.force-dark)');
+  var btnLight = document.getElementById('btnLight');
+  var btnDark = document.getElementById('btnDark');
+
+  function applyTheme(t) {
+    flippables.forEach(function (f) { f.classList.toggle('dark', t === 'dark'); });
+    document.documentElement.classList.toggle('mm-dark', t === 'dark');
+    btnLight.classList.toggle('on', t === 'light');
+    btnDark.classList.toggle('on', t === 'dark');
+    try { localStorage.setItem(KEY, t); } catch (e) {}
+  }
+  var saved = 'light';
+  try { saved = localStorage.getItem(KEY) || 'light'; } catch (e) {}
+  applyTheme(saved);
+  btnLight.addEventListener('click', function () { applyTheme('light'); });
+  btnDark.addEventListener('click', function () { applyTheme('dark'); });
+
+  function q(id) { return document.getElementById(id); }
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
+
+  function toast(html) {
+    var host = document.getElementById('toastHost');
+    var el = document.createElement('div');
+    el.className = 'toast';
+    el.innerHTML = html;
+    host.appendChild(el);
+    setTimeout(function () { if (el.parentNode) host.removeChild(el); }, 3200);
+  }
+
+  /* ---- 密码显隐 ---- */
+  var EYE_SVG = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M1.5 8S3.8 3.5 8 3.5 14.5 8 14.5 8 12.2 12.5 8 12.5 1.5 8 1.5 8z" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.2"/></svg>';
+  var EYE_OFF_SVG = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 2l12 12" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M6.5 6.6a2 2 0 0 0 2.9 2.9M4 4.5C2.6 5.5 1.5 8 1.5 8s2.3 4.5 6.5 4.5c1.4 0 2.6-.4 3.5-1M14.5 8s-1.1 2.2-3 3.4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>';
+  document.querySelectorAll('.key-eye[data-eye]').forEach(function (btn) {
+    btn.innerHTML = EYE_SVG;
+    btn.addEventListener('click', function () {
+      var input = q(btn.getAttribute('data-eye'));
+      var show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.innerHTML = show ? EYE_OFF_SVG : EYE_SVG;
+      btn.setAttribute('title', show ? '隐藏密码' : '显示密码');
+      btn.setAttribute('aria-label', show ? '隐藏密码' : '显示密码');
+    });
+  });
+
+  /* ---- 演示数据 ---- */
+  var DEMO_PWD = 'mm2026'; // 演示用正确旧密码 / 登录密码
+
+  function pwdStrong(s) {
+    return s.length >= 8 && /[a-zA-Z]/.test(s) && /\d/.test(s);
+  }
+
+  function setInvalid(fieldId, errId, msg) {
+    q(fieldId).classList.add('invalid');
+    if (errId) q(errId).textContent = msg;
+  }
+  function clearInvalid(fieldId) { q(fieldId).classList.remove('invalid'); }
+  function bindLiveClear(inputId, fieldId) {
+    q(inputId).addEventListener('input', function () {
+      if (this.value.trim() !== '') clearInvalid(fieldId);
+      else clearInvalid(fieldId); // 空白时也清除，等下次提交再判
+    });
+  }
+
+  function successBanner() {
+    return '<div class="ok-banner"><span class="ob-ico">✓</span><span><span class="ob-title">密码已更新。</span>除当前设备外的其他设备已退出登录，需重新登录后再使用。</span></div>';
+  }
+
+  /* ---- A. 第 1 节骨架的改密（简化：仅演示校验，复用 2.1 逻辑的字段） ---- */
+  function bindPwdForm(prefix) {
+    var oldIn = q(prefix + 'OldIn'), newIn = q(prefix + 'NewIn'), cfIn = q(prefix + 'CfIn');
+    var oldF = prefix + 'Old', newF = prefix + 'New', cfF = prefix + 'Cf';
+    var oldErr = q(prefix + 'OldErr'), newErr = q(prefix + 'NewErr'), cfErr = q(prefix + 'CfErr');
+    var submit = q(prefix + 'Submit');
+    var successWrap = q(prefix + 'Success');
+    bindLiveClear(prefix + 'OldIn', oldF);
+    bindLiveClear(prefix + 'NewIn', newF);
+    bindLiveClear(prefix + 'CfIn', cfF);
+    submit.addEventListener('click', function () {
+      clearInvalid(oldF); clearInvalid(newF); clearInvalid(cfF);
+      if (successWrap) successWrap.style.display = 'none';
+      var o = oldIn.value.trim(), n = newIn.value.trim(), c = cfIn.value.trim();
+      var hasErr = false;
+      if (!o) { setInvalid(oldF, null, ''); oldErr.textContent = '必填：请输入旧密码'; hasErr = true; }
+      if (!n) { setInvalid(newF, null, ''); newErr.textContent = '必填：请输入新密码'; hasErr = true; }
+      if (!c) { setInvalid(cfF, null, ''); cfErr.textContent = '必填：请再次输入新密码'; hasErr = true; }
+      if (hasErr) return;
+      if (o !== DEMO_PWD) { setInvalid(oldF, null, ''); oldErr.textContent = '旧密码错误'; return; }
+      if (!pwdStrong(n)) { setInvalid(newF, null, ''); newErr.textContent = '新密码至少 8 位，需包含字母与数字'; return; }
+      if (n === o) { setInvalid(newF, null, ''); newErr.textContent = '新密码不能与旧密码相同'; return; }
+      if (n !== c) { setInvalid(cfF, null, ''); cfErr.textContent = '两次输入的密码不一致'; return; }
+      // 成功
+      if (successWrap) { successWrap.innerHTML = successBanner(); successWrap.style.display = 'block'; }
+      oldIn.value = ''; newIn.value = ''; cfIn.value = '';
+      toast('<span class="t-ok">✓ 密码已更新</span>其他设备已退出登录');
+    });
+  }
+  bindPwdForm('cp');
+  bindPwdForm('sk');
+
+  /* ---- B. 第 1 节骨架的注销按钮（联动 3.1 演示） ---- */
+  var skDeleteBtn = q('skDeleteBtn');
+  if (skDeleteBtn) skDeleteBtn.addEventListener('click', openDelete);
+
+  /* ---- C. 注销状态机 ---- */
+  function openDelete() {
+    q('delMask').style.display = 'flex';
+    q('delPwdIn').value = '';
+    q('delPwdErr').textContent = '密码不正确，账号与数据未发生任何变更';
+    q('delConfirmBtn').disabled = true;
+    q('delPwdIn').parentElement.parentElement.classList.remove('invalid');
+    q('delGenWarn').style.display = q('simDelGen').checked ? 'flex' : 'none';
+  }
+  function closeDelete() {
+    q('delMask').style.display = 'none';
+  }
+  q('delOpenBtn').addEventListener('click', openDelete);
+  q('delCancelBtn').addEventListener('click', closeDelete);
+  q('delMask').addEventListener('click', function (e) { if (e.target === this) closeDelete(); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && q('delMask').style.display === 'flex') closeDelete();
+  });
+
+  q('delPwdIn').addEventListener('input', function () {
+    q('delConfirmBtn').disabled = this.value.trim() === '';
+    q('delPwdIn').parentElement.parentElement.classList.remove('invalid');
+  });
+
+  q('delConfirmBtn').addEventListener('click', function () {
+    var v = q('delPwdIn').value.trim();
+    if (v !== DEMO_PWD) {
+      q('delPwdIn').parentElement.parentElement.classList.add('invalid');
+      return;
+    }
+    // 成功：关模态 → 跳登录页 + toast
+    closeDelete();
+    q('delSettingsView').style.display = 'none';
+    q('delLoginView').style.display = 'block';
+    toast('<span class="t-ok">✓ 账号已删除</span>再见');
+  });
+
+  q('delReset').addEventListener('click', function () {
+    q('delSettingsView').style.display = '';
+    q('delLoginView').style.display = 'none';
+    closeDelete();
+  });
+
+  /* ---- D. 锁定双帧（§4）渲染 ---- */
+  function railHtml() {
+    return '<aside class="side-rail">' +
+      '<div class="rail-brand"><svg viewBox="0 0 128 128" width="20" height="20" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg><span>喵喵</span></div>' +
+      '<button class="btn-rail-new"><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>新建会话</button>' +
+      '<div class="rail-list">' +
+      '<div class="rail-item on">帮我写一封请假邮件…</div>' +
+      '<div class="rail-item">流式请求的代码示例</div>' +
+      '<div class="rail-item">DeepSeek 接入配置</div>' +
+      '</div>' +
+      '<div class="rail-ft"><span class="ft-user" title="猫南北">猫南北</span><span class="ft-sp"></span><button class="btn-rail-icon" title="登出" aria-label="登出"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 17l5-5-5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 12H9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>' +
+      '</aside>';
+  }
+  function lockPwdHtml(disabledEye) {
+    var eyeBtn = '<button class="key-eye" title="显示/隐藏密码" aria-label="显示/隐藏密码">' + EYE_SVG + '</button>';
+    return railHtml() + '<div class="settings-pane"><div class="settings-form">' +
+      '<div class="settings-section-label">账号 · 修改密码</div>' +
+      '<div class="field"><label>旧密码<span class="req">*</span></label><div class="key-row"><input type="password" value="mm2026">' + eyeBtn + '</div></div>' +
+      '<div class="field"><label>新密码<span class="req">*</span></label><div class="key-row"><input type="password" placeholder="至少 8 位，含字母与数字">' + eyeBtn + '</div><div class="hint">至少 8 位，需包含字母与数字；不得与旧密码相同</div></div>' +
+      '<div class="field"><label>确认新密码<span class="req">*</span></label><div class="key-row"><input type="password" placeholder="再次输入新密码">' + eyeBtn + '</div></div>' +
+      '<button class="btn-primary" style="width:100%;">更新密码</button>' +
+      '<div style="margin-top:20px;"><div class="danger-zone"><div class="dz-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="flex:none;"><path fill="none" stroke="currentColor" stroke-width="1.6" d="M12 3l7 2.6v5.6c0 4.4-3 8.3-7 9.8-4-1.5-7-5.4-7-9.8V5.6L12 3z"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M9.2 9.2l5.6 5.6M14.8 9.2l-5.6 5.6"/></svg>注销账号</div><div class="dz-desc">将删除账号与<b>全部云端数据</b>（会话、供应商档案、密钥等），此操作<b>不可恢复</b>。</div><div class="dz-actions"><button class="btn-danger">注销账号</button></div></div></div>' +
+      '</div></div>';
+  }
+  q('lockCPL').innerHTML = lockPwdHtml();
+  q('lockCPD').innerHTML = lockPwdHtml();
+
+  var lockModalHtml = '<div class="modal-mask" style="position:absolute;">' +
+    '<div class="modal"><h3>注销账号？</h3>' +
+    '<div class="m-body">将删除账号「<b style="color:var(--c-text-1);">猫南北</b>」与<b>全部云端数据</b>（会话、供应商档案、密钥等）。此操作<b>不可恢复</b>，删除后无法找回。</div>' +
+    '<div class="gen-warn" style="display:flex;"><span class="b-ico">!</span><span>当前有正在生成的回复，注销前将<b>自动终止生成</b>，随后继续注销流程。</span></div>' +
+    '<div class="field" style="margin-top:16px;"><label>输入登录密码确认<span class="req">*</span></label><div class="key-row"><input type="password" placeholder="输入当前登录密码"><button class="key-eye" title="显示/隐藏密码">' + EYE_SVG + '</button></div></div>' +
+    '<div class="m-actions"><button class="btn-cancel">取消</button><button class="btn-danger">永久注销账号</button></div>' +
+    '</div></div>';
+  q('lockML').innerHTML = lockModalHtml;
+  q('lockMD').innerHTML = lockModalHtml;
+})();
+</script>
+</body>
+</html>
