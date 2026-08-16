@@ -1,0 +1,1503 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-chat · iter-8 设计稿（REQ-025 管理后台 · REQ-022 会话迁移 · REQ-018 档案上云，草案待 CEO 评审）</title>
+<!--
+  ============================================================
+  ai-chat 迭代 8 正式设计稿（设计稿即页面骨架，开发对照实现）
+  依据：plans/iter-8.md T0（验收：设计稿经 CEO 批准并打 design-iter-8 tag，含 §7.x 走查清单——v1.4.4 硬要求；
+        T0 定夺项 4 项随设计基线由 CEO 拍板：① 配额档位与数值在后台的呈现口径（默认值已定案：免费档 30 /
+        自填档 500 / 统一 key 每日总量 2000（每自然日对话请求数）/ 注册限频每 IP 每日 3，管理员可按用户覆盖）
+        ② 迁移提示条触发规则与「暂不导入」再提示节奏（spec 定案「下次登录再次提示」）③ 管理后台入口可见性口径
+        ④ 用量列表的列与筛选排序最小集）
+        requirements/spec.md（req-baseline-v3：REQ-025 管理员 Web 后台全量；REQ-022「导入本地会话到云端」迁移入口
+        与只读 30 天；REQ-018 存量本地档案上云提示条（key 未经确认不上传 / 新增不覆盖）；REQ-024 配额默认值联动；
+        非功能「可观测：度量数据只允许机器采集」——铁律 5）
+        company design-system/tokens.md v1.3/v1.3.1 + components.md v1.0 —— 本稿只用既有令牌（见第 6 节）
+        design/iter-7（密钥模式卡/错误映射/走查清单格式；§3.1 配额提示占位文案已定稿——iter-8 零 UI 改动接入）
+        design/iter-6（登录页 auth-card 与 banner 基线——封禁登录提示沿用其定稿文案与琥珀口径；侧栏底栏增量 4.2；
+        注册限频 banner 占位已定稿；「仅登录/注册页承诺 ≤480px」兼容条款）
+        design/iter-5（模态/列表/图标按钮基线）；brand 约束（CEO 既定）：主色飞书蓝 #3370FF（暗色前景 #5C8DFF）
+  状态：草案——待 CEO 评审批准（批准后 tag design-iter-8 由主会话打；设计师不打 tag、不 commit）。
+        第 8 节 4 项「待 CEO 定夺」随基线批准拍板。
+  可交互：右上「演示控制」一键亮/暗（写 localStorage）；1.2 用户列表可真实操作（封禁确认/解封/调配额/自封禁阻止/
+          加载/失败/单用户切换）；1.4 用量列表筛选排序可点；2.2 / 3.2 迁移导入全状态可演练（进行中可取消、可模拟失败）。
+          样件内用户名/日期/用量数值均为演示数据（非真实度量，铁律 5 口径见第 1 节注记）。零外部依赖，双击即开。
+  ============================================================
+-->
+<style>
+/* ============================================================
+   一、文档外壳（说明页自身，浅色固定，不随演示切换；色值 = tokens 浅色原值，沿 iter-5/6/7 惯例）
+   ============================================================ */
+:root { --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-full: 999px; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-size: 14px; line-height: 1.6; color: #1F2329; background: #F5F6F7; padding: 40px 32px 80px;
+}
+.page { max-width: 1160px; margin: 0 auto; }
+h1 { font-size: 20px; font-weight: 600; }
+.sub { font-size: 13px; color: #8F959E; margin: 4px 0 8px; }
+.sub b { color: #646A73; }
+.badge {
+  display: inline-block; padding: 1px 10px; border-radius: var(--r-full);
+  font-size: 12px; font-weight: 500; background: #FFF7E8; color: #B45309; margin-bottom: 32px;
+}
+section { margin-bottom: 48px; }
+h2 { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+h2 .no { color: #3370FF; margin-right: 4px; }
+.sec-desc { font-size: 13px; color: #8F959E; margin-bottom: 16px; }
+.sec-desc b { color: #646A73; }
+
+table { width: 100%; border-collapse: collapse; background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-md); overflow: hidden; font-size: 13px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #E5E6EB; vertical-align: top; }
+th { color: #8F959E; font-weight: 500; background: #FAFBFC; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+td code, li code, .ann code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; background: #F2F3F5; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
+
+.spec { background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-lg); padding: 24px; box-shadow: 0 1px 2px rgba(31,35,41,.06); margin-bottom: 16px; }
+.spec-title { font-size: 13px; font-weight: 600; color: #646A73; margin-bottom: 12px; }
+.spec-title .tag { font-weight: 400; color: #8F959E; margin-left: 8px; }
+.stage { border: 1px dashed #E5E6EB; border-radius: var(--r-md); padding: 16px; background: #F5F6F7; }
+.ann { font-size: 12px; color: #8F959E; margin-top: 8px; line-height: 1.8; }
+.ann b { color: #646A73; font-weight: 600; }
+
+/* ============================================================
+   二、演示令牌作用域 .tk（组件全部引用 var()，同 src 范式；浅色 = tokens v1.3 浅色值，暗色 = v1.3 暗色值，零自造）
+   ============================================================ */
+.tk {
+  --c-bg: #F5F6F7; --c-surface: #FFFFFF; --c-border: #E5E6EB;
+  --c-text-1: #1F2329; --c-text-2: #646A73; --c-text-3: #8F959E;
+  --c-primary: #3370FF; --c-primary-h: #2E5FDF; --c-primary-a: #2860D8; --c-primary-l: #F0F4FF;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #2E5FDF; --c-primary-solid-a: #2860D8;
+  --c-danger: #D93025; --c-danger-l: #FDECEA; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #1A9E5C; --c-success-on-dark: #4CC38A;
+  --c-warning: #B45309; --c-warning-l: #FFF7E8;
+  --c-hover-bg: #F2F3F5; --c-disabled-bg: #C9CFDB; --c-subtle-bg: #FAFBFC;
+  --c-avatar-bg: #E8EBF2; --c-scrollbar: #D5D9E0;
+  --c-mask: rgba(31,35,41,.4); --c-focus-ring: rgba(51,112,255,.12);
+  --shadow-1: 0 1px 2px rgba(31,35,41,.06);
+  --shadow-2: 0 4px 16px rgba(31,35,41,.10);
+  --shadow-3: 0 12px 40px rgba(31,35,41,.16);
+  color: var(--c-text-1);
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+.tk.dark {
+  --c-bg: #131417; --c-surface: #1E2026; --c-border: #33363E;
+  --c-text-1: #E6EAF0; --c-text-2: #A2A9B6; --c-text-3: #808896;
+  --c-primary: #5C8DFF; --c-primary-h: #7AA4FF; --c-primary-a: #4C84FF; --c-primary-l: #1D2740;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #4C84FF; --c-primary-solid-a: #3D78FF;
+  --c-danger: #FF8073; --c-danger-l: #361B18; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #4CC38A;
+  --c-warning: #EDA23B; --c-warning-l: #38290F;
+  --c-hover-bg: #262930; --c-disabled-bg: #3D414A; --c-subtle-bg: #24272E;
+  --c-avatar-bg: #33363E; --c-scrollbar: #3A3E46;
+  --c-mask: rgba(0,0,0,.55); --c-focus-ring: rgba(92,141,255,.25);
+  --shadow-1: 0 1px 2px rgba(0,0,0,.4);
+  --shadow-2: 0 4px 16px rgba(0,0,0,.45);
+  --shadow-3: 0 12px 40px rgba(0,0,0,.6);
+}
+.tk.force-dark {
+  --c-bg: #131417; --c-surface: #1E2026; --c-border: #33363E;
+  --c-text-1: #E6EAF0; --c-text-2: #A2A9B6; --c-text-3: #808896;
+  --c-primary: #5C8DFF; --c-primary-h: #7AA4FF; --c-primary-a: #4C84FF; --c-primary-l: #1D2740;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #4C84FF; --c-primary-solid-a: #3D78FF;
+  --c-danger: #FF8073; --c-danger-l: #361B18; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #4CC38A;
+  --c-warning: #EDA23B; --c-warning-l: #38290F;
+  --c-hover-bg: #262930; --c-disabled-bg: #3D414A; --c-subtle-bg: #24272E;
+  --c-avatar-bg: #33363E; --c-scrollbar: #3A3E46;
+  --c-mask: rgba(0,0,0,.55); --c-focus-ring: rgba(92,141,255,.25);
+  --shadow-1: 0 1px 2px rgba(0,0,0,.4);
+}
+
+/* ============================================================
+   三、产品组件样式
+   3a. 演示控制 / 模态 / 表单（components.md「表单模态」「模态确认」口径）
+   3b. 管理后台（本稿新 UI：页面骨架 + 数据表格 + 徽标 + 筛选排序 + 403）
+   3c. 迁移提示条（应用级 banner + 进度；登录页封禁提示沿 iter-6 基线）
+   ============================================================ */
+
+/* ---- 演示控制条（文档功能件，非产品组件） ---- */
+.demo-ctl {
+  position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 12px;
+  background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-md);
+  padding: 10px 16px; margin-bottom: 32px; box-shadow: 0 1px 2px rgba(31,35,41,.06);
+  font-size: 13px; color: #646A73; flex-wrap: wrap;
+}
+.demo-ctl .seg { display: inline-flex; border: 1px solid #E5E6EB; border-radius: var(--r-md); overflow: hidden; }
+.demo-ctl .seg button {
+  height: 30px; padding: 0 14px; border: none; background: #FFFFFF; color: #646A73;
+  font-size: 13px; cursor: pointer; transition: background .15s ease, color .15s ease;
+}
+.demo-ctl .seg button.on { background: #3370FF; color: #fff; font-weight: 600; }
+.demo-ctl .note { font-size: 12px; color: #8F959E; }
+.sim-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; font-size: 12px; color: #646A73; margin-bottom: 12px; }
+.sim-row label { cursor: pointer; white-space: nowrap; }
+.lnk-reset { display: inline-block; margin-top: 8px; font-size: 12px; color: #3370FF; cursor: pointer; }
+.lnk-reset:hover { text-decoration: underline; color: #2E5FDF; }
+
+/* ---- 模态（iter-5 3.3 / components.md「表单模态」：遮罩 + surface 面板 + shadow-3） ---- */
+.modal-mask { position: absolute; inset: 0; background: var(--c-mask); display: flex; align-items: center; justify-content: center; z-index: 20; }
+.modal { width: 400px; max-width: calc(100% - 32px); background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: var(--shadow-3); padding: 20px; }
+.modal h3 { font-size: 15px; font-weight: 600; margin-bottom: 8px; color: var(--c-text-1); }
+.modal .m-body { font-size: 13px; color: var(--c-text-2); line-height: 1.7; }
+.modal .m-note { font-size: 12px; color: var(--c-text-3); line-height: 1.7; margin-top: 10px; }
+.modal .m-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.modal-stage { position: relative; min-height: 300px; border-radius: var(--r-md); overflow: hidden; background: var(--c-bg); }
+.btn-cancel { height: 32px; padding: 0 12px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-2); border-radius: var(--r-md); font-size: 13px; cursor: pointer; transition: border-color .15s ease, color .15s ease; }
+.btn-cancel:hover { border-color: var(--c-primary); color: var(--c-primary); }
+.btn-primary { height: 32px; padding: 0 16px; background: var(--c-primary-solid); color: #fff; border: none; border-radius: var(--r-md); font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s ease, transform .1s ease; }
+.btn-primary:hover { background: var(--c-primary-solid-h); }
+.btn-primary:active { background: var(--c-primary-solid-a); transform: scale(.98); }
+.btn-danger { height: 32px; padding: 0 16px; background: var(--c-danger-solid); color: #fff; border: none; border-radius: var(--r-md); font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s ease, transform .1s ease; }
+.btn-danger:hover { background: var(--c-danger-solid-h); }
+.btn-danger:active { transform: scale(.98); }
+
+/* 调配额模态选项行（components.md「分段控件/表单」语法组合） */
+.q-opt { display: flex; gap: 8px; padding: 10px 12px; border: 1px solid var(--c-border); border-radius: var(--r-md); margin-top: 8px; cursor: pointer; font-size: 13px; color: var(--c-text-1); align-items: flex-start; background: var(--c-surface); transition: border-color .15s ease; }
+.q-opt:hover { border-color: var(--c-primary); }
+.q-opt input[type=radio] { margin-top: 3px; accent-color: var(--c-primary); }
+.q-opt .q-desc { display: block; font-size: 12px; color: var(--c-text-3); margin-top: 2px; }
+.q-num { width: 76px; height: 28px; padding: 0 8px; font-size: 14px; font-family: inherit; border: 1px solid var(--c-border); border-radius: var(--r-sm); outline: none; color: var(--c-text-1); background: var(--c-surface); margin: 0 4px; transition: border-color .15s ease, box-shadow .15s ease; }
+.q-num:focus { border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-focus-ring); }
+.q-opt.invalid .q-num { border-color: var(--c-danger); }
+.q-opt.invalid .q-num:focus { box-shadow: 0 0 0 3px var(--c-danger-l); }
+.hint-err { font-size: 12px; color: var(--c-danger); margin-top: 6px; display: none; }
+.hint-err.show { display: block; }
+
+/* ---- 管理后台页面骨架（本稿新增 UI；语法 = 既有 surface/border/r-lg/shadow-1 组合） ---- */
+.admin-frame { position: relative; border: 1px solid var(--c-border); border-radius: var(--r-lg); background: var(--c-bg); overflow: hidden; min-height: 560px; display: flex; flex-direction: column; }
+.adm-top { flex: none; height: 52px; padding: 0 16px; border-bottom: 1px solid var(--c-border); background: var(--c-surface); display: flex; align-items: center; gap: 8px; }
+.adm-brand { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; color: var(--c-text-1); }
+.adm-tag { padding: 0 8px; height: 20px; line-height: 20px; border-radius: var(--r-full); font-size: 12px; font-weight: 500; background: var(--c-primary-l); color: var(--c-primary); }
+.adm-sp { flex: 1; }
+.btn-ghost { height: 30px; padding: 0 12px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-2); border-radius: var(--r-md); font-size: 13px; cursor: pointer; transition: border-color .15s ease, color .15s ease, background .15s ease, transform .1s ease; }
+.btn-ghost:hover { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-l); }
+.btn-ghost:active { transform: scale(.98); }
+.btn-icon32 { width: 32px; height: 32px; padding: 0; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-2); border-radius: var(--r-md); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: border-color .15s ease, color .15s ease, background .15s ease, transform .1s ease; }
+.btn-icon32:hover { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-l); }
+.btn-icon32:active { transform: scale(.94); }
+.adm-body { flex: 1; padding: 16px 20px 20px; }
+/* tab = components.md「分段控件」：外框 1px border + r-md，选中段 primary-l + primary + 500 */
+.adm-tabs { display: inline-flex; border: 1px solid var(--c-border); border-radius: var(--r-md); overflow: hidden; background: var(--c-surface); }
+.adm-tabs button { height: 32px; padding: 0 16px; border: none; background: transparent; color: var(--c-text-2); font-size: 13px; cursor: pointer; transition: background .15s ease, color .15s ease; }
+.adm-tabs button:hover { color: var(--c-text-1); background: var(--c-hover-bg); }
+.adm-tabs button.on { background: var(--c-primary-l); color: var(--c-primary); font-weight: 500; }
+
+/* ---- 全站配额条（定夺 ① 载体；表格上方页面级状态条，左缘 3px 语义色） ---- */
+.site-strip { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 14px; margin-bottom: 12px; border: 1px solid var(--c-border); border-left: 3px solid var(--c-primary); border-radius: var(--r-md); background: var(--c-surface); font-size: 13px; color: var(--c-text-2); }
+.site-strip .ss-label { font-weight: 600; color: var(--c-text-1); }
+.site-strip .ss-num b { color: var(--c-text-1); font-variant-numeric: tabular-nums; }
+.site-strip .ss-note { font-size: 12px; color: var(--c-text-3); }
+.site-strip.near { border-left-color: var(--c-warning); background: var(--c-warning-l); color: var(--c-warning); }
+.site-strip.near .ss-label, .site-strip.near .ss-num b { color: var(--c-warning); }
+.site-strip.burst { border-left-color: var(--c-danger); background: var(--c-danger-l); color: var(--c-danger); }
+.site-strip.burst .ss-label, .site-strip.burst .ss-num b { color: var(--c-danger); }
+.site-strip.burst .ss-note { color: var(--c-danger); opacity: .85; }
+
+/* ---- 数据表格（本稿新增形态：th subtle-bg / 行 hover / 可排序列头） ---- */
+.tbl-wrap { border: 1px solid var(--c-border); border-radius: var(--r-md); overflow: hidden; background: var(--c-surface); }
+.adm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.adm-table th { text-align: left; font-size: 12px; font-weight: 500; color: var(--c-text-3); background: var(--c-subtle-bg); padding: 8px 12px; border-bottom: 1px solid var(--c-border); white-space: nowrap; }
+.adm-table td { padding: 10px 12px; border-bottom: 1px solid var(--c-border); vertical-align: middle; color: var(--c-text-2); }
+.adm-table tbody tr { transition: background .15s ease; }
+.adm-table tbody tr:hover { background: var(--c-hover-bg); }
+.adm-table tbody tr:last-child td { border-bottom: none; }
+.adm-table th.sortable { cursor: pointer; user-select: none; }
+.adm-table th.sortable:hover { color: var(--c-text-1); }
+.sort-ind { font-size: 10px; margin-left: 3px; color: var(--c-primary); }
+.mono { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cell-name { font-size: 13px; font-weight: 600; color: var(--c-text-1); display: inline-block; max-width: 150px; vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cell-time { font-size: 12px; color: var(--c-text-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* 状态徽标（胶囊 20px / r-full / 12px·500；色组合全部既有令牌） */
+.pill { display: inline-flex; align-items: center; padding: 0 8px; height: 20px; border-radius: var(--r-full); font-size: 12px; font-weight: 500; white-space: nowrap; vertical-align: middle; }
+.pill-ok { background: var(--c-subtle-bg); color: var(--c-success); border: 1px solid var(--c-border); }
+.pill-ban { background: var(--c-danger-l); color: var(--c-danger); }
+.pill-admin { background: var(--c-primary-l); color: var(--c-primary); margin-left: 6px; }
+.pill-def { background: var(--c-subtle-bg); color: var(--c-text-2); border: 1px solid var(--c-border); }
+.pill-cut { background: var(--c-primary-l); color: var(--c-primary); }
+.q-cell { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.q-used { font-size: 12px; color: var(--c-text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.q-full { font-size: 12px; color: var(--c-danger); font-weight: 500; white-space: nowrap; }
+
+/* 行内操作按钮（26px / r-sm / 12px，沿 iter-5「设为当前」小按钮语法） */
+.btn-row { height: 26px; padding: 0 10px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); font-size: 12px; cursor: pointer; margin-right: 6px; transition: border-color .15s ease, color .15s ease, background .15s ease, transform .1s ease; }
+.btn-row:active { transform: scale(.96); }
+.btn-row.act-quota { color: var(--c-text-2); }
+.btn-row.act-quota:hover { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-l); }
+.btn-row.act-ban { color: var(--c-danger); }
+.btn-row.act-ban:hover { border-color: var(--c-danger); background: var(--c-danger-l); }
+.btn-row.act-unban { color: var(--c-text-2); }
+.btn-row.act-unban:hover { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-l); }
+.btn-row:disabled { color: var(--c-text-3); opacity: .45; cursor: not-allowed; }
+.btn-row:disabled:hover { border-color: var(--c-border); background: var(--c-surface); }
+
+/* 筛选工具行 */
+.adm-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
+.adm-toolbar .tb-label { font-size: 12px; color: var(--c-text-3); }
+.adm-toolbar select, .adm-toolbar input[type=date] { height: 32px; padding: 0 10px; border: 1px solid var(--c-border); border-radius: var(--r-md); background: var(--c-surface); color: var(--c-text-1); font-size: 13px; font-family: inherit; outline: none; transition: border-color .15s ease, box-shadow .15s ease; }
+.adm-toolbar select:focus, .adm-toolbar input[type=date]:focus { border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-focus-ring); }
+.adm-toolbar .tb-count { margin-left: auto; font-size: 12px; color: var(--c-text-3); }
+
+/* 加载 / 空态 / 缺失行 */
+.adm-state { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 48px 0; color: var(--c-text-3); font-size: 13px; }
+.spin-p { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--c-primary-l); border-top-color: var(--c-primary); animation: spin .8s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.adm-empty { padding: 40px 0; text-align: center; color: var(--c-text-3); font-size: 13px; border: 1px solid var(--c-border); border-radius: var(--r-md); background: var(--c-surface); }
+.adm-empty .e-ico { color: var(--c-text-3); margin-bottom: 6px; }
+.adm-empty .e-hint { font-size: 12px; margin-top: 4px; }
+.gap-row td { background: var(--c-warning-l); color: var(--c-warning); font-size: 12px; padding: 6px 12px; }
+
+/* 表单级提示条（iter-6 form-banner 基线） */
+.form-banner { display: flex; align-items: flex-start; gap: 8px; border-radius: var(--r-md); padding: 8px 12px; font-size: 13px; line-height: 1.6; margin-bottom: 12px; flex-wrap: wrap; }
+.form-banner .b-ico { flex: none; font-weight: 600; }
+.form-banner.err { background: var(--c-danger-l); color: var(--c-danger); }
+.form-banner.warn { background: var(--c-warning-l); color: var(--c-warning); }
+.form-banner .b-act { flex: none; height: 24px; padding: 0 10px; margin-left: auto; border: 1px solid currentColor; border-radius: var(--r-sm); background: transparent; color: inherit; font-size: 12px; cursor: pointer; transition: opacity .15s ease, transform .1s ease; }
+.form-banner .b-act:hover { opacity: .8; }
+.form-banner .b-act:active { transform: scale(.96); }
+
+/* ---- 403 态（居中卡，auth-card 同语法） ---- */
+.forbid-frame { position: relative; height: 340px; border: 1px solid var(--c-border); border-radius: var(--r-lg); background: var(--c-bg); display: flex; align-items: center; justify-content: center; }
+.forbid-card { text-align: center; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: var(--shadow-1); padding: 28px 32px; width: 360px; max-width: calc(100% - 32px); }
+.forbid-card .f-title { font-size: 17px; font-weight: 600; color: var(--c-text-1); margin-top: 10px; }
+.forbid-card .f-desc { font-size: 13px; color: var(--c-text-2); margin: 6px 0 16px; }
+
+/* ---- 登录页（iter-6 基线引用：封禁提示落点） ---- */
+.auth-frame { position: relative; width: 100%; height: 470px; border-radius: var(--r-lg); border: 1px solid var(--c-border); background: var(--c-bg); overflow: hidden; }
+.auth-theme { position: absolute; top: 16px; right: 16px; width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-2); border-radius: var(--r-md); cursor: pointer; transition: border-color .15s ease, color .15s ease, background .15s ease; }
+.auth-theme:hover { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-l); }
+.auth-center { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; overflow-y: auto; }
+.auth-col { width: 340px; max-width: 100%; }
+.auth-brand { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-bottom: 16px; }
+.auth-brand .name { font-size: 17px; font-weight: 600; color: var(--c-text-1); letter-spacing: .5px; }
+.auth-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: var(--shadow-1); padding: 24px; }
+.auth-title { font-size: 17px; font-weight: 600; color: var(--c-text-1); }
+.auth-sub { font-size: 13px; color: var(--c-text-3); margin: 4px 0 16px; }
+.field { margin-bottom: 16px; }
+.field label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: var(--c-text-1); }
+.field input { width: 100%; height: 36px; padding: 0 12px; font-size: 16px; font-family: inherit; border: 1px solid var(--c-border); border-radius: var(--r-md); outline: none; color: var(--c-text-1); background: var(--c-surface); transition: border-color .15s ease, box-shadow .15s ease; }
+.field input:focus { border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-focus-ring); }
+.btn-auth { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 36px; border: none; border-radius: var(--r-md); background: var(--c-primary-solid); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s ease, transform .1s ease; }
+.btn-auth:hover { background: var(--c-primary-solid-h); }
+.btn-auth:active { background: var(--c-primary-solid-a); transform: scale(.98); }
+.auth-switch { margin-top: 14px; text-align: center; font-size: 13px; color: var(--c-text-3); }
+.auth-switch a { color: var(--c-primary); font-weight: 500; cursor: pointer; }
+
+/* ---- 侧栏底栏示意（iter-6 4.2 基线 + 本稿盾牌入口增量） ---- */
+.sb-demo { width: 280px; max-width: 100%; border-radius: var(--r-lg); border: 1px solid var(--c-border); background: var(--c-surface); overflow: hidden; box-shadow: var(--shadow-1); }
+.sb-demo .it { min-height: 44px; padding: 6px 10px; border-radius: var(--r-md); font-size: 13px; font-weight: 500; color: var(--c-text-1); display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-demo .it.on { background: var(--c-primary-l); color: var(--c-primary-h); }
+.sb-ft { border-top: 1px solid var(--c-border); height: 56px; padding: 0 16px; display: flex; align-items: center; gap: 8px; background: var(--c-surface); }
+.sb-ft .ft-user { font-size: 13px; font-weight: 500; color: var(--c-text-2); max-width: 84px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-ft .ft-sp { flex: 1; }
+.sb-ft .ft-profile { font-size: 13px; font-weight: 500; color: var(--c-text-2); white-space: nowrap; }
+.api-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c-success); flex: none; }
+.btn-ft { width: 26px; height: 26px; padding: 0; border: none; border-radius: var(--r-sm); background: transparent; color: var(--c-text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; transition: background .15s ease, color .15s ease, transform .1s ease; }
+.btn-ft:hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+.btn-ft:active { transform: scale(.94); }
+
+/* ---- 应用级迁移提示条（B/C 共用形态：warn/err/ok 三态 + 进度行 + 动作） ---- */
+.app-frame { border: 1px solid var(--c-border); border-radius: var(--r-lg); background: var(--c-bg); overflow: hidden; }
+.app-top { height: 48px; border-bottom: 1px solid var(--c-border); background: var(--c-surface); display: flex; align-items: center; gap: 8px; padding: 0 16px; }
+.app-top .ap-name { font-size: 14px; font-weight: 600; color: var(--c-text-1); }
+.app-top .ap-title { font-size: 13px; color: var(--c-text-3); }
+.app-zone { padding: 12px 16px 4px; display: flex; flex-direction: column; gap: 8px; }
+.app-hint { margin: 12px 16px 16px; padding: 20px 16px; font-size: 12px; color: var(--c-text-3); text-align: center; border: 1px dashed var(--c-border); border-radius: var(--r-md); line-height: 1.8; }
+.mig-banner { display: flex; align-items: flex-start; gap: 10px; border-radius: var(--r-md); padding: 10px 14px; font-size: 13px; line-height: 1.7; border: 1px solid transparent; }
+.mig-banner .mb-ico { flex: none; width: 18px; height: 18px; border-radius: var(--r-full); display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; margin-top: 2px; }
+.mig-banner.warn { background: var(--c-warning-l); color: var(--c-warning); }
+.mig-banner.warn .mb-ico { background: var(--c-warning); color: var(--c-warning-l); }
+.mig-banner.err { background: var(--c-danger-l); color: var(--c-danger); }
+.mig-banner.err .mb-ico { background: var(--c-danger); color: #fff; }
+.mig-banner.ok { background: var(--c-subtle-bg); border-color: var(--c-success); color: var(--c-text-2); }
+.mig-banner.ok .mb-ico { background: var(--c-success); color: #fff; }
+.mig-banner.ok .mb-t { color: var(--c-success); font-weight: 600; }
+.mig-banner .mb-main { flex: 1; min-width: 0; }
+.mig-banner .mb-main b { color: inherit; }
+.mig-banner.ok .mb-main b { color: var(--c-text-1); }
+.mig-banner .mb-acts { margin-left: auto; display: flex; gap: 8px; flex: none; align-items: center; }
+.mb-btn { height: 26px; padding: 0 10px; border: 1px solid currentColor; border-radius: var(--r-sm); background: transparent; color: inherit; font-size: 12px; cursor: pointer; transition: opacity .15s ease, transform .1s ease; white-space: nowrap; }
+.mb-btn:hover { opacity: .8; }
+.mb-btn:active { transform: scale(.96); }
+.mig-banner.ok .mb-btn { color: var(--c-text-2); }
+.mb-btn-solid { height: 28px; padding: 0 14px; border: none; border-radius: var(--r-sm); background: var(--c-primary-solid); color: #fff; font-size: 12px; font-weight: 600; cursor: pointer; transition: background .15s ease, transform .1s ease; white-space: nowrap; }
+.mb-btn-solid:hover { background: var(--c-primary-solid-h); }
+.mb-btn-solid:active { transform: scale(.96); }
+.mb-btn-danger { height: 28px; padding: 0 14px; border: none; border-radius: var(--r-sm); background: var(--c-danger-solid); color: #fff; font-size: 12px; font-weight: 600; cursor: pointer; transition: background .15s ease; white-space: nowrap; }
+.mb-btn-danger:hover { background: var(--c-danger-solid-h); }
+.mb-spin { flex: none; width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; border-top-color: transparent; animation: spin .8s linear infinite; margin-top: 3px; }
+.mb-prog { margin-top: 6px; height: 4px; border-radius: var(--r-full); background: var(--c-hover-bg); overflow: hidden; max-width: 320px; }
+.mb-prog .fill { height: 100%; background: var(--c-primary-solid); border-radius: var(--r-full); transition: width .2s ease; }
+.mb-num { font-variant-numeric: tabular-nums; font-weight: 600; }
+
+/* ---- 布局工具 ---- */
+.frame-cap { text-align: center; font-size: 12px; color: #8F959E; margin-bottom: 8px; }
+.cols { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+.cols > div { flex: 1; min-width: 380px; max-width: 560px; }
+</style>
+</head>
+<body>
+<div id="toastHost" style="position:fixed;left:50%;bottom:32px;transform:translateX(-50%);z-index:100;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none;"></div>
+<div class="page">
+
+  <h1>ai-chat · iter-8 设计稿</h1>
+  <div class="sub">
+    依据：<b>plans/iter-8.md</b> T0（REQ-025 管理后台原型 + REQ-022 迁移入口 + REQ-018 档案上云提示条；
+    <b>v1.4.4 硬要求：含 §7.x 走查清单</b>；4 项 T0 定夺随基线由 CEO 拍板——见第 8 节）·
+    <b>req-baseline-v3</b>（REQ-025 全量 · REQ-022 迁移条款 · REQ-018 上云定案 · REQ-024 默认值联动 30/500/2000）·
+    令牌全部来自公司 <b>design-system/tokens.md v1.3/v1.3.1</b> + <b>components.md v1.0</b>，本稿零新增 ·
+    登录页/侧栏底栏沿 <b>design-iter-6 基线</b>引用，密钥模式卡/配额提示文案沿 <b>design-iter-7 基线</b>引用
+  </div>
+  <div class="badge">状态：草案——待 CEO 评审批准（批准后 tag design-iter-8 由主会话打；第 8 节 4 项定夺待拍板）</div>
+
+  <!-- 演示控制 -->
+  <div class="demo-ctl">
+    <b>演示控制：</b>
+    <span class="seg">
+      <button id="btnLight" class="on">浅色</button>
+      <button id="btnDark">暗色</button>
+    </span>
+    <span class="note">一键切换下方全部可翻转样件（第 4 节锁定帧不随动）；选择写入 localStorage 刷新保持（REQ-017 机制演示）。
+    1.2 用户列表 / 1.4 用量列表 / 2.2、3.2 迁移状态机均可直接交互。<b>样件内用户名/日期/用量数值均为演示数据（铁律 5：线上度量只允许机器采集）</b>。</span>
+  </div>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">1</span>管理后台（REQ-025，全新页面类型）</h2>
+    <div class="sec-desc">
+      spec REQ-025：首个注册用户自动成为管理员；三类能力——<b>用户治理</b>（封禁/解封）、<b>配额管理</b>（按用户覆盖默认值，联动 REQ-024
+      已定默认：免费档 30 / 自填档 500 / 统一 key 每日总量 2000，每自然日对话请求数）、<b>用量统计</b>（按用户按日请求数与 token 数，
+      过滤 + 排序，图表不做）。普通用户不可见入口与任何后台数据。<b>配额默认值已由 CEO 随 iter-8 计划定案（2026-08-16），本稿只定呈现口径（定夺 ①）</b>；
+      注册限频（每 IP 每日 3）经配置注入、不进后台 UI（超出最小口径，T1 无 UI）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.1 页面框架与入口可见性（定夺 ③ 载体）<span class="tag">独立路由 /admin · 顶栏 + 分段 tab · 仅管理员可见入口</span></div>
+      <div class="stage">
+        <div class="tk admin-frame" style="min-height:300px;">
+          <div class="adm-top">
+            <div class="adm-brand">
+              <svg viewBox="0 0 128 128" width="22" height="22" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+              喵喵 <span class="adm-tag">管理后台</span>
+            </div>
+            <span class="adm-sp"></span>
+            <button class="btn-icon32" title="切换主题" aria-label="切换主题"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" fill="currentColor"/></svg></button>
+            <button class="btn-ghost" title="返回主界面">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              返回主界面
+            </button>
+          </div>
+          <div class="adm-body">
+            <div class="adm-tabs" role="radiogroup" aria-label="后台分区">
+              <button class="on" role="radio" aria-checked="true">用户列表</button>
+              <button role="radio" aria-checked="false">用量列表</button>
+            </div>
+            <div style="margin-top:16px;padding:32px 0;text-align:center;font-size:12px;color:var(--c-text-3);border:1px dashed var(--c-border);border-radius:var(--r-md);">
+              用户列表 / 用量列表内容见 1.2 / 1.4（此处为骨架示意）
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>框架（本稿新增页面类型）</b>：独立路由 <code>/admin</code>，不复用主界面侧栏——顶栏 52px（品牌 + 「管理后台」徽标（<code>--c-primary-l</code> 底 +
+        <code>--c-primary</code> 字，12px 胶囊）+ 主题切换 + 「返回主界面」ghost 30px）+ 分段 tab（components.md「分段控件」：外框 1px <code>--c-border</code> +
+        <code>--r-md</code>，选中段 <code>--c-primary-l</code>/<code>--c-primary</code>/500 字重，高 32px，<code>role=radiogroup</code>）。
+        <b>组件建议</b>：<code>AdminView.vue</code>（顶栏 + tab + 两面板），路由 <code>/admin</code> + 守卫 meta。<br>
+        <b>路由守卫（T2 实现口径）</b>：见下表——安全边界在<b>服务端</b>（admin 接口对非管理员一律 403、不暴露任何后台数据），
+        前端入口隐藏与 403 态只是引导层，双保险满足 T2 验收「普通用户访问后台路由/接口返回 403、不暴露任何后台数据」。
+      </div>
+      <table style="margin-top:12px;">
+        <tr><th>访问者</th><th>访问 /admin 结果</th><th>样件</th></tr>
+        <tr><td>未登录</td><td>跳登录页 <code>/login?redirect=/admin</code>（REQ-020 守卫沿用，登录后回跳）</td><td>design-iter-6 §4（基线引用）</td></tr>
+        <tr><td>普通用户（已登录）</td><td><b>403 态</b>（不渲染任何后台数据；admin 接口同 403）</td><td>1.5</td></tr>
+        <tr><td>管理员（已登录）</td><td>正常进入后台</td><td>1.1 / 1.2 / 1.4</td></tr>
+      </table>
+      <div class="stage" style="margin-top:16px;">
+        <div class="cols">
+          <div>
+            <div class="frame-cap">主界面侧栏底栏 · 管理员视角（盾牌入口在「状态点」与「登出」之间）</div>
+            <div class="tk sb-demo">
+              <div style="padding:14px 16px 6px;display:flex;align-items:center;gap:8px;">
+                <svg viewBox="0 0 128 128" width="22" height="22" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+                <span style="font-size:15px;font-weight:600;color:var(--c-text-1);">喵喵</span>
+              </div>
+              <div style="padding:4px 8px 12px;display:flex;flex-direction:column;gap:2px;">
+                <div class="it on">帮我写一封请假邮件，理由是家里…</div>
+                <div class="it">流式请求的代码示例</div>
+              </div>
+              <div class="sb-ft">
+                <span class="ft-user" title="猫南北">猫南北</span>
+                <span class="ft-sp"></span>
+                <span class="ft-profile">GLM · 已配置</span>
+                <span class="api-dot"></span>
+                <button class="btn-ft" title="管理后台（仅管理员可见）" aria-label="管理后台"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5l8-3z"/></svg></button>
+                <button class="btn-ft" title="登出" aria-label="登出"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 17l5-5-5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 12H9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="frame-cap">主界面侧栏底栏 · 普通用户视角（无盾牌入口、无任何后台痕迹）</div>
+            <div class="tk sb-demo">
+              <div style="padding:14px 16px 6px;display:flex;align-items:center;gap:8px;">
+                <svg viewBox="0 0 128 128" width="22" height="22" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+                <span style="font-size:15px;font-weight:600;color:var(--c-text-1);">喵喵</span>
+              </div>
+              <div style="padding:4px 8px 12px;display:flex;flex-direction:column;gap:2px;">
+                <div class="it on">帮我写一封请假邮件，理由是家里…</div>
+                <div class="it">流式请求的代码示例</div>
+              </div>
+              <div class="sb-ft">
+                <span class="ft-user" title="wupeng">wupeng</span>
+                <span class="ft-sp"></span>
+                <span class="ft-profile">统一 key</span>
+                <span class="api-dot"></span>
+                <button class="btn-ft" title="登出" aria-label="登出"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 17l5-5-5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 12H9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>入口（iter-6 4.2 侧栏底栏基线的本稿增量）</b>：盾牌 icon-only ghost（26px，components.md「图标按钮」口径：hover
+        <code>--c-hover-bg</code> 底 + <code>--c-text-1</code>，<code>title/aria-label「管理后台」</code>），置于「当前档案 · 状态点」与「登出」之间；
+        <b>仅当登录用户带管理员标记时渲染</b>——普通用户 DOM 中不存在该节点。底栏其余（用户名/档案/登出，iter-6 定案 5）零改动。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.2 用户列表（可交互：封禁/解封/调配额/自封禁阻止；状态切换：有数据/单用户/加载/失败）<span class="tag">列集 = 定夺 ① · 全站配额条 = 定夺 ①</span></div>
+      <div class="sim-row">
+        <b>列表状态：</b>
+        <label><input type="radio" name="ulState" value="data" checked> 有数据（默认）</label>
+        <label><input type="radio" name="ulState" value="solo"> 仅管理员一人（新部署）</label>
+        <label><input type="radio" name="ulState" value="loading"> 加载中</label>
+        <label><input type="radio" name="ulState" value="error"> 拉取失败</label>
+        <span style="border-left:1px solid #E5E6EB;padding-left:16px;"><b>全站配额条：</b>
+        <label><input type="radio" name="siteState" value="normal" checked> 正常</label>
+        <label><input type="radio" name="siteState" value="near"> 接近上限（≥80%）</label>
+        <label><input type="radio" name="siteState" value="burst"> 已熔断</label></span>
+      </div>
+      <div class="stage">
+        <div class="tk admin-frame" style="min-height:420px;">
+          <div class="adm-top">
+            <div class="adm-brand">
+              <svg viewBox="0 0 128 128" width="22" height="22" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+              喵喵 <span class="adm-tag">管理后台</span>
+            </div>
+            <span class="adm-sp"></span>
+            <button class="btn-ghost">返回主界面</button>
+          </div>
+          <div class="adm-body">
+            <div class="adm-tabs"><button class="on" id="tabUsersBtn">用户列表</button><button id="tabUsageBtn">用量列表</button></div>
+            <div id="panelUsers" style="margin-top:12px;"></div>
+            <div id="panelUsage" style="margin-top:12px;display:none;">
+              <div class="adm-toolbar" id="usToolbar">
+                <span class="tb-label">用户</span>
+                <select id="usUser" aria-label="按用户过滤"></select>
+                <span class="tb-label">日期</span>
+                <input type="date" id="usFrom" value="2026-08-10" aria-label="起始日期"> <span class="tb-label">至</span>
+                <input type="date" id="usTo" value="2026-08-16" aria-label="结束日期">
+                <span class="tb-count" id="usCount"></span>
+              </div>
+              <div id="usageArea"></div>
+            </div>
+          </div>
+          <!-- 封禁确认模态 -->
+          <div class="modal-mask" id="banMask" style="display:none;">
+            <div class="modal">
+              <h3>封禁该用户？</h3>
+              <div class="m-body">封禁后 <b id="banName">—</b> 将<b>无法登录与调用</b>，云端数据保留；解封后可恢复使用。</div>
+              <div class="m-actions"><button class="btn-cancel" id="banNo">取消</button><button class="btn-danger" id="banYes">确认封禁</button></div>
+            </div>
+          </div>
+          <!-- 调配额模态 -->
+          <div class="modal-mask" id="qMask" style="display:none;">
+            <div class="modal">
+              <h3>调整配额</h3>
+              <div class="m-body" id="qSub">—</div>
+              <label class="q-opt"><input type="radio" name="qmode" value="default" checked>
+                <span>按默认档位（随密钥模式）<span class="q-desc">统一 key = 免费档 30 次/日 · 自填 key = 500 次/日（部署配置默认值）</span></span>
+              </label>
+              <label class="q-opt" id="qOptCustom"><input type="radio" name="qmode" value="custom">
+                <span>自定义每日 <input type="text" class="q-num" id="qInput" placeholder="N"> 次（覆盖默认档位）</span>
+              </label>
+              <div class="hint-err" id="qErr">请输入正整数（≥1），不能用小数或留空</div>
+              <div class="m-note">调整自下一次请求生效；覆盖后在列表中以「自定义 N」徽标与默认档位区分。</div>
+              <div class="m-actions"><button class="btn-cancel" id="qNo">取消</button><button class="btn-primary" id="qYes">保存</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>列集（spec 主流程 2 全字段）</b>：用户名（13px/600，超长 ellipsis（max-width 150px）+ <code>title</code> 全名；管理员附「管理员」徽标）/
+        注册时间（12px <code>--c-text-3</code>，tabular-nums）/ 状态（胶囊 20px：<b>正常</b> = <code>--c-subtle-bg</code> 底 + <code>--c-success</code> 字；
+        <b>已封禁</b> = <code>--c-danger-l</code> + <code>--c-danger</code>）/ 密钥模式（统一 key / 自填 key，13px <code>--c-text-2</code>）/
+        配额（档位徽标 + 「今日 x/N」12px；x=N → <code>--c-danger</code>「已用尽」；封禁用户计数冻结显示「—」）/ 操作（封禁 danger 前景 / 解封 / 调配额，26px 小按钮）。<br>
+        <b>全站配额条（定夺 ①）</b>：表格上方页面级状态条（surface + 左缘 3px 语义色 + <code>--r-md</code>）——常态显示「统一 key 每日总量 2,000 · 今日已用」；
+        ≥80% 翻琥珀（<code>--c-warning-l</code>）；触发熔断翻红（<code>--c-danger-l</code>）并明示「已暂停全站新对话请求，明日 00:00 自动恢复；自填 key 用户不受影响」
+        ——REQ-024 熔断的管理侧对应面。<b>数值不做进度条/图表</b>（spec「图表不做」，文字即验收比对口径）。<br>
+        <b>交互（本样件可真实操作）</b>：封禁 = 确认模态（danger 实底「确认封禁」，明示后果与可逆性）→ 生效后行状态翻封禁 + toast；解封 = 直接生效 + toast
+        （非破坏性、无确认弹窗，同 iter-6 登出口径）；<b>管理员本人行「封禁」按钮禁用</b>（opacity .45 + <code>title「管理员本人不可封禁」</code>，
+        同 components.md「不可删项」模式——后端对直调 API 同样拒绝，T2 测试覆盖）；调配额模态见 1.3。<br>
+        <b>最小口径注记</b>：用户列表不做筛选/分页（自部署用户规模小；行数增长由页面滚动承载，分页/筛选后议——与「最小可行口径」一致，备选见定夺 ④ 同精神）。
+        「拉取失败」重试复用已选 tab 不清状态（REQ-007 重试语义）。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.3 操作模态：封禁确认 + 调配额（定夺 ① 载体）<span class="tag">表单模态口径 · 危险确认 danger 实底 · 正整数校验</span></div>
+      <div class="stage" style="display:flex;gap:20px;flex-wrap:wrap;">
+        <div class="tk modal-stage" style="flex:1;min-width:340px;height:300px;">
+          <div class="modal-mask" style="position:absolute;">
+            <div class="modal">
+              <h3>封禁该用户？</h3>
+              <div class="m-body">封禁后 <b>spam-bot-2026</b> 将<b>无法登录与调用</b>，云端数据保留；解封后可恢复使用。</div>
+              <div class="m-actions"><button class="btn-cancel">取消</button><button class="btn-danger">确认封禁</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="tk modal-stage" style="flex:1;min-width:340px;height:300px;">
+          <div class="modal-mask" style="position:absolute;">
+            <div class="modal">
+              <h3>调整配额</h3>
+              <div class="m-body">用户 李雷 · 当前：自填 key 模式（默认 500 次/日）· 已覆盖为 200 次/日</div>
+              <label class="q-opt"><input type="radio" name="qm2" checked><span>按默认档位（随密钥模式）</span></label>
+              <label class="q-opt invalid"><input type="radio" name="qm2"><span>自定义每日 <input type="text" class="q-num" value="1.5"> 次（覆盖默认档位）</span></label>
+              <div class="hint-err show">请输入正整数（≥1），不能用小数或留空</div>
+              <div class="m-actions"><button class="btn-cancel">取消</button><button class="btn-primary">保存</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>封禁确认（components.md「模态确认」）</b>：标题 15px / 正文 13px <code>--c-text-2</code>（明示「无法登录与调用、云端数据保留、解封可恢复」）/
+        动作右对齐；确认按钮 <code>--c-danger-solid</code> 实底白字（4.8:1）。<b>解封无模态</b>（可逆直接生效）。<br>
+        <b>调配额（1.2 样件内可交互）</b>：两选项 = 「按默认档位（随密钥模式：统一 30 / 自填 500）」或「自定义 N 次/日」；自定义须正整数
+        （空/小数/0 → 选项红描边 + 行内错误文案，不入库——components.md「必填缺失不入库」同口径）；保存后列表档位徽标翻「自定义 N」（<code>--c-primary-l</code>/<code>--c-primary</code>），
+        toast「自下一次请求生效」。<b>Esc/取消</b>关闭不改动。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.4 用量列表（定夺 ④ 载体；可交互：筛选 + 排序；状态切换：数据/空/加载/失败/缺失标注）<span class="tag">按用户按日聚合 · 请求数与 token 数 · 图表不做</span></div>
+      <div class="sim-row">
+        <b>状态：</b>
+        <label><input type="radio" name="usState" value="data" checked> 有数据</label>
+        <label><input type="radio" name="usState" value="gap"> 含缺失时段标注</label>
+        <label><input type="radio" name="usState" value="empty"> 空（无数据）</label>
+        <label><input type="radio" name="usState" value="loading"> 加载中</label>
+        <label><input type="radio" name="usState" value="error"> 拉取失败</label>
+        <span style="color:#8F959E;">（tab 切到「用量列表」后可点列头排序、改筛选条件）</span>
+      </div>
+      <div class="ann" style="margin-top:0;">
+        用量面板在 1.2 样件内——点 tab「<b>用量列表</b>」即可操作：<b>列（4）</b>日期 / 用户名 / 请求数 / token 数（12px 表头 <code>--c-subtle-bg</code>，
+        数字 tabular-nums 右对齐语义）；<b>筛选（2）</b>用户下拉（含「全部用户」）+ 日期起止（默认最近 7 天，控件 32px <code>--r-md</code>，
+        focus 主色描边 + 3px 焦点环）；<b>排序（3 列）</b>日期/请求数/token 数列头点击切换升降序（箭头 10px <code>--c-primary</code>，默认日期降序）；
+        <b>空态</b>说明新用户/新部署常见；<b>缺失标注</b>（spec 异常分支 + 铁律 5）：统计中断时段以表内琥珀行标注「仅显示已有数据（不估算补齐）」；
+        失败态 banner + 重试。<b>token 数为每请求合计</b>（T1 记录口径），不拆输入/输出。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.5 边界态：普通用户 403 / 被封禁用户登录提示<span class="tag">封禁自己被阻止见 1.2（行内禁用 + title）</span></div>
+      <div class="stage">
+        <div class="cols">
+          <div>
+            <div class="frame-cap">普通用户访问 /admin → 403 态（不渲染任何后台数据）</div>
+            <div class="tk forbid-frame">
+              <div class="forbid-card">
+                <svg viewBox="0 0 24 24" width="36" height="36" style="color:var(--c-danger)"><path fill="none" stroke="currentColor" stroke-width="1.6" d="M12 3l7 2.6v5.6c0 4.4-3 8.3-7 9.8-4-1.5-7-5.4-7-9.8V5.6L12 3z"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M9.2 9.2l5.6 5.6M14.8 9.2l-5.6 5.6"/></svg>
+                <div class="f-title">无权访问（403）</div>
+                <div class="f-desc">管理后台仅对管理员开放，此页面不会展示任何后台数据。</div>
+                <button class="btn-primary">返回主界面</button>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="frame-cap">被封禁用户登录 → 登录页 warning banner（iter-6 定稿文案落地）</div>
+            <div class="tk auth-frame">
+              <button class="auth-theme" title="切换主题" aria-label="切换主题"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" fill="currentColor"/></svg></button>
+              <div class="auth-center">
+                <div class="auth-col">
+                  <div class="auth-brand">
+                    <svg viewBox="0 0 128 128" width="36" height="36" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+                    <span class="name">喵喵</span>
+                  </div>
+                  <div class="auth-card">
+                    <div class="auth-title">登录</div>
+                    <div class="auth-sub">登录后继续你的对话</div>
+                    <div class="form-banner warn" style="margin-bottom:16px;"><span class="b-ico">!</span><span>账号已被封禁，无法使用。如有疑问请联系管理员</span></div>
+                    <div class="field"><label>用户名</label><input type="text" value="spam-bot-2026"></div>
+                    <div class="field"><label>密码</label><input type="password" value="········"></div>
+                    <button class="btn-auth">登录</button>
+                    <div class="auth-switch">还没有账号？<a>注册</a></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>封禁登录提示</b>：输入正确凭证提交 → 后端 403 banned → 表单级 warning banner「账号已被封禁，无法使用。如有疑问请联系管理员」
+        （design-iter-6 §3 定稿文案与琥珀口径——状态类非用户输入错误，不用红）；无「重试」按钮（重试无益），表单保留可换账号登录。
+        <b>在线被封禁</b>：已登录会话中被封禁 → 下一次请求被拒 → 跳登录页并显示同 banner（T2 验收「封禁后该用户登录被拒并见封禁提示、解封后恢复」）。<br>
+        <b>403 态</b>：居中卡（auth-card 同语法：surface + border + <code>--r-lg</code> + <code>--shadow-1</code>）+ danger 盾牌图标 +
+        「返回主界面」实底主按钮；<b>不发起任何后台数据请求的渲染</b>（路由层拦截；接口层独立 403，双保险）。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">2</span>存量会话迁移入口（REQ-022：导入本地会话到云端）</h2>
+    <div class="sec-desc">
+      spec REQ-022：面向 v0.4.x 本地数据的一次性「导入本地会话到云端」迁移入口——<b>导入为新增、不覆盖云端已有会话</b>；
+      过程可取消；导入后本地数据<b>保留只读 30 天再自动清除</b>。「暂不导入」节奏 spec 已定案「下次登录再次提示」，本稿定触发规则与呈现（定夺 ②）。
+      登录后主界面其余部分沿 iter-1~6 基线不重画。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.1 触发与提示条（定夺 ② 载体；与档案上云条同屏堆叠演示）<span class="tag">主界面顶部全局提示条 · 登录后检测 · 零打扰原则</span></div>
+      <div class="stage">
+        <div class="tk app-frame">
+          <div class="app-top">
+            <svg viewBox="0 0 128 128" width="20" height="20" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+            <span class="ap-name">喵喵</span>
+            <span class="ap-title">（顶栏沿用 iter-1~6 基线，不重画）</span>
+          </div>
+          <div class="app-zone" id="stackZone">
+            <div class="mig-banner warn" id="sbB">
+              <span class="mb-ico">!</span>
+              <div class="mb-main">检测到本浏览器存有旧版本的 <b>20 个本地会话</b>，导入云端后可在多设备继续使用。<b>导入为新增，不覆盖云端已有会话</b>；导入后本地数据转为只读备份，30 天后自动清除。</div>
+              <div class="mb-acts">
+                <button class="mb-btn" id="sbBLater">暂不导入</button>
+                <button class="mb-btn-solid" id="sbBImport">导入到云端</button>
+              </div>
+            </div>
+            <div class="mig-banner warn" id="sbC">
+              <span class="mb-ico">!</span>
+              <div class="mb-main">检测到本浏览器存有旧版本保存的 <b>2 套供应商档案</b>，导入云端后可在多设备使用。<b>密钥仅在点击导入后上传（未经确认不上传）</b>；导入为新增，不覆盖云端已有档案。</div>
+              <div class="mb-acts">
+                <button class="mb-btn" id="sbCLater">暂不导入</button>
+                <button class="mb-btn-solid" id="sbCImport">导入到云端</button>
+              </div>
+            </div>
+            <div class="app-hint" id="stackEmpty" style="display:none;margin:0 0 12px;">全部提示条已收起（「暂不导入」演示）：本次登录内不再显示，<b>下次登录将重新检测并再次提示</b>。<br>未检测到本地旧数据时主界面无任何提示条（零打扰）。</div>
+          </div>
+          <div class="app-hint">消息区 / 会话列表 / 输入区：沿用 iter-1~6 基线，本稿不重画（登录后数据源为云端）</div>
+        </div>
+        <a class="lnk-reset" id="sbReset">↺ 重置本演示（恢复两条提示条）</a>
+      </div>
+      <div class="ann">
+        <b>位置</b>：主界面顶栏之下的<b>全局提示条区</b>（<code>--c-warning-l</code> 底 + <code>--c-warning</code> 字，<code>--r-md</code>，padding 10px 14px，
+        13px/1.7；主操作「导入到云端」= 实底主色小按钮 28px，次操作「暂不导入」= currentColor 描边小按钮——iter-6 form-banner 动作语法放大到应用级）。<br>
+        <b>触发（定夺 ② 推荐）</b>：每次<b>登录成功后</b>前端检测本地旧数据（会话 = IndexedDB 旧库非空；档案 = 旧 localStorage 字段存在）；
+        检测到即显示对应提示条；<b>无旧数据零打扰</b>。会话条与档案条<b>同屏堆叠、各自独立动作</b>（普通数据迁移与密钥凭据上传分开确认，安全语义不合并）。<br>
+        <b>「暂不导入」（本样件可点）</b>：该条本次登录内不再显示（含刷新）、<b>零上传</b>；下次登录重新检测、仍有则再提示；<b>不提供「永久忽略」</b>
+        （避免误关后找不回，iter-7 定夺 ④ 同口径）。同登录内反悔无重入口（重新登录即再看）——已知取舍，登记在案。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.2 导入全状态（可交互：进行中可取消 / 完成 / 失败重试）<span class="tag">状态机：提示 → 进行中 → 完成 | 失败 → 重试</span></div>
+      <div class="sim-row">
+        <b>状态：</b>
+        <label><input type="radio" name="migBState" value="prompt" checked> 提示态</label>
+        <label><input type="radio" name="migBState" value="doing"> 导入中</label>
+        <label><input type="radio" name="migBState" value="done"> 完成</label>
+        <label><input type="radio" name="migBState" value="fail"> 失败</label>
+        <label><input type="radio" name="migBState" value="dismissed"> 已收起（暂不导入/完成后）</label>
+        <label><input type="radio" name="migBState" value="none"> 无旧数据（零打扰）</label>
+        <label><input type="checkbox" id="simBFail"> 模拟导入失败（网络中断）</label>
+      </div>
+      <div class="stage">
+        <div class="tk app-frame">
+          <div class="app-top">
+            <svg viewBox="0 0 128 128" width="20" height="20" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+            <span class="ap-name">喵喵</span>
+          </div>
+          <div class="app-zone" style="min-height:120px;">
+            <div id="mbPrompt" class="mig-banner warn">
+              <span class="mb-ico">!</span>
+              <div class="mb-main">检测到本浏览器存有旧版本的 <b>20 个本地会话</b>，导入云端后可在多设备继续使用。<b>导入为新增，不覆盖云端已有会话</b>；导入后本地数据转为只读备份，30 天后自动清除。</div>
+              <div class="mb-acts">
+                <button class="mb-btn" id="mbLater">暂不导入</button>
+                <button class="mb-btn-solid" id="mbImport">导入到云端</button>
+              </div>
+            </div>
+            <div id="mbDoing" class="mig-banner warn" style="display:none;">
+              <span class="mb-spin"></span>
+              <div class="mb-main">正在导入本地会话… <span class="mb-num" id="mbNum">0 / 20</span>
+                <div class="mb-prog"><div class="fill" id="mbFill" style="width:0%"></div></div>
+              </div>
+              <div class="mb-acts"><button class="mb-btn" id="mbCancel">取消</button></div>
+            </div>
+            <div id="mbDone" class="mig-banner ok" style="display:none;">
+              <span class="mb-ico">✓</span>
+              <div class="mb-main"><span class="mb-t">已导入 20 个会话。</span>本地旧数据已转为<b>只读备份</b>（不再参与同步），<b>30 天后自动清除</b>；云端会话列表即时可见。</div>
+              <div class="mb-acts"><button class="mb-btn" id="mbKnow">知道了</button></div>
+            </div>
+            <div id="mbFail" class="mig-banner err" style="display:none;">
+              <span class="mb-ico">!</span>
+              <div class="mb-main"><b>导入失败：无法连接服务器。</b>本地数据未受任何影响，可重试；已完成的会话不会重复导入。</div>
+              <div class="mb-acts">
+                <button class="mb-btn" id="mbFailLater">暂不导入</button>
+                <button class="mb-btn-danger" id="mbRetry">重试</button>
+              </div>
+            </div>
+            <div id="mbDismissed" class="app-hint" style="display:none;margin:0 0 12px;">提示条已收起：本次登录内不再显示，<b>下次登录将重新检测——仍有旧数据则再次提示</b>（导入完成者不再出现）。</div>
+            <div id="mbNone" class="app-hint" style="display:none;margin:0 0 12px;">未检测到本地旧数据：主界面无任何提示条（<b>零打扰</b>）。</div>
+          </div>
+          <div class="app-hint">消息区沿用 iter-1~6 基线</div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>进行中（可取消，可交互）</b>：提示条原地翻为进度态——spinner（currentColor）+ 「正在导入… <code>x / 20</code>」（tabular-nums）+
+        进度条（4px <code>--r-full</code>，轨道 <code>--c-hover-bg</code>、填充 <code>--c-primary-solid</code>）+「取消」。
+        <b>取消</b>：即时停止、无确认弹窗（本地数据完整保留、可逆）——已完成的会话保留云端，<b>单会话为原子单位，中断不产生半条记录</b>
+        （T3 验收「导入中断不产生半套数据」；按会话 id PUT 幂等，重复导入不产生重复）。<br>
+        <b>完成</b>：翻成功态（<code>--c-subtle-bg</code> 底 + <code>--c-success</code> 描边与标题——components.md 无 success 浅底令牌，用既有令牌组合，
+        见第 6 节注记），明示<b>「本地旧数据已转为只读备份，30 天后自动清除」</b>（REQ-022/006 口径）；「知道了」收起后无常驻 UI。<br>
+        <b>失败</b>：翻错误态（<code>--c-danger-l</code>/<code>--c-danger</code>）+「重试」（danger 实底，复用 REQ-007 手动重试语义）+
+        「暂不导入」仍可用；文案明示「本地数据未受任何影响」。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.3 触发/收起/只读 30 天口径汇总（定夺 ② 附表）</div>
+      <table>
+        <tr><th>情形</th><th>主界面顶部表现</th><th>口径依据</th></tr>
+        <tr><td>仅旧会话</td><td>会话提示条 1 条</td><td>REQ-022</td></tr>
+        <tr><td>仅旧档案</td><td>档案提示条 1 条（形态见 3.1）</td><td>REQ-018</td></tr>
+        <tr><td>两者都有（v0.4.x 升级典型）</td><td>两条堆叠（会话在上、档案在下），各自独立「导入/暂不导入」</td><td>定夺 ② 推荐（分开确认密钥上传）</td></tr>
+        <tr><td>「暂不导入」</td><td>对应条本次登录内移除、零上传；下次登录重新检测再提示；无「永久忽略」</td><td>spec 定案 + iter-7 定夺 ④ 同口径</td></tr>
+        <tr><td>导入完成</td><td>对应条翻成功态 →「知道了」移除；会话：本地转只读备份 30 天后自动清除（无常驻 UI，可观测性由 T3 验收取证）；档案：本地档案数据立即清除</td><td>REQ-022 / REQ-018</td></tr>
+        <tr><td>无本地旧数据</td><td>零打扰（无任何提示条）</td><td>REQ-022「不导入不影响云端新数据的使用」</td></tr>
+      </table>
+      <div class="ann"><b>只读语义</b>：导入后本地 IndexedDB 旧库不再写入、不再出现在会话列表（列表以云端为唯一持久层）；
+      「只读备份」仅作为 30 天安全窗内的恢复底数，界面上除完成态说明文案外不提供入口（误删恢复属运维操作，超最小口径）。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">3</span>存量档案上云提示条（REQ-018：key 未经确认不上传）</h2>
+    <div class="sec-desc">
+      spec REQ-018（CEO 批准 2026-08-16，形态随 design-iter-7 定稿、落地 iter-8）：登录后以提示条引导 + 一键导入，<b>非静默迁移</b>——
+      key 未经用户确认不上传；<b>导入为新增、不覆盖云端已有档案</b>；导入完成后本地档案数据清除；「暂不导入」下次登录再次提示。
+      与 2.1 同型交互（同 banner 语法、同状态机），本节画差异点：强调文案与完成后的本地清除说明。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">3.1 提示条（强调文案定稿）<span class="tag">iter-7 2.3 示意的落地定稿 · 位置随定夺 ②（主界面顶部，与 B 堆叠）</span></div>
+      <div class="stage">
+        <div class="tk app-frame">
+          <div class="app-top">
+            <svg viewBox="0 0 128 128" width="20" height="20" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+            <span class="ap-name">喵喵</span>
+          </div>
+          <div class="app-zone" style="min-height:90px;">
+            <div class="mig-banner warn">
+              <span class="mb-ico">!</span>
+              <div class="mb-main">检测到本浏览器存有旧版本保存的 <b>2 套供应商档案</b>，导入云端后可在多设备使用。<b>密钥仅在点击导入后上传——未经你的确认不会上传</b>；<b>导入为新增，不覆盖云端已有档案</b>；导入完成后本地不再保存任何档案与密钥数据。</div>
+              <div class="mb-acts">
+                <button class="mb-btn">暂不导入</button>
+                <button class="mb-btn-solid">导入到云端</button>
+              </div>
+            </div>
+          </div>
+          <div class="app-hint">消息区沿用 iter-1~6 基线（此条独立呈现以便走查文案；同屏堆叠形态见 2.1）</div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>强调文案（spec 硬口径逐条入文案）</b>：①「密钥仅在点击导入后上传——未经你的确认不会上传」（非静默，API key 属敏感凭据）；
+        ②「导入为新增，不覆盖云端已有档案」；③「导入完成后本地不再保存任何档案与密钥数据」（REQ-014 验收「浏览器检索不到 key」全量口径的销账前提）。<br>
+        <b>位置</b>：定夺 ② 推荐 = 主界面顶部与 B 堆叠（spec「登录后以提示条引导」字面落法 + 发现性：档案数据无 30 天清除兜底，藏在设置页可能永不被看到）；
+        备选（未采纳，留档）= 沿 iter-7 2.3 设置页高级设置区上方 + 会话条内加「前往设置」交叉链接——多一跳、主界面仍需一条。iter-7 2.3 样件形态（warning 条 +
+        两按钮）与本稿一致，仅位置口径由本稿定夺 ② 收口。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">3.2 状态全集（可交互：进行中可取消 / 完成 / 失败重试 / 暂不导入）<span class="tag">与 2.2 同型状态机</span></div>
+      <div class="sim-row">
+        <b>状态：</b>
+        <label><input type="radio" name="migCState" value="prompt" checked> 提示态</label>
+        <label><input type="radio" name="migCState" value="doing"> 导入中</label>
+        <label><input type="radio" name="migCState" value="done"> 完成</label>
+        <label><input type="radio" name="migCState" value="fail"> 失败</label>
+        <label><input type="radio" name="migCState" value="dismissed"> 已收起</label>
+        <label><input type="checkbox" id="simCFail"> 模拟导入失败</label>
+      </div>
+      <div class="stage">
+        <div class="tk app-frame">
+          <div class="app-top">
+            <svg viewBox="0 0 128 128" width="20" height="20" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+            <span class="ap-name">喵喵</span>
+          </div>
+          <div class="app-zone" style="min-height:120px;">
+            <div id="mcPrompt" class="mig-banner warn">
+              <span class="mb-ico">!</span>
+              <div class="mb-main">检测到本浏览器存有旧版本保存的 <b>2 套供应商档案</b>，导入云端后可在多设备使用。<b>密钥仅在点击导入后上传——未经你的确认不会上传</b>；导入为新增，不覆盖云端已有档案；导入完成后本地不再保存任何档案与密钥数据。</div>
+              <div class="mb-acts">
+                <button class="mb-btn" id="mcLater">暂不导入</button>
+                <button class="mb-btn-solid" id="mcImport">导入到云端</button>
+              </div>
+            </div>
+            <div id="mcDoing" class="mig-banner warn" style="display:none;">
+              <span class="mb-spin"></span>
+              <div class="mb-main">正在导入供应商档案… <span class="mb-num" id="mcNum">0 / 2</span>
+                <div class="mb-prog"><div class="fill" id="mcFill" style="width:0%"></div></div>
+              </div>
+              <div class="mb-acts"><button class="mb-btn" id="mcCancel">取消</button></div>
+            </div>
+            <div id="mcDone" class="mig-banner ok" style="display:none;">
+              <span class="mb-ico">✓</span>
+              <div class="mb-main"><span class="mb-t">已导入 2 套供应商档案。</span><b>本地已不再保存任何档案与密钥数据</b>；可在设置页高级设置中查看与管理（密文掩码显示）。</div>
+              <div class="mb-acts"><button class="mb-btn" id="mcKnow">知道了</button></div>
+            </div>
+            <div id="mcFail" class="mig-banner err" style="display:none;">
+              <span class="mb-ico">!</span>
+              <div class="mb-main"><b>导入失败：无法连接服务器。</b>本地档案与密钥未受任何影响、未上传，可重试。</div>
+              <div class="mb-acts">
+                <button class="mb-btn" id="mcFailLater">暂不导入</button>
+                <button class="mb-btn-danger" id="mcRetry">重试</button>
+              </div>
+            </div>
+            <div id="mcDismissed" class="app-hint" style="display:none;margin:0 0 12px;">提示条已收起：本次登录内不再显示、<b>零上传</b>；下次登录重新检测、仍有旧档案则再次提示。</div>
+          </div>
+          <div class="app-hint">消息区沿用 iter-1~6 基线</div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>与 B 的差异点</b>：① 失败文案强调「密钥未上传」（安全语义）；② 完成文案强调「本地已不再保存任何档案与密钥数据」——
+        T3 验收「浏览器检索不到 key 按全量口径复验销账（REQ-014）」的用户侧对应说明；<b>单档案为原子单位</b>（中断不产生半套档案，spec REQ-018 异常分支）。
+        其余（进度/取消/重试/暂不导入节奏）与 2.2 完全同型——同一组件 <code>MigBanner</code> 参数化复用（组件建议：会话/档案两个实例共用一套状态机）。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">4</span>亮暗锁定对照（双帧并置，走查方法 = 找亮色残留）</h2>
+    <div class="sec-desc">管理后台用户列表整区（全站条 + 表格）与迁移提示条（B+C 堆叠）各一屏：同一 DOM，仅根节点令牌覆盖；暗色帧内任何肉眼发白块即为漏改裸色值。</div>
+    <div class="spec">
+      <div class="spec-title">4.1 管理后台 · 用户列表（浅 ↔ 暗）</div>
+      <div class="cols">
+        <div>
+          <div class="frame-cap">浅色（tokens v1.3 浅色值）</div>
+          <div class="tk force-light admin-frame" style="min-height:0;" id="lockUL"></div>
+        </div>
+        <div>
+          <div class="frame-cap">暗色（tokens v1.3 暗色值，同一 DOM 仅变量覆盖）</div>
+          <div class="tk force-dark admin-frame" style="min-height:0;" id="lockUD"></div>
+        </div>
+      </div>
+      <div class="ann">暗色取值全为 tokens v1.3 既有值：页面底 <code>#131417</code> / 表面 <code>#1E2026</code> / 描边 <code>#33363E</code> / 表头底 <code>--c-subtle-bg #24272E</code> /
+      状态胶囊（正常 <code>#4CC38A</code> 字 / 封禁 <code>#FF8073</code> 字 on <code>#361B18</code>，6.5:1）/ 全站条熔断态同错误令牌族。正文对比度 ≥4.5:1（tokens v1.3 计算值表）。</div>
+    </div>
+    <div class="spec">
+      <div class="spec-title">4.2 迁移提示条堆叠（浅 ↔ 暗）</div>
+      <div class="cols">
+        <div>
+          <div class="frame-cap">浅色</div>
+          <div class="tk force-light app-frame">
+            <div class="app-top">
+              <svg viewBox="0 0 128 128" width="20" height="20" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+              <span class="ap-name">喵喵</span>
+            </div>
+            <div class="app-zone">
+              <div class="mig-banner warn">
+                <span class="mb-ico">!</span>
+                <div class="mb-main">检测到本浏览器存有旧版本的 <b>20 个本地会话</b>……<b>导入为新增，不覆盖云端已有会话</b>；导入后本地数据转为只读备份，30 天后自动清除。</div>
+                <div class="mb-acts"><button class="mb-btn">暂不导入</button><button class="mb-btn-solid">导入到云端</button></div>
+              </div>
+              <div class="mig-banner ok">
+                <span class="mb-ico">✓</span>
+                <div class="mb-main"><span class="mb-t">已导入 2 套供应商档案。</span><b>本地已不再保存任何档案与密钥数据</b>。</div>
+                <div class="mb-acts"><button class="mb-btn">知道了</button></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="frame-cap">暗色（warn = <code>#38290F</code> 底 + <code>#EDA23B</code> 字 6.6:1；ok = subtle 底 + <code>#4CC38A</code> 描边）</div>
+          <div class="tk force-dark app-frame">
+            <div class="app-top">
+              <svg viewBox="0 0 128 128" width="20" height="20" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+              <span class="ap-name">喵喵</span>
+            </div>
+            <div class="app-zone">
+              <div class="mig-banner warn">
+                <span class="mb-ico">!</span>
+                <div class="mb-main">检测到本浏览器存有旧版本的 <b>20 个本地会话</b>……<b>导入为新增，不覆盖云端已有会话</b>；导入后本地数据转为只读备份，30 天后自动清除。</div>
+                <div class="mb-acts"><button class="mb-btn">暂不导入</button><button class="mb-btn-solid">导入到云端</button></div>
+              </div>
+              <div class="mig-banner ok">
+                <span class="mb-ico">✓</span>
+                <div class="mb-main"><span class="mb-t">已导入 2 套供应商档案。</span><b>本地已不再保存任何档案与密钥数据</b>。</div>
+                <div class="mb-acts"><button class="mb-btn">知道了</button></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">成功态暗色：底 <code>--c-subtle-bg #24272E</code> + 描边/标题 <code>--c-success #4CC38A</code>（7.4:1 on surface 同族）；实底主按钮 <code>#3370FF</code> 白字两模式一致（4.3:1）。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">5</span>适用性说明（不适用项注明，v1.4.4 口径）</h2>
+    <div class="spec">
+      <table>
+        <tr><th>项</th><th>结论</th><th>依据</th></tr>
+        <tr><td>移动端 ≤480px 适配</td><td><b>不适用</b>：管理后台 / 主界面 / 设置页维持桌面优先，不做窄屏断点</td><td>spec 兼容条款（CEO 定 2026-08-15，随 design-iter-6 基线批准）：仅登录/注册两页承诺 ≤480px</td></tr>
+        <tr><td>T1（REQ-024 配额体系）用户侧提示 UI</td><td><b>不适用</b>：配额不足/全站熔断文案已由 design-iter-7 §3.1 定稿（占位行返回即接入）；注册限频 banner 已由 design-iter-6 §2.2/§3 定稿（429 零 UI 改动接入）——本稿零新增用户侧错误 UI</td><td>iter-8.md T1 验收原文「无 UI 变更，走查不适用（注明）」</td></tr>
+        <tr><td>T3 LWW 并发用例补验 / REQ-014 key 全量复验</td><td><b>不适用</b>：行为与数据层验收（无 UI 触点）</td><td>iter-8.md T3 验收（两设备并发改标题、浏览器检索 key）</td></tr>
+        <tr><td>普通用户个人用量面板</td><td><b>不在范围</b>：暂缓池条目，与 REQ-025（管理员治理后台）边界见 spec 暂缓池注记</td><td>spec §4 暂缓池</td></tr>
+        <tr><td>样件数值</td><td>本稿全部用户名/日期/用量数值均为<b>演示数据</b>；线上后台数据只来自后端逐请求机器计数（与调用日志一致，抽样比对验收）</td><td>铁律 5「度量数据只允许机器采集」+ REQ-025 可观测条款</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">6</span>令牌与组件使用说明</h2>
+    <div class="sec-desc">本稿零新增令牌；管理后台与迁移提示条为既有令牌与卡片/表单/提示条语法的组合。</div>
+    <table>
+      <tr><th>项</th><th>结论</th></tr>
+      <tr>
+        <td>色值</td>
+        <td>全部取自 tokens.md v1.3/v1.3.1（浅色 + 暗色 + 前景/实底拆分族），本稿零新增、零裸色值（文档外壳沿惯例用浅色原值；产品组件一律 <code>var()</code> 引用语义令牌，含阴影/焦点环/遮罩）。无需 design-system 令牌变更。</td>
+      </tr>
+      <tr>
+        <td>组件模式</td>
+        <td>表单模态 / 模态确认（危险实底）/ 图标按钮 / 分段控件 / 表单级 banner = components.md v1.0 既有模式；登录页与侧栏底栏 = design-iter-6 基线引用；
+        密钥模式卡与配额提示文案 = design-iter-7 基线引用。<b>新增形态四项</b>（纯既有令牌组合，建议随本基线批准后补登记 components.md——资产沉淀，不涉令牌批准，沿 iter-7 KeyModeCard 惯例）：
+        ① <b>数据表格</b>（th <code>--c-subtle-bg</code>/行 hover <code>--c-hover-bg</code>/可排序列头）；② <b>状态徽标组</b>（正常 subtle+success / 封禁 danger-l+danger / 管理员与自定义 primary-l+primary / 中性档位 subtle+text-2）；
+        ③ <b>应用级迁移提示条</b>（warn/err/ok 三态 + 进度行 + 主次动作）；④ <b>左缘强调状态条</b>（site-strip：border-left 3px 语义色）。</td>
+      </tr>
+      <tr>
+        <td>success 浅底令牌</td>
+        <td>components.md 无 success 浅底令牌（tokens 仅 <code>--c-success</code> 前景）。成功提示条本稿用 <b>subtle-bg 底 + success 描边/标题</b> 组合（两模式对比度均 AA）。
+        若后续成功态高频，可另行提请新增 <code>--c-success-l</code>——<b>本稿不提</b>（保持零令牌变更）。</td>
+      </tr>
+      <tr>
+        <td>字号/间距/圆角/阴影/动效</td>
+        <td>全部在 tokens 既定值域内（表格 13px、表头 12px、胶囊 12px/500、顶栏 52px、tab 32px、按钮 26/28/32/36px 阶梯、过渡 .15s ease、按压 scale .96~.98）。</td>
+      </tr>
+    </table>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">7</span>T0 验收对照 + 走查清单（v1.4.4 硬要求）</h2>
+    <div class="sec-desc">上半表对照 plans/iter-8.md T0 验收标准逐条落点；下半表为本稿全部触点与状态组合的走查清单——T2/T3 实现时对照逐条自查留档（development.md），QA 审计取证。</div>
+
+    <div class="spec">
+      <div class="spec-title">7.1 T0 验收标准对照（plans/iter-8.md 原文）</div>
+      <table>
+        <tr><th>T0 验收标准（原文）</th><th>本稿落点</th><th>状态</th></tr>
+        <tr><td>设计稿经 CEO 批准并打 design-iter-8 tag</td><td>本稿为<b>草案</b>——待 CEO 评审批准；批准后 tag 由主会话打（设计师不打 tag、不 commit）</td><td>○ 待 CEO 批准</td></tr>
+        <tr><td>含 §7.x 走查清单（v1.4.4 硬要求）</td><td>7.2（44 条，含亮暗双态、引用基线条目与不适用注明）</td><td>☑ 已覆盖</td></tr>
+        <tr><td>T0 定夺项 4 项随设计基线由 CEO 拍板（① 配额呈现口径 ② 迁移提示条触发与再提示节奏 ③ 后台入口可见性 ④ 用量列表最小集）</td><td>第 8 节「待 CEO 定夺」区块（每项含推荐方案与理由，随基线批准定案）</td><td>○ 待定夺</td></tr>
+      </table>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">7.2 走查清单（design-iter-8）</div>
+      <table>
+        <tr><th style="width:40px">序号</th><th>需求</th><th>触点</th><th>状态组合</th><th>期望表现（=验收口径）</th><th>样件</th></tr>
+        <tr><td>1</td><td>REQ-025</td><td>侧栏底栏入口</td><td>管理员视角</td><td>盾牌 icon 入口（title「管理后台」）在状态点与登出之间；仅管理员渲染</td><td>1.1</td></tr>
+        <tr><td>2</td><td>REQ-025</td><td>侧栏底栏入口</td><td>普通用户视角</td><td>无盾牌入口、DOM 无该节点；主界面无任何后台痕迹</td><td>1.1</td></tr>
+        <tr><td>3</td><td>REQ-025</td><td>路由守卫</td><td>未登录访问 /admin</td><td>跳 <code>/login?redirect=/admin</code>，登录后回跳（REQ-020 守卫沿用）</td><td>1.1 表</td></tr>
+        <tr><td>4</td><td>REQ-025</td><td>403 态</td><td>普通用户访问 /admin</td><td>居中卡「无权访问（403）」+「返回主界面」；不渲染任何后台数据；admin 接口同 403（双保险）</td><td>1.5</td></tr>
+        <tr><td>5</td><td>REQ-025</td><td>后台框架</td><td>默认态</td><td>顶栏（品牌 + 管理后台徽标 + 主题切换 + 返回主界面）+ 分段 tab（用户列表/用量列表，role=radiogroup）</td><td>1.1</td></tr>
+        <tr><td>6</td><td>REQ-025</td><td>用户列表</td><td>列集</td><td>用户名/注册时间/状态/密钥模式/配额（档位+当日用量）/操作——spec 主流程 2 全字段</td><td>1.2</td></tr>
+        <tr><td>7</td><td>REQ-025</td><td>用户列表</td><td>管理员本人行</td><td>「管理员」徽标；「封禁」按钮禁用（opacity .45）+ title「管理员本人不可封禁」；后端同拒绝</td><td>1.2</td></tr>
+        <tr><td>8</td><td>REQ-025</td><td>用户列表</td><td>状态列</td><td>正常 = subtle 底 success 字胶囊；已封禁 = danger-l 底 danger 字胶囊</td><td>1.2</td></tr>
+        <tr><td>9</td><td>定夺①</td><td>全站配额条</td><td>常态</td><td>「统一 key 每日总量 2,000 · 今日已用 x」；触发上限将暂停全站请求的说明</td><td>1.2（可切换）</td></tr>
+        <tr><td>10</td><td>定夺①</td><td>全站配额条</td><td>接近上限（≥80%）</td><td>翻琥珀（warning-l/warning）明示接近每日总量</td><td>1.2（可切换）</td></tr>
+        <tr><td>11</td><td>定夺①/REQ-024</td><td>全站配额条</td><td>已熔断</td><td>翻红（danger-l/danger）「已暂停全站新对话请求，明日 00:00 自动恢复；自填 key 不受影响」</td><td>1.2（可切换）</td></tr>
+        <tr><td>12</td><td>定夺①</td><td>配额列</td><td>档位徽标</td><td>免费档 30/日（统一 key 默认）/ 自填档 500/日（自填默认）/ 自定义 N/日（覆盖，primary 徽标）——默认与覆盖可区分</td><td>1.2</td></tr>
+        <tr><td>13</td><td>REQ-024 联动</td><td>配额列</td><td>用量呈现</td><td>「今日 x/N」tabular-nums；x=N → danger「已用尽」；封禁用户计数冻结显示「—」</td><td>1.2</td></tr>
+        <tr><td>14</td><td>REQ-025</td><td>封禁操作</td><td>确认模态</td><td>danger 实底「确认封禁」，明示「无法登录与调用、云端数据保留、解封可恢复」→ 生效翻封禁 + toast</td><td>1.2/1.3（可交互）</td></tr>
+        <tr><td>15</td><td>REQ-025</td><td>封禁自己</td><td>被阻止</td><td>本人行封禁按钮禁用 + title 提示；绕过 UI 直调 API 后端同样拒绝（T2 测试覆盖）</td><td>1.2/1.3 注</td></tr>
+        <tr><td>16</td><td>REQ-025</td><td>解封操作</td><td>直接生效</td><td>无确认弹窗（可逆），生效 + toast；被封禁行操作按钮换「解封」</td><td>1.2（可交互）</td></tr>
+        <tr><td>17</td><td>定夺①</td><td>调配额模态</td><td>表单 + 校验</td><td>「按默认档位（随密钥模式 30/500）」/「自定义 N 次/日」；非正整数 → 红描边 + 行内错误，不入库；Esc/取消不改动</td><td>1.3（可交互）</td></tr>
+        <tr><td>18</td><td>REQ-024 联动</td><td>调配额生效</td><td>保存后</td><td>列表徽标翻「自定义 N」+ toast「自下一次请求生效」；该用户实际可用量按 N 生效（T2 与 REQ-024 验收联动）</td><td>1.2/1.3（可交互）</td></tr>
+        <tr><td>19</td><td>REQ-025</td><td>用户列表</td><td>加载态</td><td>spinner + 「正在加载用户列表…」，不出空白假象</td><td>1.2（可切换）</td></tr>
+        <tr><td>20</td><td>REQ-007/025</td><td>用户列表</td><td>拉取失败</td><td>错误 banner +「重试」；重试不清已选 tab 与状态</td><td>1.2（可切换）</td></tr>
+        <tr><td>21</td><td>REQ-025</td><td>用户列表</td><td>仅管理员一人（新部署）</td><td>单行列表正常呈现（不显示空态——管理员恒存在）</td><td>1.2（可切换）</td></tr>
+        <tr><td>22</td><td>极端</td><td>用户列表</td><td>超长用户名（32 字符）</td><td>ellipsis（max-width 150px）+ title 显示全名，不破行</td><td>1.2</td></tr>
+        <tr><td>23</td><td>定夺④</td><td>用量列表</td><td>列集</td><td>日期/用户名/请求数/token 数（用户 × 自然日聚合行；token 为每请求合计）</td><td>1.4</td></tr>
+        <tr><td>24</td><td>定夺④</td><td>用量列表</td><td>筛选</td><td>用户下拉（含「全部用户」）+ 日期起止（默认最近 7 天）；结果即时刷新并显示行数</td><td>1.4（可交互）</td></tr>
+        <tr><td>25</td><td>定夺④</td><td>用量列表</td><td>排序</td><td>日期/请求数/token 数三列头点击切换升降序，箭头指示；默认日期降序</td><td>1.4（可交互）</td></tr>
+        <tr><td>26</td><td>REQ-025</td><td>用量列表</td><td>空态</td><td>「所选范围内暂无用量数据」+ 新用户/新部署提示；筛选无结果同态</td><td>1.4（可切换）</td></tr>
+        <tr><td>27</td><td>REQ-025</td><td>用量列表</td><td>加载 / 失败</td><td>spinner 态；错误 banner + 重试</td><td>1.4（可切换）</td></tr>
+        <tr><td>28</td><td>铁律5/REQ-025</td><td>用量列表</td><td>数据缺失</td><td>缺失时段以表内琥珀行标注「仅显示已有数据（不估算补齐）」——统计中断不编造</td><td>1.4（可切换）</td></tr>
+        <tr><td>29</td><td>REQ-025</td><td>登录页</td><td>被封禁用户登录</td><td>warning banner「账号已被封禁，无法使用。如有疑问请联系管理员」（iter-6 定稿文案）；无重试按钮；在线被封禁 → 下次请求跳登录 + 同 banner</td><td>1.5</td></tr>
+        <tr><td>30</td><td>REQ-022</td><td>迁移触发</td><td>有旧会话</td><td>登录后主界面顶部显示会话提示条（说明数量/新增不覆盖/只读 30 天）</td><td>2.1</td></tr>
+        <tr><td>31</td><td>REQ-022</td><td>迁移触发</td><td>无旧数据</td><td>零打扰——主界面无任何提示条，不影响云端新数据使用</td><td>2.2（可切换）</td></tr>
+        <tr><td>32</td><td>定夺②</td><td>暂不导入</td><td>会话条</td><td>本次登录内不再显示（含刷新）、零上传；下次登录重新检测再提示；无「永久忽略」</td><td>2.1/2.2（可交互）</td></tr>
+        <tr><td>33</td><td>REQ-022</td><td>导入中</td><td>进度 + 取消</td><td>spinner + 「x / 20」+ 进度条 +「取消」；取消即时停止无确认弹窗，本地数据完整保留、已完成的保留（PUT 幂等不重复）</td><td>2.2（可交互）</td></tr>
+        <tr><td>34</td><td>REQ-022/T3</td><td>原子性</td><td>中断</td><td>单会话为原子单位，中断不产生半条记录（验收「导入中断不产生半套数据」）</td><td>2.2 注</td></tr>
+        <tr><td>35</td><td>REQ-022/006</td><td>导入完成</td><td>成功态</td><td>「已导入 20 个会话」+「本地旧数据已转为只读备份，30 天后自动清除」；「知道了」收起后无常驻 UI</td><td>2.2（可交互）</td></tr>
+        <tr><td>36</td><td>REQ-007/022</td><td>导入失败</td><td>错误态 + 重试</td><td>「导入失败：无法连接服务器。本地数据未受任何影响」+「重试」（danger 实底）+「暂不导入」仍可用</td><td>2.2（可交互）</td></tr>
+        <tr><td>37</td><td>定夺②</td><td>同屏共存</td><td>会话 + 档案</td><td>两条堆叠、各自独立「导入/暂不导入」与状态机；密钥上传与会话迁移分开确认</td><td>2.1/2.3</td></tr>
+        <tr><td>38</td><td>REQ-018</td><td>档案提示条</td><td>强调文案</td><td>「密钥仅在点击导入后上传——未经你的确认不会上传」+「导入为新增，不覆盖云端已有档案」+「本地不再保存任何档案与密钥数据」三要点齐备</td><td>3.1</td></tr>
+        <tr><td>39</td><td>REQ-018</td><td>档案导入中/失败</td><td>同型状态机</td><td>进度 x/2 + 取消；失败强调「密钥未上传」+ 重试；单档案原子（不产生半套档案）</td><td>3.2（可交互）</td></tr>
+        <tr><td>40</td><td>REQ-018/T3</td><td>档案完成</td><td>本地清除说明</td><td>「已导入 2 套供应商档案。本地已不再保存任何档案与密钥数据」——REQ-014「浏览器检索不到 key」全量口径销账的用户侧对应</td><td>3.2（可交互）</td></tr>
+        <tr><td>41</td><td>REQ-018</td><td>暂不导入</td><td>档案条</td><td>零上传、本次登录不再显示、下次登录再提示（与 B 同节奏）</td><td>3.2（可交互）</td></tr>
+        <tr><td>42</td><td>REQ-017</td><td>后台 + 迁移条</td><td>亮暗双态</td><td>第 4 节锁定双帧对照，暗色无亮色残留；正文/说明对比度 ≥4.5:1（tokens v1.3 计算值）</td><td>4</td></tr>
+        <tr><td>43</td><td>铁律5</td><td>样件数据</td><td>全局</td><td>样件数值均为演示数据；线上后台数据只来自后端逐请求机器计数（与调用日志抽样比对 3 天一致）</td><td>§1/§5 注</td></tr>
+        <tr><td>44</td><td>适用性</td><td>移动端 / T1 提示 UI / LWW / key 复验</td><td>不适用注明</td><td>移动端仅登录/注册承诺 ≤480px；T1 配额与限频提示零 UI 改动接入（iter-7 §3.1 / iter-6 §2.2 定稿文案）；LWW 与 key 复验无 UI 触点</td><td>5</td></tr>
+      </table>
+      <div class="ann">共 <b>44</b> 条。「可交互」样件在本页可直接操作复核；「引用」条目按 design-iter-5/6/7 基线走查；行为类由 T1/T2/T3 自动化用例或手工走查取证。
+      v1.4.4 口径：T2/T3 实现对照本清单逐条自查后再提交，留档供 QA 审计（iter-8.md 任务表验收标准明列「design-iter-8 走查清单留档」）。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">8</span>待 CEO 定夺（4 项，随设计基线批准拍板）</h2>
+    <div class="sec-desc">沿 iter-1~7 固化模式：设计师给推荐方案与理由 → CEO 拍板 → 固化为决策记录，T1/T2/T3 按定案实现。<b>本稿为草案，以下 4 项均未定案</b>；样件按推荐方案落形，批准即生效，改定则改样件后基线。</div>
+
+    <div class="spec" style="border-color:#B45309;background:#FFF7E8;">
+      <div class="spec-title" style="color:#1F2329;">待定夺区块（批准本稿时请逐项拍板：按推荐方案 / 改定）</div>
+      <div class="ann" style="color:#646A73;">
+        <b>① 配额呈现口径</b>——推荐：档位徽标（免费档 30 / 自填档 500 / 自定义 N）+「今日 x/N」文字用量 + 页面级全站条（2000 总量、≥80% 琥珀、熔断红条），不做图表/进度条；<br>
+        <b>② 迁移提示条触发与再提示</b>——推荐：登录成功后检测、主界面顶部显示，会话/档案两条独立堆叠；「暂不导入」本次登录不再显示、下次登录再提示，无「永久忽略」；<br>
+        <b>③ 后台入口可见性</b>——推荐：侧栏底栏盾牌 icon 入口（仅管理员渲染）+ 独立路由 /admin + 服务端 403 双保险；<br>
+        <b>④ 用量列表最小集</b>——推荐：4 列（日期/用户/请求数/token 数）+ 2 筛选（用户下拉 + 日期范围默认 7 天）+ 3 列可排序；不做分页/图表/导出。
+      </div>
+    </div>
+
+    <table>
+      <tr><th style="width:56px">编号</th><th>问题（iter-8.md T0 原文）</th><th>推荐方案（本稿样件已按此落形）</th><th>理由 / 备选（未采纳留档）</th></tr>
+      <tr>
+        <td>①</td>
+        <td>配额档位与数值在后台的呈现口径（联动已定默认值：免费档 30 / 自填档 500 / 统一 key 每日总量 2000）</td>
+        <td><b>档位徽标 + 文字用量 + 全站条</b>：用户列表「配额」列 = 档位徽标（免费档 30/日 · 自填档 500/日 · <b>自定义 N/日（覆盖，主色徽标）</b>）+「今日 x/N」（tabular-nums；x=N → danger「已用尽」；封禁 → 「—」）。
+        表格上方<b>全站配额条</b>：「统一 key 每日总量 2,000 · 今日已用 x」；≥80% 翻琥珀；熔断翻红并明示「已暂停全站新对话请求，明日 00:00 恢复；自填 key 不受影响」。
+        调配额模态 = 「按默认档位（随密钥模式）」/「自定义 N 次/日」。注册限频（每 IP 每日 3）不进后台 UI（配置注入）。<b>不做</b>图表、进度条、百分比环形。</td>
+        <td>徽标区分默认与覆盖——治理审计需要一眼看出谁被改过；「x/N」文字与 REQ-025 验收「与后端调用日志计数一致」的比对口径同构；
+        全站条给 2000 熔断可观测面（REQ-024 验收「触发后全站收到暂停提示」的管理侧对应）；spec 明示「图表不做」。<br>备选（未采纳）：仅数值无徽标（默认/覆盖不可区分）；全站用量迷你趋势图（违「图表不做」）。</td>
+      </tr>
+      <tr>
+        <td>②</td>
+        <td>迁移提示条触发规则与「暂不导入」再提示节奏（spec 定案「下次登录再次提示」）</td>
+        <td><b>登录后检测 + 主界面顶部 + 两条独立堆叠</b>：每次登录成功后前端检测本地旧数据（会话 = IndexedDB 旧库；档案 = 旧 localStorage 字段），检测到即在主界面顶部显示对应提示条，
+        会话条与档案条<b>各自独立动作</b>；无旧数据零打扰。「暂不导入」= 该条本次登录内不再显示（含刷新）、<b>零上传</b>；下次登录重新检测、仍有则再提示；<b>不提供「永久忽略」</b>。
+        同登录内反悔无重入口（重新登录即再看，已知取舍登记在案）。导入完成：会话本地转只读备份 30 天后清除；档案本地立即清除。</td>
+        <td>spec「下次登录再次提示」的直接落法；登录时点检测一次、节奏可预期；密钥凭据上传与普通数据迁移<b>分开确认</b>（安全语义），故不合并为一条；
+        spec REQ-018 写「登录后以提示条引导」——主界面顶部即字面落法，且档案数据无 30 天清除兜底、放设置页有永不被发现的风险。<br>备选（未采纳）：档案条留设置页 + 会话条内交叉链接（多一跳且主界面仍需一条）；每次页面加载都提示（打扰过重）。</td>
+      </tr>
+      <tr>
+        <td>③</td>
+        <td>管理后台入口可见性口径（仅管理员可见的实现形态）</td>
+        <td><b>侧栏底栏盾牌入口 + 独立路由 + 服务端 403 双保险</b>：主界面侧栏底栏新增盾牌 icon-only ghost（26px，title/aria-label「管理后台」，置于状态点与登出之间），
+        <b>仅登录用户带管理员标记时渲染</b>；后台为独立路由 <code>/admin</code>（顶栏 + tab 页面骨架，非主界面内嵌）；「返回主界面」回主路由。
+        安全边界在服务端：admin 接口对非管理员一律 403；未登录访问 /admin 跳登录（redirect 回跳）。</td>
+        <td>与 iter-6 4.2 侧栏底栏增量同位（用户名/登出所在 = 账号级操作聚集地）；设置页语义不符（后台非用户偏好）；纯 URL 直达可发现性差；
+        前端隐藏 + 后端 403 双保险恰好覆盖 T2 验收「普通用户访问后台路由/接口返回 403、不暴露任何后台数据」。<br>备选（未采纳）：设置页内入口；顶栏入口（顶栏为会话级操作区）；仅 URL 直达。</td>
+      </tr>
+      <tr>
+        <td>④</td>
+        <td>用量列表的列与筛选排序最小集</td>
+        <td><b>4 列 + 2 筛选 + 3 排序</b>：列 = 日期 / 用户名 / 请求数 / token 数（用户 × 自然日聚合行，token 为每请求合计）；
+        筛选 = 用户下拉（含「全部用户」，默认全部）+ 日期起止（默认最近 7 天）；排序 = 日期/请求数/token 数列头点击切换升降序（默认日期降序）。
+        <b>不做</b>：分页、图表、导出、token 拆输入/输出。数据缺失以表内琥珀行标注缺失时段（不估算补齐）。</td>
+        <td>4 列恰是 REQ-025 验收「按用户按日的请求数与 token 数与后端调用日志计数一致（抽样比对 3 天）」的<b>最小比对字段集</b>；
+        默认 7 天窗口防「用户数 × 天数」行数膨胀（替代分页）；缺失标注对应 spec 异常分支「显示已有数据并标注缺失时段，不编造」。<br>备选（未采纳）：分页（最小口径外增量）；token 拆输入/输出（T1 记录口径为合计）。</td>
+      </tr>
+    </table>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">9</span>基线声明（草案）</h2>
+    <div class="sec-desc">
+      本稿为 <b>design-iter-8 草案</b>：管理后台（REQ-025：入口/用户列表/封禁解封/调配额/用量列表/403/封禁登录提示）+
+      存量会话迁移入口（REQ-022：提示条/进行中可取消/完成/失败重试/只读 30 天）+ 存量档案上云提示条（REQ-018：key 未经确认不上传/新增不覆盖/本地清除）+
+      §7.x 走查清单（44 条，v1.4.4），对应 iter-8.md T0 全部交付点；第 8 节 4 项定夺待 CEO 拍板。
+      全部色值取自公司 design-system tokens.md v1.3/v1.3.1，零新增令牌；主界面/登录页/密钥模式卡沿 iter-1~7 基线零改动（仅侧栏底栏一处盾牌入口增量）。
+      <b>待 CEO 评审批准后由主会话打 design-iter-8 tag 基线；T1/T2/T3 按批准稿与定案开发，实现对照 7.2 清单逐条自查留档（v1.4.4 任务级门槛）。</b>
+      设计师不 commit、不打 tag、不改 spec/RTM。
+    </div>
+  </section>
+
+</div>
+
+<script>
+/* ============================================================
+   演示交互（文档功能件）：主题切换 / toast / 管理后台状态机 / 迁移状态机
+   —— 样件数据均为演示数据（铁律 5：线上度量只允许机器采集）
+   ============================================================ */
+(function () {
+  var KEY = 'mm-demo-theme';
+  var flippables = document.querySelectorAll('.tk:not(.force-light):not(.force-dark)');
+  var btnLight = document.getElementById('btnLight');
+  var btnDark = document.getElementById('btnDark');
+
+  function applyTheme(t) {
+    flippables.forEach(function (f) { f.classList.toggle('dark', t === 'dark'); });
+    btnLight.classList.toggle('on', t === 'light');
+    btnDark.classList.toggle('on', t === 'dark');
+    try { localStorage.setItem(KEY, t); } catch (e) {}
+  }
+  var saved = 'light';
+  try { saved = localStorage.getItem(KEY) || 'light'; } catch (e) {}
+  applyTheme(saved);
+  btnLight.addEventListener('click', function () { applyTheme('light'); });
+  btnDark.addEventListener('click', function () { applyTheme('dark'); });
+
+  function toast(text) {
+    var host = document.getElementById('toastHost');
+    var el = document.createElement('div');
+    el.style.cssText = 'display:inline-flex;align-items:center;background:#23272E;border:1px solid transparent;color:#fff;font-size:13px;padding:10px 16px;border-radius:8px;box-shadow:0 4px 16px rgba(31,35,41,.10);animation:toastIn .2s ease;';
+    el.textContent = text;
+    host.appendChild(el);
+    setTimeout(function () { host.removeChild(el); }, 3200);
+  }
+
+  function q(id) { return document.getElementById(id); }
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
+  function val(name) {
+    var el = document.querySelector('input[name=' + name + ']:checked');
+    return el ? el.value : '';
+  }
+  function setRadio(name, v) {
+    var el = document.querySelector('input[name=' + name + '][value=' + v + ']');
+    if (el) el.checked = true;
+  }
+  var styleEl = document.createElement('style');
+  styleEl.textContent = '@keyframes toastIn{from{opacity:0;transform:translateY(6px);}}';
+  document.head.appendChild(styleEl);
+
+  /* ================= A. 管理后台 ================= */
+  var USERS = [
+    { name: '猫南北', admin: true,  reg: '2026-08-10 09:12', status: 'ok',     mode: 'unified', qType: 'default', qN: 30,  used: 6,  usedPrev: 6 },
+    { name: 'wupeng', admin: false, reg: '2026-08-10 10:03', status: 'ok',     mode: 'custom',  qType: 'default', qN: 500, used: 87, usedPrev: 87 },
+    { name: '李雷',   admin: false, reg: '2026-08-11 14:40', status: 'ok',     mode: 'custom',  qType: 'custom',  qN: 200, used: 12, usedPrev: 12 },
+    { name: 'test_user_01', admin: false, reg: '2026-08-12 08:20', status: 'ok', mode: 'unified', qType: 'default', qN: 30, used: 30, usedPrev: 30 },
+    { name: 'spam-bot-2026', admin: false, reg: '2026-08-13 02:17', status: 'banned', mode: 'unified', qType: 'default', qN: 30, used: null, usedPrev: 27 },
+    { name: '这是一个满长度的三十二字符用户名示例ABCD12345678', admin: false, reg: '2026-08-14 19:55', status: 'ok', mode: 'unified', qType: 'default', qN: 30, used: 3, usedPrev: 3 }
+  ];
+  function findUser(name) {
+    for (var i = 0; i < USERS.length; i++) if (USERS[i].name === name) return USERS[i];
+    return null;
+  }
+  function quotaPill(u) {
+    if (u.qType === 'custom') return '<span class="pill pill-cut">自定义 ' + u.qN + '/日</span>';
+    return '<span class="pill pill-def">' + (u.mode === 'unified' ? '免费档 30/日' : '自填档 500/日') + '</span>';
+  }
+  function userRowHtml(u) {
+    var name = '<span class="cell-name" title="' + esc(u.name) + '">' + esc(u.name) + '</span>' + (u.admin ? '<span class="pill pill-admin">管理员</span>' : '');
+    var status = u.status === 'banned' ? '<span class="pill pill-ban">已封禁</span>' : '<span class="pill pill-ok">正常</span>';
+    var mode = u.mode === 'unified' ? '统一 key' : '自填 key';
+    var quota;
+    if (u.status === 'banned') {
+      quota = '<span class="q-cell">' + quotaPill(u) + '<span class="q-used">今日 —</span></span>';
+    } else {
+      var used = u.used >= u.qN
+        ? '<span class="q-full">今日 ' + u.used + '/' + u.qN + ' · 已用尽</span>'
+        : '<span class="q-used">今日 ' + u.used + '/' + u.qN + '</span>';
+      quota = '<span class="q-cell">' + quotaPill(u) + used + '</span>';
+    }
+    var banBtn = u.admin
+      ? '<button class="btn-row act-ban" disabled title="管理员本人不可封禁">封禁</button>'
+      : (u.status === 'banned'
+          ? '<button class="btn-row act-unban" data-unban="' + esc(u.name) + '">解封</button>'
+          : '<button class="btn-row act-ban" data-ban="' + esc(u.name) + '">封禁</button>');
+    var acts = '<button class="btn-row act-quota" data-quota="' + esc(u.name) + '">调配额</button>' + banBtn;
+    return '<tr><td>' + name + '</td><td class="cell-time">' + u.reg + '</td><td>' + status + '</td><td>' + mode + '</td><td>' + quota + '</td><td style="white-space:nowrap;">' + acts + '</td></tr>';
+  }
+  function usersTableHtml(list) {
+    return '<div class="tbl-wrap"><table class="adm-table"><thead><tr><th>用户名</th><th>注册时间</th><th>状态</th><th>密钥模式</th><th>配额（每自然日）</th><th style="width:180px;">操作</th></tr></thead><tbody>' +
+      list.map(userRowHtml).join('') + '</tbody></table></div>';
+  }
+  function stripHtml() {
+    var st = val('siteState');
+    if (st === 'near') return '<div class="site-strip near"><span class="ss-label">全站统一 key</span><span class="ss-num">今日已用 <b>1,847 / 2,000</b>（92%）——接近每日总量</span></div>';
+    if (st === 'burst') return '<div class="site-strip burst"><span class="ss-label">已触发每日上限</span><span class="ss-num">今日全站统一 key 用量 <b>2,000 / 2,000</b></span><span class="ss-note">已暂停全站新对话请求，明日 00:00 自动恢复；自填 key 用户不受影响</span></div>';
+    return '<div class="site-strip"><span class="ss-label">全站统一 key</span><span class="ss-num">每日总量 2,000 次 · 今日已用 <b>1,263</b>（63%）</span><span class="ss-note">达到上限将暂停全站新对话请求，次日 00:00 恢复（REQ-024）</span></div>';
+  }
+  function renderUserArea() {
+    var st = val('ulState');
+    var area = q('panelUsers');
+    if (st === 'loading') { area.innerHTML = '<div class="adm-state"><span class="spin-p"></span>正在加载用户列表…</div>'; return; }
+    if (st === 'error') { area.innerHTML = '<div class="form-banner err"><span class="b-ico">!</span><span>无法加载用户列表，请检查网络后重试</span><button class="b-act" data-ulk-retry>重试</button></div>'; return; }
+    var list = st === 'solo' ? [USERS[0]] : USERS;
+    area.innerHTML = stripHtml() + usersTableHtml(list);
+  }
+  /* 静态锁定帧（§4.1） */
+  function renderLocked() {
+    var html = '<div class="adm-body" style="padding:12px 14px 14px;">' + stripHtml() + usersTableHtml(USERS) + '</div>';
+    q('lockUL').innerHTML = html;
+    q('lockUD').innerHTML = html;
+  }
+
+  /* tab 切换 */
+  q('tabUsersBtn').addEventListener('click', function () {
+    this.classList.add('on'); q('tabUsageBtn').classList.remove('on');
+    q('panelUsers').style.display = ''; q('panelUsage').style.display = 'none';
+    this.setAttribute('aria-checked', 'true'); q('tabUsageBtn').setAttribute('aria-checked', 'false');
+  });
+  q('tabUsageBtn').addEventListener('click', function () {
+    this.classList.add('on'); q('tabUsersBtn').classList.remove('on');
+    q('panelUsage').style.display = ''; q('panelUsers').style.display = 'none';
+    this.setAttribute('aria-checked', 'true'); q('tabUsersBtn').setAttribute('aria-checked', 'false');
+    renderUsage();
+  });
+
+  /* 用户列表状态/全站条 radio */
+  document.querySelectorAll('input[name=ulState],input[name=siteState]').forEach(function (r) {
+    r.addEventListener('change', function () {
+      if (val('ulState') === 'loading' || val('ulState') === 'error') {
+        renderUserArea();
+      } else {
+        renderUserArea(); renderLocked();
+      }
+    });
+  });
+
+  /* 用户列表操作（事件委托） */
+  var banTarget = null, quotaTarget = null;
+  q('panelUsers').addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('button') : null;
+    if (!b || b.disabled) return;
+    if (b.hasAttribute('data-ulk-retry')) {
+      q('panelUsers').innerHTML = '<div class="adm-state"><span class="spin-p"></span>正在加载用户列表…</div>';
+      setTimeout(function () { setRadio('ulState', 'data'); renderUserArea(); renderLocked(); }, 700);
+      return;
+    }
+    if (b.hasAttribute('data-ban')) {
+      banTarget = findUser(b.getAttribute('data-ban'));
+      q('banName').textContent = banTarget.name;
+      q('banMask').style.display = 'flex';
+      return;
+    }
+    if (b.hasAttribute('data-unban')) {
+      var u = findUser(b.getAttribute('data-unban'));
+      u.status = 'ok'; u.used = u.usedPrev;
+      renderUserArea(); renderLocked();
+      toast('已解封 ' + u.name + '：该用户可重新登录使用');
+      return;
+    }
+    if (b.hasAttribute('data-quota')) {
+      quotaTarget = findUser(b.getAttribute('data-quota'));
+      q('qSub').innerHTML = '用户 ' + esc(quotaTarget.name) + ' · 当前：' + (quotaTarget.mode === 'unified' ? '统一 key 模式（免费档默认 30 次/日）' : '自填 key 模式（默认 500 次/日）') +
+        (quotaTarget.qType === 'custom' ? ' · <b>已覆盖为 ' + quotaTarget.qN + ' 次/日</b>' : '');
+      if (quotaTarget.qType === 'custom') {
+        setRadio('qmode', 'custom'); q('qInput').value = quotaTarget.qN;
+      } else {
+        setRadio('qmode', 'default'); q('qInput').value = '';
+      }
+      q('qOptCustom').classList.remove('invalid'); q('qErr').classList.remove('show');
+      q('qMask').style.display = 'flex';
+      return;
+    }
+  });
+  q('banNo').addEventListener('click', function () { q('banMask').style.display = 'none'; });
+  q('banYes').addEventListener('click', function () {
+    if (banTarget) {
+      banTarget.status = 'banned'; banTarget.usedPrev = banTarget.used; banTarget.used = null;
+      renderUserArea(); renderLocked();
+      toast('已封禁 ' + banTarget.name + '：该用户将无法登录与调用（云端数据保留）');
+    }
+    q('banMask').style.display = 'none';
+  });
+  document.querySelectorAll('input[name=qmode]').forEach(function (r) {
+    r.addEventListener('change', function () {
+      q('qOptCustom').classList.remove('invalid'); q('qErr').classList.remove('show');
+      if (r.value === 'custom' && r.checked) q('qInput').focus();
+    });
+  });
+  q('qNo').addEventListener('click', function () { q('qMask').style.display = 'none'; });
+  q('qYes').addEventListener('click', function () {
+    var modeEl = document.querySelector('input[name=qmode]:checked');
+    var mode = modeEl ? modeEl.value : 'default';
+    if (mode === 'custom') {
+      var raw = q('qInput').value.trim();
+      var n = parseInt(raw, 10);
+      if (raw === '' || isNaN(n) || n < 1 || String(n) !== raw) {
+        q('qOptCustom').classList.add('invalid'); q('qErr').classList.add('show');
+        return;
+      }
+      quotaTarget.qType = 'custom'; quotaTarget.qN = n;
+      toast('已调整 ' + quotaTarget.name + ' 的配额为自定义 ' + n + ' 次/日，自下一次请求生效');
+    } else {
+      quotaTarget.qType = 'default'; quotaTarget.qN = quotaTarget.mode === 'unified' ? 30 : 500;
+      toast('已恢复 ' + quotaTarget.name + ' 为默认档位（' + quotaTarget.qN + ' 次/日），自下一次请求生效');
+    }
+    renderUserArea(); renderLocked();
+    q('qMask').style.display = 'none';
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { q('banMask').style.display = 'none'; q('qMask').style.display = 'none'; }
+  });
+
+  /* 用量列表 */
+  var USAGE = [
+    { d: '2026-08-16', u: 'wupeng', r: 31, t: 41200 },
+    { d: '2026-08-16', u: '李雷', r: 12, t: 9800 },
+    { d: '2026-08-16', u: 'test_user_01', r: 30, t: 25300 },
+    { d: '2026-08-15', u: 'wupeng', r: 28, t: 36900 },
+    { d: '2026-08-15', u: '猫南北', r: 6, t: 5200 },
+    { d: '2026-08-14', u: 'wupeng', r: 19, t: 22800 },
+    { d: '2026-08-14', u: 'spam-bot-2026', r: 118, t: 96000 },
+    { d: '2026-08-13', u: 'spam-bot-2026', r: 210, t: 172000 },
+    { d: '2026-08-12', u: '李雷', r: 8, t: 6100 },
+    { d: '2026-08-11', u: '猫南北', r: 4, t: 3300 }
+  ];
+  var uSort = { col: 'd', dir: 'desc' };
+  (function initUsageFilter() {
+    var sel = q('usUser');
+    var names = USERS.map(function (u) { return u.name; }).filter(function (v, i, a) { return a.indexOf(v) === i; });
+    sel.innerHTML = '<option value="all">全部用户</option>' + names.map(function (n) { return '<option value="' + esc(n) + '">' + esc(n) + '</option>'; }).join('');
+  })();
+  function thHtml(col, label) {
+    if (col === 'u') return '<th>' + label + '</th>';
+    var active = uSort.col === col;
+    return '<th class="sortable" data-col="' + col + '" title="点击切换排序">' + label +
+      (active ? '<span class="sort-ind">' + (uSort.dir === 'asc' ? '↑' : '↓') + '</span>' : '') + '</th>';
+  }
+  function renderUsage() {
+    var st = val('usState');
+    var area = q('usageArea');
+    var toolbar = q('usToolbar');
+    if (st === 'loading') { toolbar.style.display = 'none'; area.innerHTML = '<div class="adm-state"><span class="spin-p"></span>正在加载用量数据…</div>'; return; }
+    if (st === 'error') { toolbar.style.display = 'none'; area.innerHTML = '<div class="form-banner err"><span class="b-ico">!</span><span>无法加载用量数据，请检查网络后重试</span><button class="b-act" data-usk-retry>重试</button></div>'; return; }
+    toolbar.style.display = '';
+    var user = q('usUser').value, from = q('usFrom').value, to = q('usTo').value;
+    var rows = USAGE.filter(function (row) {
+      return (user === 'all' || row.u === user) && (!from || row.d >= from) && (!to || row.d <= to);
+    });
+    rows.sort(function (a, b) {
+      var va = a[uSort.col], vb = b[uSort.col];
+      var cmp = va < vb ? -1 : va > vb ? 1 : 0;
+      return uSort.dir === 'asc' ? cmp : -cmp;
+    });
+    if (st === 'empty' || rows.length === 0) {
+      area.innerHTML = '<div class="adm-empty"><div class="e-ico"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 8l3-4h10l3 4v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8z"/><path d="M4 10h5a3 3 0 0 0 6 0h5"/></svg></div>' +
+        '<div>所选范围内暂无用量数据</div><div class="e-hint">新用户或新部署常见；可调整用户或日期范围</div></div>';
+      q('usCount').textContent = '';
+      return;
+    }
+    var gapRow = st === 'gap' ? '<tr class="gap-row"><td colspan="4">⚠ 2026-08-10 ~ 08-12 部分时段统计中断，仅显示已有数据（不估算补齐）</td></tr>' : '';
+    var body = '', gapInserted = false;
+    rows.forEach(function (row) {
+      if (gapRow && !gapInserted && row.d <= '2026-08-12') { body += gapRow; gapInserted = true; }
+      body += '<tr><td class="mono">' + row.d + '</td><td>' + esc(row.u) + '</td><td class="mono">' + row.r + '</td><td class="mono">' + row.t.toLocaleString() + '</td></tr>';
+    });
+    if (gapRow && !gapInserted) body += gapRow;
+    area.innerHTML = '<div class="tbl-wrap"><table class="adm-table"><thead><tr>' +
+      thHtml('d', '日期') + thHtml('u', '用户名') + thHtml('r', '请求数') + thHtml('t', 'token 数') +
+      '</tr></thead><tbody>' + body + '</tbody></table></div>';
+    q('usCount').textContent = '共 ' + rows.length + ' 行（用户 × 日聚合）';
+  }
+  q('usageArea').addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('button') : null;
+    if (b && b.hasAttribute('data-usk-retry')) {
+      q('usageArea').innerHTML = '<div class="adm-state"><span class="spin-p"></span>正在加载用量数据…</div>';
+      setTimeout(function () { setRadio('usState', 'data'); renderUsage(); }, 700);
+      return;
+    }
+    var th = e.target.closest ? e.target.closest('th.sortable') : null;
+    if (th) {
+      var c = th.getAttribute('data-col');
+      if (uSort.col === c) { uSort.dir = uSort.dir === 'asc' ? 'desc' : 'asc'; }
+      else { uSort.col = c; uSort.dir = 'desc'; }
+      renderUsage();
+    }
+  });
+  document.querySelectorAll('input[name=usState]').forEach(function (r) {
+    r.addEventListener('change', renderUsage);
+  });
+  q('usUser').addEventListener('change', renderUsage);
+  q('usFrom').addEventListener('change', renderUsage);
+  q('usTo').addEventListener('change', renderUsage);
+
+  /* ================= 2.1 堆叠提示条演示 ================= */
+  q('sbBLater').addEventListener('click', function () {
+    q('sbB').style.display = 'none';
+    toast('已暂不导入会话：本次登录内不再提示、零上传；下次登录将再次检测并提示');
+    if (q('sbC').style.display === 'none') q('stackEmpty').style.display = '';
+  });
+  q('sbCLater').addEventListener('click', function () {
+    q('sbC').style.display = 'none';
+    toast('已暂不导入档案：零上传（密钥未上传）；下次登录将再次提示');
+    if (q('sbB').style.display === 'none') q('stackEmpty').style.display = '';
+  });
+  q('sbBImport').addEventListener('click', function () { toast('演示：进入会话导入流程——完整状态机见 2.2（可直接操作）'); });
+  q('sbCImport').addEventListener('click', function () { toast('演示：进入档案导入流程——完整状态机见 3.2（密钥仅此刻起上传）'); });
+  q('sbReset').addEventListener('click', function () {
+    q('sbB').style.display = ''; q('sbC').style.display = ''; q('stackEmpty').style.display = 'none';
+  });
+
+  /* ================= 迁移状态机（B / C 同型复用） ================= */
+  function makeMig(prefix, radioName, total, failAt, failCheckbox, msgs) {
+    var timer = null, p = 0;
+    var ids = ['Prompt', 'Doing', 'Done', 'Fail', 'Dismissed', 'None'];
+    var els = {};
+    ids.forEach(function (s) { els[s] = q(prefix + s); });
+    function apply(state) {
+      setRadio(radioName, state === 'dismissed' || state === 'none' ? state : state);
+      els.Prompt.style.display = state === 'prompt' ? '' : 'none';
+      els.Doing.style.display = state === 'doing' ? '' : 'none';
+      els.Done.style.display = state === 'done' ? '' : 'none';
+      els.Fail.style.display = state === 'fail' ? '' : 'none';
+      els.Dismissed.style.display = state === 'dismissed' ? '' : 'none';
+      els.None.style.display = state === 'none' ? '' : 'none';
+      if (state !== 'doing' && timer) { clearInterval(timer); timer = null; }
+    }
+    function start() {
+      p = 0; apply('doing'); update();
+      timer = setInterval(function () {
+        p++;
+        update();
+        if (failCheckbox && failCheckbox.checked && p >= failAt) { apply('fail'); }
+        else if (p >= total) { apply('done'); }
+      }, 240);
+    }
+    function update() {
+      q(prefix + 'Num').textContent = p + ' / ' + total;
+      q(prefix + 'Fill').style.width = Math.round(p / total * 100) + '%';
+    }
+    q(prefix + 'Import').addEventListener('click', start);
+    q(prefix + 'Retry').addEventListener('click', start);
+    q(prefix + 'Cancel').addEventListener('click', function () { apply('prompt'); toast(msgs.cancel); });
+    q(prefix + 'Later').addEventListener('click', function () { apply('dismissed'); toast(msgs.later); });
+    q(prefix + 'FailLater').addEventListener('click', function () { apply('dismissed'); toast(msgs.later); });
+    q(prefix + 'Know').addEventListener('click', function () { apply('dismissed'); toast(msgs.know); });
+    document.querySelectorAll('input[name=' + radioName + ']').forEach(function (r) {
+      r.addEventListener('change', function () { apply(r.value); });
+    });
+    return { apply: apply };
+  }
+  makeMig('mb', 'migBState', 20, 12, q('simBFail'), {
+    cancel: '已取消导入：本地数据未做任何改动，已完成的会话保留、可随时继续（不会重复导入）',
+    later: '已暂不导入：本次登录内不再提示、零上传；下次登录将再次检测并提示',
+    know: '导入完成提示已关闭；本地只读备份 30 天后自动清除（无常驻 UI）'
+  });
+  makeMig('mc', 'migCState', 2, 1, q('simCFail'), {
+    cancel: '已取消导入：本地档案与密钥未受任何影响、未上传',
+    later: '已暂不导入：零上传（密钥未离开本机）；下次登录将再次提示',
+    know: '导入完成提示已关闭；本地已不再保存任何档案与密钥数据'
+  });
+
+  /* 初始渲染 */
+  renderUserArea();
+  renderLocked();
+})();
+</script>
+</body>
+</html>
