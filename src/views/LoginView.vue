@@ -148,7 +148,7 @@ import { useRoute, useRouter } from 'vue-router'
 import BrandMark from '../components/BrandMark.vue'
 import { useTheme } from '../composables/useTheme'
 import { useAuthStore } from '../stores/auth'
-import { ApiBackendError } from '../api/backend'
+import { ApiBackendError, takeBannedFlag } from '../api/backend'
 
 /**
  * REQ-020 登录/注册页（design-iter-6 基线）：
@@ -173,11 +173,14 @@ const loading = ref(false)
 const banner = ref<{ kind: 'danger' | 'warning'; text: string; retry?: boolean } | null>(null)
 const fieldErrors = ref<{ username?: string; password?: string; confirm?: string }>({})
 
-/** 401 失效跳转到达（main.ts 携带 expired=1）→ 显示「登录已过期」（design §4.1 闭环） */
+/** 401 失效跳转到达（main.ts 携带 expired=1）→ 显示「登录已过期」（design §4.1 闭环）；
+ *  在线被封禁跳转到达（backend 写入 sessionStorage 标记）→ 显示封禁横幅（design-iter-8 §1.5 走查 29） */
 onMounted(() => {
   if (route.query.expired === '1') {
     banner.value = { kind: 'warning', text: '登录已过期，请重新登录' }
     void router.replace({ query: { ...route.query, expired: undefined } })
+  } else if (takeBannedFlag()) {
+    banner.value = { kind: 'warning', text: '账号已被封禁，无法使用。如有疑问请联系管理员' }
   }
 })
 
