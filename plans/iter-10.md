@@ -20,9 +20,9 @@
 
 | 任务 | 对应来源（合法追溯） | 复杂度 | 判定依据 | 验收标准 |
 |------|---------|------|---------|---------|
-| T1 技术债三项清理 | iter-7 Code Review 观察项（settings.boot 重试）+ iter-5 QA 审计观察项 4（auth_sessions 清理、useTheme 单测） | M | 三个完整小项各含测试（3×S 打包）；类比 iter-9 T3 多 S 打包 M（偏满），本次偏松取 M 保守 | ① settings.boot() 失败后本会话可重试（不再「档案列表空至刷新页面」），前端 spec 覆盖重试路径；② auth_sessions 过期行惰性清理（登录/校验时顺带删 `expires_at < now`），pytest 双断言：过期行被清、有效会话不受影响；③ useTheme 单测覆盖（切换/持久化/初始读取）。**无 UI 变更，走查不适用（注明）** |
+| T1 技术债三项清理 | iter-7 Code Review 观察项（settings.boot 重试）+ iter-5 QA 审计观察项 4（useTheme 单测）+ iter-6 Code Review 低风险遗留（auth_sessions 清理） | M | 三个完整小项各含测试（3×S 打包）；类比 iter-9 T3 多 S 打包 M（偏满），本次偏松取 M 保守 | ① settings.boot() 失败后本会话可重试（不再「档案列表空至刷新页面」），前端 spec 覆盖重试路径；② auth_sessions 过期行惰性清理（登录/校验时顺带删 `expires_at < now`），pytest 双断言：过期行被清、有效会话不受影响；③ useTheme 单测覆盖（切换/持久化/初始读取）。**无 UI 变更，走查不适用（注明）** |
 | T2 spec「涉及页面」hygiene（14 条） | iter-9 QA 审计观察项 5（retros/qa-audit-iter-9.md） | S | 14 处机械文档更新 + 逐条核对设计稿基线状态，路径明确无分支 | spec 中 14 条「待设计师产出」全部更新为对应 design-iter-N 已基线口径；QA 复核 0 残留。**无代码/UI 变更，走查不适用（注明）** |
-| T3 Compose 形态流式首块延迟复测 | iter-8 Code Review 观察项（首块延迟取证依赖共享连接池，部署形态变化需复测） | S | 单一实测取证动作（统一 key 已配置，脚本/网络面板可观测），无开发分支 | docker compose 全链路形态下实测流式首块额外延迟 ≤500ms（spec 非功能口径），数据留档（verify 文档）；若超标登记 DEF 并定位（nginx 反代 vs backend），不隐瞒。**无 UI 变更，走查不适用（注明）** |
+| T3 Compose 形态流式首块延迟复测 | iter-7 Code Review 观察项 5（首块延迟取证依赖共享连接池，部署形态变化需复测） | S | 单一实测取证动作（统一 key 已配置，脚本/网络面板可观测），无开发分支 | docker compose 全链路形态下实测流式首块额外延迟 ≤500ms（spec 非功能口径），数据留档（verify 文档）；若超标登记 DEF 并定位（nginx 反代 vs backend），不隐瞒。**无 UI 变更，走查不适用（注明）** |
 
 **合计 Σ4**（M + S + S），容量守恒（Σ ≤ 10）。
 

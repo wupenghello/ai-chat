@@ -128,7 +128,7 @@ git 提交 5 个（63b6b4d 计划 / 50ef5d1 T0 设计 / 3fad772 T1 / ad8fe6a T2 
 - 计划已批准（fafa487，Σ4 = M+S+S）：T1 技术债三项 + T2 spec hygiene 14 条 + T3 Compose 首块延迟复测；无需求类任务（基线 v3 已全部达成）
 - T1 技术债三项（完成）：settings.boot() 失败重试（bootFailed 标记 + 档案区失败态重试按钮，iter-7 Code Review 观察项销账）；auth_sessions 过期行惰性清理（随签发事务 DELETE，iter-5 QA 观察项销账）；useTheme 单测 +6（iter-5 观察项销账）
 - T2 spec「涉及页面」hygiene（完成）：14 条全部更新与 RTM 一致，残留 0（iter-9 QA 观察项 5 销账）
-- T3 Compose 首块延迟复测（完成）：稳态 -19ms ≤500ms 达标 + nginx SSE 直通验证（iter-8 Code Review 观察项销账，plans/iter-10-verify.md）
+- T3 Compose 首块延迟复测（完成）：稳态 -19ms ≤500ms 达标 + nginx SSE 直通验证（iter-7 Code Review 观察项 5 销账，plans/iter-10-verify.md）
 
 测试终态：**前端 vitest 209/209**（+8）+ **后端 pytest 119/119**（+1）+ ruff clean + 生产构建全过。
 
