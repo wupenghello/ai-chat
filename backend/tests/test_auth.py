@@ -145,3 +145,135 @@ class TestLogoutAndGuard:
         resp = client.get("/api/auth/me")
         assert resp.status_code == 403
         assert resp.json()["detail"] == "账号已被封禁"
+
+
+class TestChangePassword:
+    """REQ-021 改密：对齐 spec 主流程 + 异常分支 + 验收标准。"""
+
+    def test_wrong_old_password_rejected(self, client: TestClient):
+        """旧密码错误：提示「旧密码错误」，不修改（旧密码仍可登录）。"""
+        register(client, "alice", password="oldpass123")
+        resp = client.post(
+            "/api/auth/change-password",
+            json={"old_password": "wrong", "new_password": "newpass456"},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "旧密码错误"
+        client.post("/api/auth/logout")
+        assert login(client, "alice", "oldpass123").status_code == 200
+
+    def test_new_password_too_short_rejected(self, client: TestClient):
+        """新密码不达强度（< 8 位）：422，不提交。"""
+        register(client, "bob")
+        resp = client.post(
+            "/api/auth/change-password",
+            json={"old_password": "password123", "new_password": "1234567"},
+        )
+        assert resp.status_code == 422
+        assert "密码" in resp.json()["detail"][0]["msg"]
+
+    def test_new_password_same_as_old_rejected(self, client: TestClient):
+        """新密码 = 旧密码：拒绝（design-iter-9 走查条目 5）。"""
+        register(client, "carol")
+        resp = client.post(
+            "/api/auth/change-password",
+            json={"old_password": "password123", "new_password": "password123"},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "新密码不能与旧密码相同"
+
+    def test_change_password_success(self, client: TestClient):
+        """改密成功：旧密码登录失败、新密码登录成功；当前设备保持登录。"""
+        register(client, "dave", password="oldpass123")
+        resp = client.post(
+            "/api/auth/change-password",
+            json={"old_password": "oldpass123", "new_password": "newpass456"},
+        )
+        assert resp.status_code == 200
+        assert client.get("/api/auth/me").status_code == 200  # 当前设备保持登录
+        client.post("/api/auth/logout")
+        assert login(client, "dave", "oldpass123").status_code == 401
+        assert login(client, "dave", "newpass456").status_code == 200
+
+    def test_other_device_token_invalidated(self, client_factory):
+        """改密后另一设备旧 token 返回 401（spec 验收原文），当前设备保持登录。"""
+        c1 = client_factory()
+        c2 = client_factory()
+        register(c1, "erin", password="oldpass123")
+        assert login(c2, "erin", "oldpass123").status_code == 200  # 设备 2 建立第二会话
+        resp = c1.post(
+            "/api/auth/change-password",
+            json={"old_password": "oldpass123", "new_password": "newpass456"},
+        )
+        assert resp.status_code == 200
+        assert c1.get("/api/auth/me").status_code == 200  # 设备 1（当前）保持
+        assert c2.get("/api/auth/me").status_code == 401  # 设备 2（其他）失效
+
+    def test_no_new_password_plaintext_in_db(self, client: TestClient, db_conn):
+        """改密后库内为新密码的 bcrypt 哈希，无明文。"""
+        register(client, "frank", password="oldpass123")
+        client.post(
+            "/api/auth/change-password",
+            json={"old_password": "oldpass123", "new_password": "newpass456"},
+        )
+        dump = str(db_conn.execute("SELECT * FROM users").fetchall())
+        assert "newpass456" not in dump
+        assert "oldpass123" not in dump
+
+
+class TestDeleteAccount:
+    """REQ-021 注销：对齐 spec 主流程 + 异常分支 + 验收标准（级联删除全部云端数据）。"""
+
+    def test_wrong_password_confirmation_rejected(self, client: TestClient):
+        """二次确认不匹配：取消操作，账号与数据不变。"""
+        register(client, "grace", password="password123")
+        resp = client.post("/api/auth/delete-account", json={"password": "wrong"})
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "密码不正确，账号与数据未发生任何变更"
+        assert client.get("/api/auth/me").status_code == 200  # 账号仍在
+
+    def test_delete_account_removes_all_data(self, client: TestClient, db_conn):
+        """注销后：无法登录；库中检索不到该用户的会话/档案/用量/会话 token（级联）。"""
+        register(client, "heidi", password="password123")
+        user_id = client.get("/api/auth/me").json()["id"]
+        with db_conn:
+            db_conn.execute(
+                "INSERT INTO chat_sessions (id, user_id, data, updated_at) "
+                "VALUES ('s1', ?, '{}', 0.0)",
+                (user_id,),
+            )
+            db_conn.execute(
+                "INSERT INTO profiles (id, user_id, name, base_url, model, api_key) "
+                "VALUES ('p1', ?, 'deepseek', 'https://api.deepseek.com', "
+                "'deepseek-chat', 'sk-xxx')",
+                (user_id,),
+            )
+            db_conn.execute(
+                "INSERT INTO usage_daily (day, user_id, mode, requests, tokens) "
+                "VALUES ('2026-08-16', ?, 'unified', 5, 100)",
+                (user_id,),
+            )
+        resp = client.post("/api/auth/delete-account", json={"password": "password123"})
+        assert resp.status_code == 200
+        assert resp.json()["detail"] == "账号已删除"
+        # 账号无法登录
+        assert login(client, "heidi", "password123").status_code == 401
+        # 级联删除：用户 + 会话 + 档案 + 用量 + 会话 token 全部清零
+        for table, col in (
+            ("users", "id"),
+            ("chat_sessions", "user_id"),
+            ("profiles", "user_id"),
+            ("usage_daily", "user_id"),
+            ("auth_sessions", "user_id"),
+        ):
+            count = db_conn.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE {col} = ?", (user_id,)
+            ).fetchone()[0]
+            assert count == 0, table
+
+    def test_delete_account_logs_out(self, client: TestClient):
+        """注销成功后 token 失效（登出），受保护端点 401。"""
+        register(client, "ivan")
+        resp = client.post("/api/auth/delete-account", json={"password": "password123"})
+        assert resp.status_code == 200
+        assert client.get("/api/auth/me").status_code == 401

@@ -183,3 +183,77 @@ def logout(
 @router.get("/me")
 def me(user: CurrentUser) -> UserOut:
     return user
+
+
+class ChangePasswordBody(BaseModel):
+    old_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def new_password_rule(cls, v: str) -> str:
+        if len(v) < PASSWORD_MIN_LENGTH:
+            raise ValueError(f"密码最短 {PASSWORD_MIN_LENGTH} 位")
+        if len(v) > PASSWORD_MAX_LENGTH:
+            raise ValueError(f"密码最长 {PASSWORD_MAX_LENGTH} 位")
+        return v
+
+
+class DeleteAccountBody(BaseModel):
+    password: str
+
+
+@router.post("/change-password")
+def change_password(
+    body: ChangePasswordBody,
+    request: Request,
+    conn: DatabaseDep,
+    settings: Annotated[Settings, Depends(get_settings)],
+    user: CurrentUser,
+) -> dict[str, str]:
+    """改密（REQ-021）：验证旧密码 → 更新哈希 → 除当前设备外其他会话 token 失效。
+
+    spec 主流程：除当前设备外的其他设备会话 token 全部失效
+    （当前设备保持登录，design-iter-9 定夺①）。
+    """
+    row = conn.execute("SELECT password_hash FROM users WHERE id = ?", (user.id,)).fetchone()
+    if row is None or not verify_password(body.old_password, row["password_hash"]):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "旧密码错误")
+    if body.new_password == body.old_password:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "新密码不能与旧密码相同")
+    token = request.cookies.get(settings.cookie_name)
+    with conn:
+        conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (hash_password(body.new_password), user.id),
+        )
+        if token:
+            conn.execute(
+                "DELETE FROM auth_sessions WHERE user_id = ? AND token_hash != ?",
+                (user.id, token_hash(token)),
+            )
+        else:
+            conn.execute("DELETE FROM auth_sessions WHERE user_id = ?", (user.id,))
+    return {"detail": "密码已更新"}
+
+
+@router.post("/delete-account")
+def delete_account(
+    body: DeleteAccountBody,
+    response: Response,
+    conn: DatabaseDep,
+    settings: Annotated[Settings, Depends(get_settings)],
+    user: CurrentUser,
+) -> dict[str, str]:
+    """注销（REQ-021）：密码二次确认 → 删除账号及全部云端数据（级联）→ 登出。
+
+    auth_sessions / chat_sessions / profiles / usage_daily 均 ON DELETE CASCADE（db.py 迁移），
+    删除 users 行即级联清除全部云端数据；PRAGMA foreign_keys=ON 由 connect() 开启。
+    """
+    row = conn.execute("SELECT password_hash FROM users WHERE id = ?", (user.id,)).fetchone()
+    if row is None or not verify_password(body.password, row["password_hash"]):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "密码不正确，账号与数据未发生任何变更")
+    with conn:
+        conn.execute("DELETE FROM users WHERE id = ?", (user.id,))
+    response.delete_cookie(key=settings.cookie_name, path="/")
+    return {"detail": "账号已删除"}
