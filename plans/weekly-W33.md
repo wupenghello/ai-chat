@@ -128,6 +128,7 @@ git 提交 5 个（63b6b4d 计划 / 50ef5d1 T0 设计 / 3fad772 T1 / ad8fe6a T2 
 
 iter-2 计划当日完成，无延期。容量 Σ=10 全部交付；REQ-009 按计划砍至 iter-3。
 iter-3 计划当日完成，无延期。容量 Σ=9 全部交付（≤10 上限）；无砍范围、无新增范围。
+iter-8 计划当日完成，无延期。容量 Σ10 全部交付（偏差 0%，连续第三迭代）；计划内砍范围仅既定的 REQ-021/Compose/v0.5.0 挪 iter-9；执行顺序 T1 先于 T0 基线（T1 无 UI，不违反设计先行约束——QA 观察项 1，后续计划措辞改「涉及 UI 的开发任务」）；计划外新增：设计 R1/R2 修订（CEO 走查反馈）、DEF-019 修复（Code Review）、LoginView 补提交（审计补证）、浏览器走查闭账（NCR 整改）——均随复盘补账。
 
 ## Code Review 记录（development.md §3）
 
@@ -244,7 +245,6 @@ iter-3 计划当日完成，无延期。容量 Σ=9 全部交付（≤10 上限�
 | api/client.ts | 直连版 `streamChat`（L116-165）+ `ApiClientConfig.apiKey` + client.spec 5 条旧用例：T2 后无生产调用方，成死代码 | QA 审计观察项 2——tailoring「直连分支已删除」按调用路径口径成立，函数本体未删 | iter-8 定夺删除或保留 |
 | stores/settings | boot() 失败（断网起页）后本会话不重试，档案列表空至刷新 | iter-7 Code Review 发现（低风险：登录后 Root 重挂载会重跑） | iter-8 候补（进设置页时惰性重拉） |
 
-## 下周计划
+## 下周计划（iter-8 关闭后口径，2026-08-16 更新）
 
-- iter-7 复盘 + G4 关闭（3 NCR 已整改，Code Review 待 CEO 过目）→ 基线 v3 第二段（流式代理+密钥双模式+断网重试）交付
-- iter-8 主线：全链路 Compose 一键起 + v0.5.0 发布形态收口（Docker Compose 部署 + 自部署文档）+ REQ-024 配额 + REQ-025 管理后台 + REQ-021 账号管理 + 存量迁移（档案+会话一键导入）；候补：auth_sessions 过期清理、dev 路由按环境裁剪、useTheme 单测、直连死代码定夺
+- iter-9 主线（v0.5.0 收口）：REQ-021 账号管理（改密/注销，随 design-iter-9 设计先行）+ 全链路 Compose 一键起 + 自部署文档 + dev 路由按环境裁剪 + v0.5.0 发布（REQ-014 浏览器复验已提前闭账）；候补：auth_sessions 过期清理、useTheme 单测、直连死代码定夺（随 Compose 收口）、settings.boot() 重试、跨零点流 token 归属顺手修
