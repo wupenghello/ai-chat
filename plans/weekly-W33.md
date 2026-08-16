@@ -178,6 +178,16 @@ iter-3 计划当日完成，无延期。容量 Σ=9 全部交付（≤10 上限�
   - **CEO 过目确认：2026-08-16，已过目确认**（变更范围、review 结论与 DEF-017 修复；G4 前置条件满足）
 
 
+- **iter-8（本次执行）**：范围 `ca77880..d5347e3`（后端 9 文件：app/{config,db,quota,routers/auth,routers/proxy,routers/admin} + tests 3；前端 19 文件：AdminView、migration store、MigrationBanners、api/{backend,client}、router、TheSidebar、KeyModeCard、SettingsForm、App、LoginView、idb + 测试 8）。重点审配额横切面、密钥路径（存量档案上云）、迁移原子性与并发、封禁门禁。发现与结论：
+  - **发现 DEF-019（一般，已修复 d5347e3）**：MigrationBanners setup 捕获 store 状态引用，dismiss/knowDone 整对象替换后引用滞留——提示条不从界面消失、重导入进度不刷新；既有测试只断言 store 状态漏过 DOM 层。修复 = kinds 改 computed + DOM 层回归断言
+  - 密钥路径核对：存量档案仅在用户显式点击「导入到云端」后 POST 上传（非静默迁移口径落实）；失败态密钥未上传（本地字段原样保留，用例断言）；导入完成即清除本地旧字段（systemPrompt 保留，sk-old 检索不到）；迁移/管理后台全链路无 key 出现在日志与响应
+  - 迁移原子性核对：单会话 = 单次 PUT 整档、单档案 = 单次 POST（构造性原子，中断无半条记录）；重试去重双口径（会话按云端 id、档案按名称+地址+模型）；取消即时停止且不设清除键（本地完整保留）
+  - 配额核对：先查后计非原子已在代码注释留档（极端并发放过 limit+N，量级无害）；被拦截请求不计数不达上游（pytest seen 取证）；配额覆盖与档位联动经 T2 联动用例背书
+  - 观察项（不构成缺陷，登记留痕）：① `record_tokens` 以落库时刻取「今日」，跨自然日零点的流其 token 会 UPDATE 落空（该次请求数已计、token 丢失，影响有界且次日自愈）——iter-9 顺手可修（把 day 在 consume 时传入闭包）；② admin 用户列表 limit_for 每行一次 SELECT（自部署规模无感）；③ register 的 409（用户名已占用）计入限频——视为防刷特性
+  - 浏览器观感 6 项待复核（iter-8-verify.md）——本会话预览端口被并行会话占用，QA 审计知悉
+  - 185/185 + 105/105 + 构建 + guard:style 为旁证
+  - **CEO 过目确认：待 CEO（见下）**
+
 ## QA 审计与 NCR 处置（iter-2）
 
 | 编号 | 内容 | 处置 | 状态 |
