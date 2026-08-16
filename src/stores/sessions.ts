@@ -2,7 +2,6 @@ import { defineStore } from 'pinia'
 import { buildContext, streamChatViaProxy, type ChatMessage } from '../api/client'
 import { useAuthStore } from './auth'
 import { useSettingsStore } from './settings'
-import { useToastStore } from './toast'
 import * as db from '../db/persistence'
 import type { PersistedSession } from '../db/persistence'
 
@@ -84,10 +83,11 @@ export const useSessionsStore = defineStore('sessions', {
 
     persist(session: Session) {
       const { corrupted: _c, ...clean } = session
-      // 深拷贝为普通对象后整档 PUT 服务端（LWW）；失败提示——断网重试为 iter-7 细项
+      // 深拷贝为普通对象后整档 PUT 服务端（LWW）；断网暂存与自动重试在 persistence 层（iter-7 T3），
+      // 此处仅兜非临时性失败（结构类 4xx，预期不可见）
       return db
         .saveSession(JSON.parse(JSON.stringify(clean)))
-        .catch(() => useToastStore().push('会话保存失败，更改未同步'))
+        .catch((e) => console.warn('会话保存失败（非临时性）', e))
     },
 
     /** 中断指定会话的生成并标注（REQ-003：仅"新建会话"使用；CHG-001 后切换不再调用） */
@@ -142,7 +142,8 @@ export const useSessionsStore = defineStore('sessions', {
       this.abortSession(id) // 被删会话若有后台生成，一并终止
       this.sessions = this.sessions.filter((s) => s.id !== id)
       if (this.activeId === id) this.activeId = this.sessions[0]?.id ?? null
-      await db.deleteSession(id).catch(() => useToastStore().push('会话删除未同步'))
+      // 断网删除同样入暂存队列自动重试（iter-7 T3）；非临时性失败仅告警不打断 UI
+      await db.deleteSession(id).catch((e) => console.warn('会话删除失败（非临时性）', e))
     },
 
     /** 发送一条消息并流式生成回复。返回 false 表示不可发送：
