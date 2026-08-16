@@ -7,13 +7,15 @@ FastAPI + SQLite。CHG-004 决策：monorepo——本目录独立依赖与 lockf
 ```
 app/
   main.py       入口（应用工厂 + 生命周期建库迁移）
-  config.py     环境变量配置（前缀 AI_CHAT_）
+  config.py     环境变量配置（前缀 AI_CHAT_，含 REQ-024 配额默认值 30/500/2000）
   db.py         SQLite 访问层 + 带版本号迁移（PRAGMA user_version）
   security.py   bcrypt 哈希 / 会话 token
+  quota.py      REQ-024：注册限频 / 每用户按日配额（档位联动）/ 统一 key 全站熔断 / 用量计数
   routers/
-    auth.py       REQ-020：注册/登录/登出/me（HttpOnly Cookie, SameSite=Lax）
+    auth.py       REQ-020：注册/登录/登出/me（HttpOnly Cookie, SameSite=Lax；注册限频）
     sessions.py   REQ-022：会话 CRUD（GET 列表 / PUT 整档 LWW / DELETE 幂等，复合主键归属隔离）
-    proxy.py      REQ-023：iter-7 实现；现有 /api/dev/sse-echo 为 SSE 形态验证
+    profiles.py   REQ-014/018：供应商档案（受保护存储 + 掩码下发）
+    proxy.py      REQ-023/024：流式代理 + 配额检查位 + GET /api/quota；/api/dev/sse-echo 为 SSE 形态验证
 tests/          pytest（临时 SQLite，每测试独立库）
 ```
 

@@ -43,16 +43,23 @@ def _sse_response(*frames: str) -> httpx.Response:
 
 @contextmanager
 def upstream_app(
-    tmp_path: Path, handler, *, unified_key: str = UNIFIED_KEY
+    tmp_path: Path,
+    handler,
+    *,
+    unified_key: str = UNIFIED_KEY,
+    settings_extra: dict | None = None,
 ) -> Iterator[tuple[TestClient, list[httpx.Request]]]:
     """带 mock 上游的应用：dependency_overrides 注入 settings，app.state.http 换 MockTransport。
-    显式传参的 unified_* 优先级高于 .env，真实密钥不进入测试断言面。"""
-    settings = Settings(
-        db_path=str(tmp_path / "t.db"),
-        unified_key=unified_key,
-        unified_base_url=UPSTREAM,
-        unified_model=UNIFIED_MODEL,
-    )
+    显式传参的 unified_* 优先级高于 .env，真实密钥不进入测试断言面；
+    settings_extra 供配额类测试注入小阈值（REQ-024，iter-8 T1）。"""
+    kwargs: dict = {
+        "db_path": str(tmp_path / "t.db"),
+        "unified_key": unified_key,
+        "unified_base_url": UPSTREAM,
+        "unified_model": UNIFIED_MODEL,
+    }
+    kwargs.update(settings_extra or {})
+    settings = Settings(**kwargs)
     app = create_app(settings)
     app.dependency_overrides[get_settings] = lambda: settings
     seen: list[httpx.Request] = []
@@ -107,6 +114,8 @@ class TestUnifiedMode:
                 "model": UNIFIED_MODEL,
                 "messages": [{"role": "user", "content": "你好"}],
                 "stream": True,
+                # iter-8 T1（REQ-024/025）：usage 帧请求，token 用量据此落库
+                "stream_options": {"include_usage": True},
             }
             # provider 过渡字段绝不进入转发体
             assert "provider" not in payload

@@ -4,6 +4,7 @@
 （前端 dev server 经 Vite proxy 转发 /api 至本服务，同源无需 CORS——见 backend/README.md）
 """
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -13,6 +14,10 @@ from fastapi import FastAPI
 from app.config import Settings
 from app.db import connect, db_version, init_db
 from app.routers import auth, profiles, proxy, sessions
+
+# 可观测（非功能条款）：quota/转发结果日志默认可见（uvicorn 只配置自家 logger，
+# root 无 handler 时 INFO 会被吞掉；basicConfig 幂等，已有 handler 时不重复加）
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

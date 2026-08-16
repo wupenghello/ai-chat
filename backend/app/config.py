@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     unified_key: str = ""
     unified_base_url: str = "https://api.deepseek.com"
     unified_model: str = "deepseek-chat"
+    # REQ-024（iter-8 T1）配额初始默认值——CEO 拍板 2026-08-16 随 iter-8 计划定案；
+    # 管理员按用户覆盖随 REQ-025（iter-8 T2）落地，本层为默认档；0 = 该项不限
+    register_ip_daily_limit: int = 3  # 每 IP 每自然日注册数上限
+    quota_free_daily: int = 30  # 免费档（统一 key 模式）每用户每日对话请求数
+    quota_self_daily: int = 500  # 自填 key 档每用户每日对话请求数
+    unified_daily_total: int = 2000  # 统一 key 全站每日总量（熔断，次日恢复）
 
 
 @lru_cache

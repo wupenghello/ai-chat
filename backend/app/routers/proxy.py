@@ -10,6 +10,7 @@
 """
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from typing import Annotated, Literal
 
@@ -18,11 +19,14 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
+from app import quota
 from app.config import Settings, get_settings
 from app.db import DatabaseDep
 from app.routers.auth import CurrentUser
 
 router = APIRouter(prefix="/api", tags=["chat"])
+
+logger = logging.getLogger("ai-chat.quota")
 
 _INTERRUPTED_FRAME = b'data: {"upstream_interrupted": true}\n\n'
 
@@ -54,7 +58,8 @@ async def chat_completions(
     conn: DatabaseDep,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> Response:
-    # REQ-024（iter-8）配额检查位：按用户当前密钥模式档位校验，不足时在此直接拒绝（不调用上游）
+    # REQ-024（iter-8 T1）配额检查位：按用户当前密钥模式档位校验，不足时在此直接拒绝（不调用上游）；
+    # 档位联动口径见 app/quota.py（同日总消耗对当前档位限额判定）
     profile = conn.execute(
         "SELECT base_url, model, api_key FROM profiles WHERE user_id = ? AND is_active = 1",
         (user.id,),
@@ -70,8 +75,22 @@ async def chat_completions(
     else:
         return _error(503, "unified_key_missing", "服务端未配置统一密钥，请联系管理员")
 
+    mode = quota.MODE_SELF if profile is not None else quota.MODE_UNIFIED
+    blocked = quota.check_and_consume(conn, user.id, mode, settings)
+    if blocked is not None:
+        # REQ-024 验收取证：被拦截请求未抵达上游（服务端日志可观测）
+        status_code, code, detail = blocked
+        logger.info("chat blocked user_id=%s mode=%s code=%s", user.id, mode, code)
+        return _error(status_code, code, detail)
+
     upstream: httpx.AsyncClient = request.app.state.http
-    payload = {"model": model, "messages": [m.model_dump() for m in body.messages], "stream": True}
+    payload = {
+        "model": model,
+        "messages": [m.model_dump() for m in body.messages],
+        "stream": True,
+        # usage 帧请上游压轴下发（OpenAI 兼容），token 用量据此落库（REQ-025 统计口径）
+        "stream_options": {"include_usage": True},
+    }
     try:
         resp = await upstream.send(
             upstream.build_request(
@@ -101,16 +120,44 @@ async def chat_completions(
         await resp.aclose()
         return _error(502, "upstream_error", "上游服务暂时不可用，请稍后重试", status)
 
+    logger.info(
+        "chat forwarded user_id=%s mode=%s upstream_status=%s", user.id, mode, resp.status_code
+    )
+
     async def relay() -> AsyncIterator[bytes]:
+        raw = bytearray()
         try:
             async for chunk in resp.aiter_raw():
+                raw += chunk
                 yield chunk
         except httpx.HTTPError:
             yield _INTERRUPTED_FRAME
         finally:
             await resp.aclose()
+            # 逐字节透传不变，仅在旁路累积观测 usage 帧（不改写字节）
+            tokens = quota.extract_total_tokens(bytes(raw))
+            quota.record_tokens(request.app.state.db_path, user.id, mode, tokens)
 
     return StreamingResponse(relay(), media_type="text/event-stream")
+
+
+@router.get("/quota")
+def read_quota(
+    user: CurrentUser,
+    conn: DatabaseDep,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, object]:
+    """当前用户配额口径（REQ-024/014 联动：KeyModeCard「每日 — 次」占位参数化，前端 T2 接入）。"""
+    profile = conn.execute(
+        "SELECT 1 FROM profiles WHERE user_id = ? AND is_active = 1", (user.id,)
+    ).fetchone()
+    mode = quota.MODE_SELF if profile is not None else quota.MODE_UNIFIED
+    return {
+        "mode": mode,
+        "daily_limit": quota.limit_for(settings, mode),
+        "used_today": quota.user_used(conn, user.id),
+        "reset_at": "明日 00:00",
+    }
 
 
 @router.get("/dev/sse-echo")

@@ -12,7 +12,7 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 MIGRATIONS: dict[int, str] = {
     1: """
@@ -62,6 +62,27 @@ MIGRATIONS: dict[int, str] = {
     );
     CREATE INDEX idx_profiles_user ON profiles(user_id);
     CREATE UNIQUE INDEX idx_profiles_one_active ON profiles(user_id) WHERE is_active = 1;
+    """,
+    # iter-8 T1（REQ-024）：用量与限频计数。粒度 (day, user_id, mode)——档位随密钥模式联动，
+    # 同日切换模式不重复给量（按当日总消耗对当前档位限额判定）；全站统一 key 消耗
+    # = SUM(requests WHERE mode='unified')，不设独立熔断表。token 数来自上游 usage 帧
+    # （quota.record_tokens 流结束后补记，解析不到记 0——不估算不编造）
+    4: """
+    CREATE TABLE usage_daily (
+        day      TEXT    NOT NULL,             -- 自然日 YYYY-MM-DD（服务器本地时区，重置周期）
+        user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        mode     TEXT    NOT NULL,             -- 'unified' | 'self'（请求时密钥模式，档位判定依据）
+        requests INTEGER NOT NULL DEFAULT 0,
+        tokens   INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (day, user_id, mode)
+    );
+    CREATE INDEX idx_usage_daily_user ON usage_daily(user_id, day);
+    CREATE TABLE register_log (
+        day   TEXT    NOT NULL,
+        ip    TEXT    NOT NULL,
+        count INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (day, ip)
+    );
     """,
 }
 

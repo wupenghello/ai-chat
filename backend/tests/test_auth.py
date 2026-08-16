@@ -1,7 +1,10 @@
 """REQ-020 认证 API 测试：对齐 iter-6 T1 验收标准与 spec 验收条目。"""
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
+from app.config import Settings, get_settings
+from app.main import create_app
 from fastapi.testclient import TestClient
 
 from tests.conftest import login, register
@@ -61,11 +64,19 @@ class TestRegister:
         assert resp.status_code == 422
         assert "密码最长 128" in resp.json()["detail"][0]["msg"]
 
-    def test_chinese_username_and_valid_charset_accepted(self, client: TestClient):
-        """规则允许的字符全通过：中文/字母/数字/_/-。"""
-        for name in ("猫南北", "user_01", "a-b_9", "Zz"):
-            resp = register(client, name)
-            assert resp.status_code == 201, name
+    def test_chinese_username_and_valid_charset_accepted(self, tmp_path: Path):
+        """规则允许的字符全通过：中文/字母/数字/_/-。
+
+        本用例 4 个有效注册超出默认注册限频（每 IP 每日 3，REQ-024 iter-8 T1），
+        用限频豁免实例专测字符集——限频行为由 test_quota.py 覆盖。
+        """
+        settings = Settings(db_path=str(tmp_path / "charset.db"), register_ip_daily_limit=99)
+        app = create_app(settings)
+        app.dependency_overrides[get_settings] = lambda: settings
+        with TestClient(app) as c:
+            for name in ("猫南北", "user_01", "a-b_9", "Zz"):
+                resp = register(c, name)
+                assert resp.status_code == 201, name
 
     def test_no_password_plaintext_in_db(self, client: TestClient, db_conn):
         """数据库检索不到密码明文：全部为 bcrypt 哈希（spec 验收）。"""

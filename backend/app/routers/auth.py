@@ -12,6 +12,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, field_validator
 
+from app import quota
 from app.config import Settings, get_settings
 from app.db import DatabaseDep
 from app.security import (
@@ -107,10 +108,15 @@ CurrentUser = Annotated[UserOut, Depends(get_current_user)]
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 def register(
     body: Credentials,
+    request: Request,
     response: Response,
     conn: DatabaseDep,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> UserOut:
+    # REQ-024 注册限频：每 IP 每自然日（先查后计，被拒请求不计数）
+    ip = request.client.host if request.client else "unknown"
+    if not quota.register_try_consume(conn, ip, settings.register_ip_daily_limit):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, quota.REGISTER_LIMITED)
     username_key = body.username.lower()
     exists = conn.execute(
         "SELECT 1 FROM users WHERE username_key = ?", (username_key,)
