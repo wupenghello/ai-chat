@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ai-chat · iter-8 设计稿（REQ-025 管理后台 · REQ-022 会话迁移 · REQ-018 档案上云，草案待 CEO 评审）</title>
+<title>ai-chat · iter-8 设计稿（REQ-025 管理后台 · REQ-022 会话迁移 · REQ-018 档案上云，已基线）</title>
 <!--
   ============================================================
   ai-chat 迭代 8 正式设计稿（设计稿即页面骨架，开发对照实现）
@@ -20,8 +20,8 @@
         design/iter-6（登录页 auth-card 与 banner 基线——封禁登录提示沿用其定稿文案与琥珀口径；侧栏底栏增量 4.2；
         注册限频 banner 占位已定稿；「仅登录/注册页承诺 ≤480px」兼容条款）
         design/iter-5（模态/列表/图标按钮基线）；brand 约束（CEO 既定）：主色飞书蓝 #3370FF（暗色前景 #5C8DFF）
-  状态：草案——待 CEO 评审批准（批准后 tag design-iter-8 由主会话打；设计师不打 tag、不 commit）。
-        第 8 节 4 项「待 CEO 定夺」随基线批准拍板。
+  状态：已基线（2026-08-16 CEO 批准；tag design-iter-8 = 3277086）。
+        第 8 节 4 项定夺已随基线全部按推荐定案。
   可交互：右上「演示控制」一键亮/暗（写 localStorage）；1.2 用户列表可真实操作（封禁确认/解封/调配额/自封禁阻止/
           加载/失败/单用户切换）；1.4 用量列表筛选排序可点；2.2 / 3.2 迁移导入全状态可演练（进行中可取消、可模拟失败）。
           样件内用户名/日期/用量数值均为演示数据（非真实度量，铁律 5 口径见第 1 节注记）。零外部依赖，双击即开。
@@ -359,7 +359,10 @@ td code, li code, .ann code { font-family: "SF Mono", Menlo, Consolas, monospace
        table{background:#FFFFFF} 渗入演示组件，.adm-table 未自声明背景。修复：.adm-table 补
        background:transparent（表面底由 .tbl-wrap 的 --c-surface 承载，明暗两帧同构）。
        仅渲染缺陷修复，不改任何规范取值与交互口径；实现侧 AdminView.vue 自带
-       background:var(--c-surface)，无此缺陷。 -->
+       background:var(--c-surface)，无此缺陷。
+       2026-08-16 R2 —— NCR-iter8-004 整改：title/头部注释/§7.1 对照表/§8 定夺区块/§9 基线声明
+       共六处「草案/待定夺」口径统一为已基线+定案结果（iter-2 NCR-iter2-002 同型问题的复发整改）。
+       状态性文本修正，不改样件形态与任何取值。 -->
 
   <!-- 演示控制 -->
   <div class="demo-ctl">
@@ -1011,9 +1014,9 @@ td code, li code, .ann code { font-family: "SF Mono", Menlo, Consolas, monospace
       <div class="spec-title">7.1 T0 验收标准对照（plans/iter-8.md 原文）</div>
       <table>
         <tr><th>T0 验收标准（原文）</th><th>本稿落点</th><th>状态</th></tr>
-        <tr><td>设计稿经 CEO 批准并打 design-iter-8 tag</td><td>本稿为<b>草案</b>——待 CEO 评审批准；批准后 tag 由主会话打（设计师不打 tag、不 commit）</td><td>○ 待 CEO 批准</td></tr>
+        <tr><td>设计稿经 CEO 批准并打 design-iter-8 tag</td><td>已批准（2026-08-16），tag = 3277086（基线落徽标提交）</td><td>☑ 已完成</td></tr>
         <tr><td>含 §7.x 走查清单（v1.4.4 硬要求）</td><td>7.2（44 条，含亮暗双态、引用基线条目与不适用注明）</td><td>☑ 已覆盖</td></tr>
-        <tr><td>T0 定夺项 4 项随设计基线由 CEO 拍板（① 配额呈现口径 ② 迁移提示条触发与再提示节奏 ③ 后台入口可见性 ④ 用量列表最小集）</td><td>第 8 节「待 CEO 定夺」区块（每项含推荐方案与理由，随基线批准定案）</td><td>○ 待定夺</td></tr>
+        <tr><td>T0 定夺项 4 项随设计基线由 CEO 拍板（① 配额呈现口径 ② 迁移提示条触发与再提示节奏 ③ 后台入口可见性 ④ 用量列表最小集）</td><td>第 8 节定夺区块——4 项已随基线全部按推荐定案（2026-08-16）</td><td>☑ 已定案</td></tr>
       </table>
     </div>
 
@@ -1074,10 +1077,10 @@ td code, li code, .ann code { font-family: "SF Mono", Menlo, Consolas, monospace
   <!-- ============================================================ -->
   <section>
     <h2><span class="no">8</span>待 CEO 定夺（4 项，随设计基线批准拍板）</h2>
-    <div class="sec-desc">沿 iter-1~7 固化模式：设计师给推荐方案与理由 → CEO 拍板 → 固化为决策记录，T1/T2/T3 按定案实现。<b>本稿为草案，以下 4 项均未定案</b>；样件按推荐方案落形，批准即生效，改定则改样件后基线。</div>
+    <div class="sec-desc">沿 iter-1~7 固化模式：设计师给推荐方案与理由 → CEO 拍板 → 固化为决策记录，T1/T2/T3 按定案实现。<b>4 项已随基线批准全部按推荐定案（2026-08-16）；以下区块保留定夺时的原始表述作为决策记录。</b></div>
 
     <div class="spec" style="border-color:#B45309;background:#FFF7E8;">
-      <div class="spec-title" style="color:#1F2329;">待定夺区块（批准本稿时请逐项拍板：按推荐方案 / 改定）</div>
+      <div class="spec-title" style="color:#1F2329;">定夺区块（已定案记录：4 项均按推荐方案，2026-08-16 CEO 批准）</div>
       <div class="ann" style="color:#646A73;">
         <b>① 配额呈现口径</b>——推荐：档位徽标（免费档 30 / 自填档 500 / 自定义 N）+「今日 x/N」文字用量 + 页面级全站条（2000 总量、≥80% 琥珀、熔断红条），不做图表/进度条；<br>
         <b>② 迁移提示条触发与再提示</b>——推荐：登录成功后检测、主界面顶部显示，会话/档案两条独立堆叠；「暂不导入」本次登录不再显示、下次登录再提示，无「永久忽略」；<br>
@@ -1129,13 +1132,13 @@ td code, li code, .ann code { font-family: "SF Mono", Menlo, Consolas, monospace
 
   <!-- ============================================================ -->
   <section>
-    <h2><span class="no">9</span>基线声明（草案）</h2>
+    <h2><span class="no">9</span>基线声明（已基线）</h2>
     <div class="sec-desc">
-      本稿为 <b>design-iter-8 草案</b>：管理后台（REQ-025：入口/用户列表/封禁解封/调配额/用量列表/403/封禁登录提示）+
+      本稿为 <b>design-iter-8 已基线稿</b>（2026-08-16 CEO 批准，tag design-iter-8）：管理后台（REQ-025：入口/用户列表/封禁解封/调配额/用量列表/403/封禁登录提示）+
       存量会话迁移入口（REQ-022：提示条/进行中可取消/完成/失败重试/只读 30 天）+ 存量档案上云提示条（REQ-018：key 未经确认不上传/新增不覆盖/本地清除）+
-      §7.x 走查清单（44 条，v1.4.4），对应 iter-8.md T0 全部交付点；第 8 节 4 项定夺待 CEO 拍板。
+      §7.x 走查清单（44 条，v1.4.4），对应 iter-8.md T0 全部交付点；第 8 节 4 项定夺已随基线按推荐定案。
       全部色值取自公司 design-system tokens.md v1.3/v1.3.1，零新增令牌；主界面/登录页/密钥模式卡沿 iter-1~7 基线零改动（仅侧栏底栏一处盾牌入口增量）。
-      <b>待 CEO 评审批准后由主会话打 design-iter-8 tag 基线；T1/T2/T3 按批准稿与定案开发，实现对照 7.2 清单逐条自查留档（v1.4.4 任务级门槛）。</b>
+      <b>已基线（tag design-iter-8 = 3277086）；T1/T2/T3 按定案开发完毕，实现对照 7.2 清单逐条自查留档（iter-8-verify.md，v1.4.4 任务级门槛）。</b>
       设计师不 commit、不打 tag、不改 spec/RTM。
     </div>
   </section>
