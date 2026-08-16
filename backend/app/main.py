@@ -12,7 +12,7 @@ from fastapi import FastAPI
 
 from app.config import Settings
 from app.db import connect, db_version, init_db
-from app.routers import auth, proxy, sessions
+from app.routers import auth, profiles, proxy, sessions
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -39,6 +39,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="ai-chat backend", version="0.1.0", lifespan=lifespan)
     app.include_router(auth.router)
     app.include_router(sessions.router)
+    app.include_router(profiles.router)
     app.include_router(proxy.router)
 
     @app.get("/api/health", tags=["dev"])

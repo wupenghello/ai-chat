@@ -1,8 +1,8 @@
-"""流式代理（REQ-023，iter-7 T1）：OpenAI 兼容 chat completions 经服务端转发。
+"""流式代理（REQ-023，iter-7 T1/T2）：OpenAI 兼容 chat completions 经服务端转发。
 
-- 统一 key 模式：服务端 .env 三变量（design-iter-7 定夺①）直连默认上游，前端零配置
-- 自填模式（T1 过渡态）：档案三要素随请求 provider 字段传入；T2 起改读服务端受保护存储，
-  本字段移除
+- 模式路由（T2 起，REQ-018）：每请求读该用户当前生效档案——有 = 自填模式（档案三要素
+  转发），无 = 统一 key 模式（.env 三变量，design-iter-7 定夺①）；「当前生效」在请求开始时
+  读取，生成中切换档案天然「当前回复旧配置跑完、下一次请求生效」（CHG-002）
 - 错误映射文案 = design-iter-7 §3.1 定稿；上游 401/403 映射为 502
   （避免与 Cookie 会话失效的 401 混淆触发前端跳登录）
 - 上游流中断：向流末尾补 upstream_interrupted 帧，前端转「生成中断」标注（REQ-001/003）
@@ -16,9 +16,10 @@ from typing import Annotated, Literal
 import httpx
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 
 from app.config import Settings, get_settings
+from app.db import DatabaseDep
 from app.routers.auth import CurrentUser
 
 router = APIRouter(prefix="/api", tags=["chat"])
@@ -31,26 +32,9 @@ class ChatMessage(BaseModel):
     content: str
 
 
-class ProviderOverride(BaseModel):
-    """T1 过渡态：自填档案随请求传入（T2 移除，改读服务端档案）。"""
-
-    base_url: str
-    api_key: str
-    model: str
-
-    @field_validator("base_url")
-    @classmethod
-    def base_url_rule(cls, v: str) -> str:
-        if not v.startswith(("http://", "https://")):
-            raise ValueError("base_url 必须以 http(s):// 开头")
-        return v.rstrip("/")
-
-
 class ChatCompletionRequest(BaseModel):
     messages: list[ChatMessage]
-    model: str | None = None  # 统一 key 模式下忽略（模型由服务端配置决定）
-    stream: bool = True
-    provider: ProviderOverride | None = None
+    stream: bool = True  # 本端点只支持流式（spec 主流程）；字段保留兼容显式 stream=true
 
 
 def _error(
@@ -67,14 +51,19 @@ async def chat_completions(
     body: ChatCompletionRequest,
     user: CurrentUser,
     request: Request,
+    conn: DatabaseDep,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> Response:
     # REQ-024（iter-8）配额检查位：按用户当前密钥模式档位校验，不足时在此直接拒绝（不调用上游）
-    if body.provider is not None:
-        base_url = body.provider.base_url
-        api_key = body.provider.api_key
-        model = body.provider.model
-    elif settings.unified_key:
+    profile = conn.execute(
+        "SELECT base_url, model, api_key FROM profiles WHERE user_id = ? AND is_active = 1",
+        (user.id,),
+    ).fetchone()
+    if profile is not None:  # 自填模式：当前生效档案三要素（REQ-018）
+        base_url = profile["base_url"]
+        api_key = profile["api_key"]
+        model = profile["model"]
+    elif settings.unified_key:  # 统一 key 模式：.env 三变量（零配置）
         base_url = settings.unified_base_url
         api_key = settings.unified_key
         model = settings.unified_model

@@ -125,30 +125,70 @@ class TestUnifiedMode:
             assert seen == []
 
 
-class TestProviderOverride:
-    """T1 过渡态：自填档案随请求传入（T2 换服务端档案源后移除）。"""
+class TestProfileRouting:
+    """T2（REQ-018）：自填模式 = 服务端当前生效档案路由；激活在请求开始时读取（CHG-002）。"""
 
-    def test_档案三要素_路由到指定上游与密钥(self, tmp_path: Path):
+    def test_生效档案_路由到档案上游与密钥(self, tmp_path: Path):
         with upstream_app(tmp_path, ok_handler) as (c, seen):
             register(c, "alice")
-            provider = {
-                "base_url": "http://glm.test/v1",
-                "api_key": "sk-glm-test",
-                "model": "glm-5.3",
-            }
-            r = chat(c, provider=provider)
+            r = c.post(
+                "/api/profiles",
+                json={
+                    "name": "GLM",
+                    "base_url": "http://glm.test/v1",
+                    "model": "glm-5.3",
+                    "api_key": "sk-glm-test",
+                },
+            )
+            assert r.status_code == 201
+            pid = r.json()["id"]
+            assert c.post(f"/api/profiles/{pid}/activate").status_code == 200
+            r = chat(c)
             assert r.status_code == 200
             (req,) = seen
             assert str(req.url) == "http://glm.test/v1/chat/completions"
             assert req.headers["authorization"] == "Bearer sk-glm-test"
             assert json.loads(req.content)["model"] == "glm-5.3"
-            assert "provider" not in json.loads(req.content)
+            # 统一 key 不会被带出（档案模式覆盖）
+            assert UNIFIED_KEY.encode() not in r.content
 
-    def test_base_url_必须_http_s(self, tmp_path: Path):
+    def test_无生效档案_回退统一_key_路由(self, tmp_path: Path):
+        with upstream_app(tmp_path, ok_handler) as (c, seen):
+            register(c, "alice")
+            r = c.post(
+                "/api/profiles",
+                json={
+                    "name": "GLM",
+                    "base_url": "http://glm.test/v1",
+                    "model": "glm-5.3",
+                    "api_key": "sk-glm-test",
+                },
+            )
+            pid = r.json()["id"]
+            c.post(f"/api/profiles/{pid}/activate")
+            c.delete("/api/profiles/active")  # 回退统一密钥
+            r = chat(c)
+            assert r.status_code == 200
+            (req,) = seen
+            assert str(req.url) == f"{UPSTREAM}/chat/completions"
+            assert req.headers["authorization"] == f"Bearer {UNIFIED_KEY}"
+            assert json.loads(req.content)["model"] == UNIFIED_MODEL
+
+    def test_档案_明文密钥不出现在任何响应(self, tmp_path: Path):
         with upstream_app(tmp_path, ok_handler) as (c, _):
             register(c, "alice")
-            provider = {"base_url": "ftp://evil.test", "api_key": "sk-x", "model": "m"}
-            assert chat(c, provider=provider).status_code == 422
+            r = c.post(
+                "/api/profiles",
+                json={
+                    "name": "GLM",
+                    "base_url": UPSTREAM,
+                    "model": "m",
+                    "api_key": "sk-glm-test",
+                },
+            )
+            assert "sk-glm-test" not in r.text
+            assert "sk-glm-test" not in str(c.get("/api/profiles").json())
+            assert b"sk-glm-test" not in chat(c).content
 
 
 class TestUpstreamErrors:
@@ -250,7 +290,5 @@ class TestKeyHygiene:
 
         with upstream_app(tmp_path, handler) as (c, _):
             register(c, "alice")
-            provider = {"base_url": UPSTREAM, "api_key": "sk-glm-test", "model": "m"}
-            for r in (chat(c), chat(c, provider=provider)):
+            for r in (chat(c), chat(c)):
                 assert UNIFIED_KEY.encode() not in r.content
-                assert b"sk-glm-test" not in r.content

@@ -9,20 +9,19 @@ vi.mock('../../db/persistence', () => ({
 
 vi.mock('../../api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api/client')>()),
-  streamChat: vi.fn(),
   streamChatViaProxy: vi.fn(),
 }))
 
-import { streamChat, streamChatViaProxy, type StreamHandlers } from '../../api/client'
+import { streamChatViaProxy, type StreamHandlers } from '../../api/client'
 import { useSettingsStore } from '../settings'
 import { useAuthStore } from '../auth'
 import { useSessionsStore } from '../sessions'
 
-const mockedStream = vi.mocked(streamChat)
+const mockedStream = vi.mocked(streamChatViaProxy)
 
 function abortableStream(): Promise<string> {
   return new Promise((resolve, reject) => {
-    mockedStream.mock.calls.at(-1)![3]?.addEventListener?.('abort', () => {
+    mockedStream.mock.calls.at(-1)![2]?.addEventListener?.('abort', () => {
       const e = new Error('aborted')
       e.name = 'AbortError'
       reject(e)
@@ -36,20 +35,20 @@ beforeEach(() => {
   localStorage.clear()
   setActivePinia(createPinia())
   const settings = useSettingsStore()
-  settings.save({ baseUrl: 'https://x', model: 'm', apiKey: 'k' })
+  settings.systemPrompt = ''
+  useAuthStore().user = { id: 1, username: 'tester' }
 })
 
 describe('sessions store · 发送与生成（REQ-001/002）', () => {
-  it('未登录且无档案（主界面实际不可达态）：返回 false，不调 API', async () => {
+  it('未登录（主界面实际不可达态）：返回 false，不调 API', async () => {
     localStorage.clear()
     setActivePinia(createPinia())
     const sessions = useSessionsStore()
     await expect(sessions.send('hi')).resolves.toBe(false)
-    expect(streamChat).not.toHaveBeenCalled()
     expect(streamChatViaProxy).not.toHaveBeenCalled()
   })
 
-  it('统一 key 模式（REQ-023 v3）：已登录无档案 → 走后端代理，直连不触发', async () => {
+  it('统一 key 模式（REQ-023 v3）：已登录无档案 → 走后端代理', async () => {
     localStorage.clear()
     setActivePinia(createPinia())
     useAuthStore().user = { id: 1, username: 'alice' }
@@ -60,7 +59,6 @@ describe('sessions store · 发送与生成（REQ-001/002）', () => {
     })
     const sessions = useSessionsStore()
     await expect(sessions.send('hi')).resolves.toBe(true)
-    expect(streamChat).not.toHaveBeenCalled()
     expect(vi.mocked(streamChatViaProxy)).toHaveBeenCalledTimes(1)
     expect(sessions.active!.messages[1]).toMatchObject({
       role: 'assistant',
@@ -70,7 +68,7 @@ describe('sessions store · 发送与生成（REQ-001/002）', () => {
   })
 
   it('正常流式：delta 累积、最终 done、标题取自首条消息', async () => {
-    mockedStream.mockImplementation((_c, _m, h: StreamHandlers) => {
+    mockedStream.mockImplementation((_m, h: StreamHandlers) => {
       h.onDelta('你')
       h.onDelta('好')
       return Promise.resolve('你好')
@@ -100,7 +98,7 @@ describe('中断与错误（REQ-003/004/007 + CHG-001）', () => {
   it('CHG-001 + Bug#1：生成中切换会话不中断、后台流式更新在 store 中实时可见', async () => {
     let release!: (v: string) => void
     const gate = new Promise<string>((res) => (release = res))
-    mockedStream.mockImplementation((_c, _m, h: StreamHandlers) => {
+    mockedStream.mockImplementation((_m, h: StreamHandlers) => {
       h.onDelta('部分')
       return gate
     })
@@ -142,7 +140,7 @@ describe('中断与错误（REQ-003/004/007 + CHG-001）', () => {
 describe('停止生成（REQ-010，iter-2 T2）', () => {
   it('用户主动停止：保留已生成部分并标注 stopped，生成态解除', async () => {
     let delta!: (t: string) => void
-    mockedStream.mockImplementation((_c, _m, h: StreamHandlers, signal?: AbortSignal) => {
+    mockedStream.mockImplementation((_m, h: StreamHandlers, signal?: AbortSignal) => {
       delta = (t) => h.onDelta(t)
       return new Promise<string>((_res, rej) => {
         signal?.addEventListener('abort', () => {
@@ -168,7 +166,7 @@ describe('停止生成（REQ-010，iter-2 T2）', () => {
 
   it('stopRequested 不残留：停止后再发新消息正常完成', async () => {
     let first = true
-    mockedStream.mockImplementation((_c, _m, h: StreamHandlers, signal?: AbortSignal) => {
+    mockedStream.mockImplementation((_m, h: StreamHandlers, signal?: AbortSignal) => {
       if (first) {
         first = false
         return new Promise((_res, rej) => {
@@ -238,12 +236,12 @@ describe('系统提示词组装（REQ-008，iter-2 T3）', () => {
 
     settings.saveSystemPrompt('回复只用英文')
     await sessions.send('hi')
-    const withSys = mockedStream.mock.calls.at(-1)![1] as Array<{ role: string }>
+    const withSys = mockedStream.mock.calls.at(-1)![0] as Array<{ role: string }>
     expect(withSys[0]).toEqual({ role: 'system', content: '回复只用英文' })
 
     settings.saveSystemPrompt('')
     await sessions.send('again')
-    const withoutSys = mockedStream.mock.calls.at(-1)![1] as Array<{ role: string }>
+    const withoutSys = mockedStream.mock.calls.at(-1)![0] as Array<{ role: string }>
     expect(withoutSys.some((m) => m.role === 'system')).toBe(false)
   })
 })
@@ -251,7 +249,7 @@ describe('系统提示词组装（REQ-008，iter-2 T3）', () => {
 describe('停止时效构造性证明（NCR-iter2-003 整改）', () => {
   it('stopGeneration() 调用返回前 AbortSignal 已置 aborted（同步路径，无异步间隙 → 点击到停止渲染仅需一个 Vue 渲染 tick，远小于 200ms 阈值）', async () => {
     let captured: AbortSignal | undefined
-    mockedStream.mockImplementation((_c, _m, _h: StreamHandlers, signal?: AbortSignal) => {
+    mockedStream.mockImplementation((_m, _h: StreamHandlers, signal?: AbortSignal) => {
       captured = signal
       return new Promise<string>((_res, rej) => {
         signal?.addEventListener('abort', () => {
@@ -291,7 +289,7 @@ describe('消息编辑与重新生成（REQ-015，iter-4 T2）', () => {
     expect(msgs[0]).toMatchObject({ role: 'user', content: '改后问题1' })
     expect(msgs[1]).toMatchObject({ role: 'assistant', content: '新回复', status: 'done' })
     // 上下文：仅编辑后的用户消息（新 assistant 占位不参与请求）
-    const ctx = mockedStream.mock.calls.at(-1)![1] as Array<{ role: string; content: string }>
+    const ctx = mockedStream.mock.calls.at(-1)![0] as Array<{ role: string; content: string }>
     expect(ctx).toEqual([{ role: 'user', content: '改后问题1' }])
   })
 
@@ -313,7 +311,7 @@ describe('消息编辑与重新生成（REQ-015，iter-4 T2）', () => {
     expect(msgs[2]).toMatchObject({ role: 'user', content: '改后问题2' }) // 第二轮被替换
     expect(msgs[3]).toMatchObject({ role: 'assistant', content: '新回复2', status: 'done' })
     // 上下文：第一轮完整保留 + 编辑后的第二轮用户消息；旧第二轮后文不出现
-    const ctx = mockedStream.mock.calls.at(-1)![1] as Array<{ role: string; content: string }>
+    const ctx = mockedStream.mock.calls.at(-1)![0] as Array<{ role: string; content: string }>
     expect(ctx).toEqual([
       { role: 'user', content: '问题1' },
       { role: 'assistant', content: '回复1' },
@@ -323,7 +321,7 @@ describe('消息编辑与重新生成（REQ-015，iter-4 T2）', () => {
 
   it('生成中编辑：中断当前生成，从编辑点重建，新生成不受旧 finally 干扰', async () => {
     let call = 0
-    mockedStream.mockImplementation((_c, _m, _h: StreamHandlers, signal?: AbortSignal) => {
+    mockedStream.mockImplementation((_m, _h: StreamHandlers, signal?: AbortSignal) => {
       call++
       if (call === 1) {
         return new Promise((_res, rej) => {

@@ -103,8 +103,7 @@ const filtered = computed<Array<{ session: Session; hit: SearchHit | null }>>(()
         </svg>
         设置
       </button>
-      <span class="profile-tag" :title="settings.activeProfile?.name">{{ settings.activeProfile?.name ?? '未配置' }}</span>
-      <span class="api-dot" :class="settings.isConfigured ? 'ok' : 'bad'" :title="settings.isConfigured ? 'API 已配置' : 'API 未配置'" />
+      <span class="profile-tag" :title="settings.activeProfile ? `自填模式 · ${settings.activeProfile.name}` : '统一密钥模式（零配置）'">{{ settings.activeProfile?.name ?? '统一密钥' }}</span>
       <button class="logout-btn" type="button" title="登出" aria-label="登出" @click="emit('logout')">
         <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
           <path

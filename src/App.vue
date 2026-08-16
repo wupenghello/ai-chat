@@ -33,9 +33,16 @@ onMounted(() => {
     // 服务端会话加载失败（网络/后端不可用）：降级为空会话继续可用，已加载页内更改将无法保存
     toast.push('会话加载失败，请检查网络')
   })
+  // REQ-018（iter-7 T2）：档案迁服务端，登录后拉取（失败降级为空列表，设置页可重试保存）
+  void settings.boot().catch(() => {
+    toast.push('供应商档案加载失败，请检查网络')
+  })
 })
 
-function openSettings() {
+const locateAdv = ref(false) // 错误气泡「前往高级设置」入口：打开设置页并定位高级设置区（走查 15）
+
+function openSettings(locateAdvanced = false) {
+  locateAdv.value = locateAdvanced
   view.value = 'settings'
 }
 
@@ -67,7 +74,7 @@ function editMessage(id: string, text: string) {
     <TheSidebar @open-settings="openSettings" @chat="view = 'chat'" @logout="logout" />
 
     <main class="main">
-      <SettingsForm v-if="view === 'settings'" />
+      <SettingsForm v-if="view === 'settings'" :locate-adv="locateAdv" />
 
       <template v-else>
         <div class="chat">
@@ -113,7 +120,7 @@ function editMessage(id: string, text: string) {
             v-else
             :messages="sessions.active.messages"
             @retry="(id) => sessions.retry(id)"
-            @go-settings="openSettings"
+            @go-settings="openSettings(true)"
             @edit="editMessage"
             @toggle-version="(forkId) => sessions.toggleVersion(forkId)"
           />

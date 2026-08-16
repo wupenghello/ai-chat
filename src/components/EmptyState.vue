@@ -13,7 +13,7 @@ const suggestions = ['我叫小明', '用一段话介绍你自己', '帮我写�
     <p class="empty-desc">
       {{
         variant === 'no-session'
-          ? '开始前请先在设置中配置 API 密钥（支持 DeepSeek、GLM 等 OpenAI 兼容接口）'
+          ? '开箱即用：服务端统一密钥零配置，直接输入即可对话（REQ-014 v3）；高级设置可添加自有供应商密钥'
           : '输入任何问题，AI 会记住本轮对话的上下文'
       }}
     </p>

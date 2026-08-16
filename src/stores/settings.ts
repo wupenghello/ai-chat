@@ -1,43 +1,40 @@
 import { defineStore } from 'pinia'
+import { backend, type ServerProfile } from '../api/backend'
 
-/** REQ-014：API 供应商与密钥可配置（OpenAI 兼容） */
-export interface ApiConfig {
+/** REQ-018（iter-7 T2）：供应商档案——存服务端，前端只持掩码视图（明文绝不下发前端）。 */
+export interface ApiProfile {
+  id: string
+  name: string
+  baseUrl: string
+  model: string
+  apiKeyMasked: string
+}
+
+/** 添加/编辑模态输入：编辑时 apiKey 留空 = 沿用服务端已存 key（密钥不回显设计，design-iter-7 §2.2） */
+export interface ProfileInput {
+  name: string
   baseUrl: string
   model: string
   apiKey: string
 }
 
-/** REQ-018：供应商档案 = 名称 + 三要素；多套档案一键切换当前生效 */
-export interface ApiProfile extends ApiConfig {
-  id: string
-  name: string
-}
-
-/** 本地持久化的完整设置：档案列表 + 当前生效 + 系统提示词（REQ-008）；
-    baseUrl/model/apiKey 为 v0.3.0 及以前的单套旧格式，加载时迁移为档案 */
+/**
+ * localStorage 只持久化系统提示词（REQ-008）。
+ * 旧版本存于此的档案字段（baseUrl/model/apiKey/profiles/activeProfileId）停读不清——
+ * 存量档案上云导入 iter-8 落地（spec REQ-018 定案），导入完成后才清除；期间原样保留。
+ */
 interface PersistedSettings {
+  systemPrompt?: string
   baseUrl?: string
   model?: string
   apiKey?: string
-  systemPrompt?: string
-  profiles?: ApiProfile[]
+  profiles?: unknown
   activeProfileId?: string
 }
 
 const STORAGE_KEY = 'ai-chat:settings'
 
-const uid = () =>
-  typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `p-${Date.now()}-${Math.random()}`
-
-function hostOf(baseUrl: string): string {
-  try {
-    return new URL(baseUrl).hostname
-  } catch {
-    return '自定义'
-  }
-}
-
-function loadPersisted(): PersistedSettings {
+function readRaw(): PersistedSettings {
   try {
     return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}')
   } catch {
@@ -45,133 +42,120 @@ function loadPersisted(): PersistedSettings {
   }
 }
 
-/** 全量写入本地存储（档案与 systemPrompt 同一份 JSON，避免互相覆盖） */
-function persist(data: PersistedSettings) {
-  const clean: PersistedSettings = {
-    profiles: data.profiles ?? [],
-    activeProfileId: data.activeProfileId,
-    systemPrompt: data.systemPrompt,
-  }
-  if (!clean.activeProfileId) delete clean.activeProfileId
-  if (!clean.systemPrompt) delete clean.systemPrompt
-  if ((clean.profiles?.length ?? 0) === 0 && !clean.activeProfileId && !clean.systemPrompt) {
-    localStorage.removeItem(STORAGE_KEY)
-  } else {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(clean))
-  }
+function persistSystemPrompt(text: string) {
+  const raw = readRaw()
+  if (text) raw.systemPrompt = text
+  else delete raw.systemPrompt
+  if (Object.keys(raw).length === 0) localStorage.removeItem(STORAGE_KEY)
+  else localStorage.setItem(STORAGE_KEY, JSON.stringify(raw))
 }
 
-/** 逐字段校验：返回各字段错误文案；全空对象表示通过 */
-export function validateConfig(c: Partial<ApiConfig>): Partial<Record<keyof ApiConfig, string>> {
-  const errors: Partial<Record<keyof ApiConfig, string>> = {}
-  if (!c.baseUrl?.trim()) errors.baseUrl = '必填：API 地址（如 https://open.bigmodel.cn/api/paas/v4）'
-  else if (!/^https?:\/\//.test(c.baseUrl.trim())) errors.baseUrl = '必须以 http(s):// 开头'
-  if (!c.model?.trim()) errors.model = '必填：模型名（如 glm-5.3）'
-  if (!c.apiKey?.trim()) errors.apiKey = '必填：API Key'
-  return errors
-}
-
-/** 档案校验：三要素 + 名称必填（design-iter-5 待澄清已定夺） */
-export function validateProfile(p: Partial<ApiProfile>): Partial<Record<keyof ApiProfile, string>> {
-  const errors = validateConfig(p) as Partial<Record<keyof ApiProfile, string>>
+/** 模态前端校验（REQ-014 必填）：editing=true 时 apiKey 可空 = 沿用原值 */
+export function validateProfileInput(
+  p: Partial<ProfileInput>,
+  editing: boolean,
+): Partial<Record<keyof ProfileInput, string>> {
+  const errors: Partial<Record<keyof ProfileInput, string>> = {}
   if (!p.name?.trim()) errors.name = '必填：档案名称（如 DeepSeek、GLM）'
+  if (!p.baseUrl?.trim()) errors.baseUrl = '必填：API 地址（如 https://api.deepseek.com）'
+  else if (!/^https?:\/\//.test(p.baseUrl.trim())) errors.baseUrl = '必须以 http(s):// 开头'
+  if (!p.model?.trim()) errors.model = '必填：模型名（如 deepseek-chat）'
+  if (!editing && !p.apiKey?.trim()) errors.apiKey = '必填：API Key'
   return errors
+}
+
+function toLocal(p: ServerProfile): ApiProfile {
+  return { id: p.id, name: p.name, baseUrl: p.base_url, model: p.model, apiKeyMasked: p.api_key_masked }
 }
 
 export const useSettingsStore = defineStore('settings', {
-  state: () => {
-    const p = loadPersisted()
-    let profiles = Array.isArray(p.profiles) ? p.profiles : []
-    let activeProfileId = p.activeProfileId ?? null
-    // 旧版单套配置迁移：包装为首个档案（REQ-018 数据兼容）
-    if (profiles.length === 0 && (p.baseUrl || p.model || p.apiKey)) {
-      const prof: ApiProfile = {
-        id: uid(),
-        name: `${p.model?.trim() || '默认档案'}@${hostOf(p.baseUrl ?? '')}`,
-        baseUrl: p.baseUrl ?? '',
-        model: p.model ?? '',
-        apiKey: p.apiKey ?? '',
-      }
-      profiles = [prof]
-      activeProfileId = prof.id
-    }
-    if (activeProfileId && !profiles.some((x) => x.id === activeProfileId)) {
-      activeProfileId = profiles[0]?.id ?? null
-    }
-    return { profiles, activeProfileId, systemPrompt: p.systemPrompt ?? '', pendingProfileEffect: false }
-  },
-
+  state: () => ({
+    profiles: [] as ApiProfile[],
+    activeProfileId: null as string | null,
+    systemPrompt: readRaw().systemPrompt ?? '',
+    pendingProfileEffect: false,
+    profilesLoaded: false,
+  }),
   getters: {
     activeProfile(state): ApiProfile | null {
       return state.profiles.find((p) => p.id === state.activeProfileId) ?? null
     },
-    /** 兼容消费方（sessions/chat-header）：当前生效档案的三要素，无档案为空对象 */
-    config(state): Partial<ApiConfig> {
-      const a = state.profiles.find((p) => p.id === state.activeProfileId)
-      return a ? { baseUrl: a.baseUrl, model: a.model, apiKey: a.apiKey } : {}
+    /** v3 模式判定（design-iter-7 §1 定稿）：有当前生效档案 = 自填（custom）；无 = 统一 key（unified） */
+    keyMode(): 'unified' | 'custom' {
+      return this.activeProfile ? 'custom' : 'unified'
     },
-    isConfigured(state): boolean {
+    /** 兼容消费方（顶栏模型名/导出）：当前生效档案的模型与地址；统一 key 模式为空对象 */
+    config(state): { baseUrl?: string; model?: string } {
       const a = state.profiles.find((p) => p.id === state.activeProfileId)
-      return !!a && Object.keys(validateConfig(a)).length === 0
+      return a ? { baseUrl: a.baseUrl, model: a.model } : {}
     },
   },
-
   actions: {
-    persistAll() {
-      persist({ profiles: this.profiles, activeProfileId: this.activeProfileId ?? undefined, systemPrompt: this.systemPrompt })
+    /** 登录后拉取档案（App onMounted；Root 登录态变化重挂载时重跑） */
+    async boot() {
+      const list = await backend.listProfiles()
+      this.profiles = list.map(toLocal)
+      this.activeProfileId = list.find((p) => p.is_active)?.id ?? null
+      this.profilesLoaded = true
     },
 
-    /**
-     * 更新当前档案（无档案时创建「模型@主机」命名的首个档案）。
-     * 兼容 REQ-014 既有入路；校验通过才写入（REQ-014 验收）。
-     */
-    save(c: ApiConfig): Partial<Record<keyof ApiConfig, string>> {
-      const errors = validateConfig(c)
+    /** 新增档案（REQ-014 主流程 2：保存后下一次请求起生效） */
+    async saveNewProfile(input: ProfileInput): Promise<Partial<Record<keyof ProfileInput, string>>> {
+      const errors = validateProfileInput(input, false)
       if (Object.keys(errors).length > 0) return errors
-      const trimmed = { baseUrl: c.baseUrl.trim(), model: c.model.trim(), apiKey: c.apiKey.trim() }
-      if (this.activeProfile) {
-        Object.assign(this.activeProfile, trimmed)
-      } else {
-        const prof: ApiProfile = { id: uid(), name: `${trimmed.model}@${hostOf(trimmed.baseUrl)}`, ...trimmed }
-        this.profiles.push(prof)
-        this.activeProfileId = prof.id
-      }
-      this.persistAll()
+      const created = await backend.createProfile({
+        name: input.name.trim(),
+        base_url: input.baseUrl.trim(),
+        model: input.model.trim(),
+        api_key: input.apiKey.trim(),
+      })
+      this.profiles.push(toLocal(created))
       return {}
     },
 
-    /** REQ-018：新增/编辑档案（按 id upsert）；首个档案自动成为当前生效 */
-    saveProfile(p: ApiProfile): Partial<Record<keyof ApiProfile, string>> {
-      const errors = validateProfile(p)
+    /** 编辑档案：apiKey 留空 = 沿用服务端已存 key（不回显） */
+    async saveProfileEdit(
+      id: string,
+      input: ProfileInput,
+    ): Promise<Partial<Record<keyof ProfileInput, string>>> {
+      const errors = validateProfileInput(input, true)
       if (Object.keys(errors).length > 0) return errors
-      const trimmed: ApiProfile = {
-        id: p.id,
-        name: p.name.trim(),
-        baseUrl: p.baseUrl.trim(),
-        model: p.model.trim(),
-        apiKey: p.apiKey.trim(),
-      }
-      const idx = this.profiles.findIndex((x) => x.id === p.id)
-      if (idx >= 0) this.profiles.splice(idx, 1, trimmed)
-      else {
-        this.profiles.push(trimmed)
-        if (!this.activeProfileId) this.activeProfileId = trimmed.id
-      }
-      this.persistAll()
+      const updated = await backend.updateProfile(id, {
+        name: input.name.trim(),
+        base_url: input.baseUrl.trim(),
+        model: input.model.trim(),
+        api_key: input.apiKey.trim(),
+      })
+      const idx = this.profiles.findIndex((p) => p.id === id)
+      if (idx >= 0) this.profiles.splice(idx, 1, toLocal(updated))
       return {}
     },
 
-    /**
-     * REQ-018（CHG-002 定案）：切换当前生效档案——生成中的请求在 generate 开始时已锁定配置，
-     * 天然「当前回复用旧档案跑完、下一次请求生效」，无需中断。
-     */
-    setActiveProfile(id: string) {
+    /** 删除档案；当前生效档案服务端 409 拒删（前端禁用外的双保险），返回是否删除 */
+    async removeProfile(id: string): Promise<boolean> {
+      try {
+        await backend.deleteProfile(id)
+      } catch {
+        return false
+      }
+      this.profiles = this.profiles.filter((p) => p.id !== id)
+      return true
+    },
+
+    /** REQ-018：切换当前生效档案（进入自填模式），下一次请求生效（CHG-002） */
+    async setActiveProfile(id: string) {
       if (!this.profiles.some((p) => p.id === id)) return
+      await backend.activateProfile(id)
       this.activeProfileId = id
-      this.persistAll()
     },
 
-    /** REQ-018 待澄清 7：生成中切换 → 新当前档案标「待生效」，生成结束转正（瞬态，不持久化） */
+    /** REQ-014 主流程 4：清除自填配置 → 回退统一 key 模式（档案保留、可再启用），无确认弹窗（可逆） */
+    async clearActiveProfile() {
+      await backend.clearActiveProfile()
+      this.activeProfileId = null
+    },
+
+    /** REQ-018 待澄清 7：生成中切换 → 「待生效」胶囊，全部生成结束转正（瞬态，不持久化） */
     markPendingEffect() {
       this.pendingProfileEffect = true
     },
@@ -179,28 +163,11 @@ export const useSettingsStore = defineStore('settings', {
       this.pendingProfileEffect = false
     },
 
-    /** REQ-018：删除档案；当前生效档案不可删（UI 禁用 + store 双保险），返回是否删除 */
-    removeProfile(id: string): boolean {
-      if (id === this.activeProfileId) return false
-      this.profiles = this.profiles.filter((p) => p.id !== id)
-      this.persistAll()
-      return true
-    },
-
-    /**
-     * REQ-008：保存系统提示词（全局单一，CEO 2026-08-15 拍板）。
-     * 留空/仅空白 = 无提示词；只影响之后的轮次（组装时机在 generate）。
-     */
+    /** REQ-008：保存系统提示词（全局单一，CEO 2026-08-15 拍板）。
+        留空/仅空白 = 无提示词；只影响之后的轮次（组装时机在 generate）。 */
     saveSystemPrompt(text: string) {
       this.systemPrompt = text.trim()
-      this.persistAll()
-    },
-
-    /** 清除当前档案密钥：状态与本地存储一并清除，无残留（REQ-014 验收） */
-    clearKey() {
-      const a = this.profiles.find((p) => p.id === this.activeProfileId)
-      if (a) delete (a as Partial<ApiProfile>).apiKey
-      this.persistAll()
+      persistSystemPrompt(this.systemPrompt)
     },
   },
 })

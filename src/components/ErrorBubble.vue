@@ -19,8 +19,9 @@ const titles: Record<string, string> = {
     </div>
     <p class="msg">{{ message }}</p>
     <div class="acts">
-      <button class="btn" @click="emit('retry')">重试</button>
-      <button v-if="kind === 'auth'" class="btn btn-primary" @click="emit('goSettings')">前往设置更新密钥</button>
+      <!-- design-iter-7 §3.1：401/403 只引导修复不提供重试（不修复必然再失败） -->
+      <button v-if="kind !== 'auth'" class="btn" @click="emit('retry')">重试</button>
+      <button v-if="kind === 'auth'" class="btn btn-primary" @click="emit('goSettings')">前往高级设置</button>
     </div>
   </div>
 </template>

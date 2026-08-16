@@ -9,20 +9,23 @@ vi.mock('../../db/persistence', () => ({
 
 vi.mock('../../api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api/client')>()),
-  streamChat: vi.fn(),
+  streamChatViaProxy: vi.fn(),
 }))
 
-import { streamChat } from '../../api/client'
+import { streamChatViaProxy } from '../../api/client'
 import { useSettingsStore } from '../settings'
+import { useAuthStore } from '../auth'
 import { useSessionsStore } from '../sessions'
 
-const mockedStream = vi.mocked(streamChat)
+const mockedStream = vi.mocked(streamChatViaProxy)
 
 beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
   setActivePinia(createPinia())
-  useSettingsStore().save({ baseUrl: 'https://x', model: 'm', apiKey: 'k' })
+  const settings = useSettingsStore()
+  settings.systemPrompt = ''
+  useAuthStore().user = { id: 1, username: 'tester' }
 })
 
 describe('会话自动命名（REQ-009，iter-3 T1）', () => {

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { buildContext, streamChat, streamChatViaProxy, type ChatMessage } from '../api/client'
+import { buildContext, streamChatViaProxy, type ChatMessage } from '../api/client'
 import { useAuthStore } from './auth'
 import { useSettingsStore } from './settings'
 import { useToastStore } from './toast'
@@ -146,11 +146,10 @@ export const useSessionsStore = defineStore('sessions', {
     },
 
     /** 发送一条消息并流式生成回复。返回 false 表示不可发送：
-     *  v3 双模式（REQ-023）——无档案 = 统一 key 模式（已登录即可用，走后端代理）；
-     *  仅「未登录且无档案」（实际不可达：路由守卫保证主界面已登录）返回 false */
+     *  v3 双模式（REQ-023，iter-7 T2）——全部请求经后端代理（后端按生效档案/统一 key 路由），
+     *  登录即可发送；未登录（实际不可达：路由守卫保证主界面已登录）返回 false */
     async send(text: string): Promise<boolean> {
-      const settings = useSettingsStore()
-      if (!settings.activeProfile && !useAuthStore().user) return false
+      if (!useAuthStore().user) return false
 
       let session = this.active
       if (!session || session.corrupted) session = this.sessions.find((s) => !s.corrupted) ?? null
@@ -247,29 +246,23 @@ export const useSessionsStore = defineStore('sessions', {
       const epoch = (this.generation[session.id] = (this.generation[session.id] ?? 0) + 1)
       this.controllers[session.id] = controller
       try {
-        // iter-7 T1 过渡态：有生效档案（自填模式）仍直连上游，T2 迁服务端后移除直连分支；
-        // 无档案 = 统一 key 模式 → 走后端代理，零配置零密钥（REQ-023）
+        // REQ-023（iter-7 T2）：全部经后端代理——自填/统一 key 由服务端按生效档案路由；
+        // CHG-002 语义天然保持：档案在请求开始时由服务端读取，生成中切换下一请求才生效
         // REQ-008：系统提示词（如有）置于首位；buildContext 保证其不受 20 轮截断影响
         const context = buildContext(
           settings.systemPrompt
             ? [{ role: 'system', content: settings.systemPrompt }, ...toContext(session.messages.filter((m) => m.id !== aiMsg.id))]
             : toContext(session.messages.filter((m) => m.id !== aiMsg.id)),
         )
-        const onDelta = (d: string) => {
-          aiMsg.content += d
-        }
-        const full = settings.activeProfile
-          ? await streamChat(
-              {
-                baseUrl: settings.config.baseUrl!,
-                model: settings.config.model!,
-                apiKey: settings.config.apiKey!,
-              },
-              context,
-              { onDelta },
-              controller.signal,
-            )
-          : await streamChatViaProxy(context, { onDelta }, controller.signal)
+        const full = await streamChatViaProxy(
+          context,
+          {
+            onDelta: (d) => {
+              aiMsg.content += d
+            },
+          },
+          controller.signal,
+        )
         if (!aiMsg.content) aiMsg.content = full // 兜底：兼容未走流式回调的响应
         aiMsg.status = 'done'
       } catch (e) {

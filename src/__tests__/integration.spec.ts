@@ -11,6 +11,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
 import App from '../App.vue'
 import { useSettingsStore } from '../stores/settings'
+import { useAuthStore } from '../stores/auth'
 
 vi.mock('../db/persistence', () => ({
   loadSessions: vi.fn(async () => []),
@@ -20,19 +21,19 @@ vi.mock('../db/persistence', () => ({
 
 vi.mock('../api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/client')>()),
-  streamChat: vi.fn(),
+  streamChatViaProxy: vi.fn(),
 }))
 
-import { streamChat, type StreamHandlers } from '../api/client'
+import { streamChatViaProxy, type StreamHandlers } from '../api/client'
 
-const mockedStream = vi.mocked(streamChat)
+const mockedStream = vi.mocked(streamChatViaProxy)
 
 /** 挂起式流式 mock：delta 手动推送，finish 手动收尾——模拟真实网络的分包与耗时 */
 function gatedStream() {
   let delta!: (t: string) => void
   let finish!: () => void
   const promise = new Promise<string>((res) => (finish = () => res('完整回复')))
-  mockedStream.mockImplementation((_c, _m, h: StreamHandlers) => {
+  mockedStream.mockImplementation((_m, h: StreamHandlers) => {
     delta = (t) => h.onDelta(t)
     return promise
   })
@@ -43,7 +44,9 @@ beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
   setActivePinia(createPinia())
-  useSettingsStore().save({ baseUrl: 'https://x', model: 'm', apiKey: 'k' })
+  const settings = useSettingsStore()
+  settings.systemPrompt = ''
+  useAuthStore().user = { id: 1, username: 'tester' }
 })
 
 async function mountApp() {

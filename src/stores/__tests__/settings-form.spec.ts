@@ -1,66 +1,107 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { mount } from '@vue/test-utils'
+
+vi.mock('../../api/backend', () => ({
+  backend: {
+    listProfiles: vi.fn(async () => []),
+    createProfile: vi.fn(),
+    updateProfile: vi.fn(),
+    deleteProfile: vi.fn(),
+    activateProfile: vi.fn(),
+    clearActiveProfile: vi.fn(),
+  },
+}))
+
+import { backend } from '../../api/backend'
 import SettingsForm from '../../components/SettingsForm.vue'
 import { useSettingsStore } from '../settings'
 
+const mocked = vi.mocked(backend)
+const SERVER_P = (id: string, name: string, active = false) => ({
+  id,
+  name,
+  base_url: 'https://api.test',
+  model: 'm1',
+  api_key_masked: 'sk-****1234',
+  is_active: active,
+})
+
 beforeEach(() => {
+  vi.clearAllMocks()
   localStorage.clear()
   setActivePinia(createPinia())
 })
 
-describe('SettingsForm（REQ-014/018，iter-5 T3）', () => {
-  it('不完整档案：显示行内错误且不持久化', async () => {
-    const wrapper = mount(SettingsForm)
-    await wrapper.find('.btn').trigger('click') // 添加档案
-    const texts = wrapper.findAll('.modal input[type="text"]')
-    await texts[0].setValue('') // 名称空（必填，待澄清已定夺）
-    await texts[1].setValue('https://x')
-    await texts[2].setValue('m')
-    await wrapper.find('.modal input[type="password"]').setValue('k')
-    await wrapper.find('.modal .btn-primary').trigger('click')
-    expect(wrapper.find('.field-error').text()).toContain('必填')
-    expect(localStorage.getItem('ai-chat:settings')).toBeNull()
+async function mountForm() {
+  const settings = useSettingsStore()
+  settings.profilesLoaded = true
+  return mount(SettingsForm)
+}
+
+describe('SettingsForm（REQ-014 v3 / design-iter-7 §1~2）', () => {
+  it('统一 key 默认态：状态卡零密钥输入框 + 配额占位破折号（走查 1/2）', async () => {
+    const w = await mountForm()
+    const text = w.text()
+    expect(text).toContain('服务端统一密钥')
+    expect(text).toContain('当前模式')
+    expect(text).toContain('每日 — 次对话')
+    expect(text).toContain('占位')
+    // 首屏无任何密钥输入框（旧版三要素表单已消亡）
+    expect(w.findAll('input[type="password"]').length).toBe(0)
   })
 
-  it('完整档案：添加成功并持久化、成为当前生效', async () => {
-    const wrapper = mount(SettingsForm)
-    await wrapper.find('.btn').trigger('click')
-    const texts = wrapper.findAll('.modal input[type="text"]')
-    await texts[0].setValue('DeepSeek')
-    await texts[1].setValue('https://api.deepseek.com/v1')
-    await texts[2].setValue('deepseek-chat')
-    await wrapper.find('.modal input[type="password"]').setValue('sk-1')
-    await wrapper.find('.modal .btn-primary').trigger('click')
+  it('自填模式态：模式卡显示生效档案名 + 回退按钮（走查 4/6）', async () => {
     const settings = useSettingsStore()
-    expect(settings.isConfigured).toBe(true)
-    expect(settings.activeProfile?.name).toBe('DeepSeek')
-    expect(localStorage.getItem('ai-chat:settings')).toContain('sk-1')
-    expect(wrapper.find('.p-current').text()).toBe('当前生效')
-    expect(wrapper.find('.modal').exists()).toBe(false) // 模态关闭
+    settings.profiles = [{ id: 'a', name: 'DeepSeek', baseUrl: 'https://api.test', model: 'm', apiKeyMasked: 'sk-****1234' }]
+    settings.activeProfileId = 'a'
+    const w = await mountForm()
+    expect(w.text()).toContain('自填密钥 · 当前生效：DeepSeek')
+    expect(w.text()).toContain('已解锁更高配额')
+    const fallbackBtn = w.findAll('button').find((b) => b.text().includes('回退统一密钥'))
+    expect(fallbackBtn).toBeTruthy()
   })
 
-  it('多档案：「设为当前」切换生效档案', async () => {
+  it('编辑模态：密钥不回显（留空=沿用），添加模态：密钥必填（走查 8/9）', async () => {
     const settings = useSettingsStore()
-    settings.saveProfile({ id: 'a', name: 'A', baseUrl: 'https://a.io', model: 'ma', apiKey: 'k1' })
-    settings.saveProfile({ id: 'b', name: 'B', baseUrl: 'https://b.io', model: 'mb', apiKey: 'k2' })
-    const wrapper = mount(SettingsForm)
-    expect(settings.activeProfileId).toBe('a') // 首个自动生效
-    await wrapper.find('.p-btn').trigger('click') // B 的「设为当前」
-    expect(settings.activeProfileId).toBe('b')
-    expect(settings.config.model).toBe('mb')
+    settings.profiles = [{ id: 'a', name: 'DeepSeek', baseUrl: 'https://api.test', model: 'm', apiKeyMasked: 'sk-****1234' }]
+    const w = await mountForm()
+    await w.findAll('button').find((b) => b.attributes('aria-label') === '编辑档案')!.trigger('click')
+    const keyInput = w.find('input[type="password"]')
+    expect((keyInput.element as HTMLInputElement).value).toBe('') // 明文不回填
+    expect(w.text()).toContain('已保存，不回显')
+    expect(keyInput.attributes('placeholder')).toContain('留空保持不变') // 留空=沿用
   })
 
-  it('清除当前档案密钥：确认后本地无残留（REQ-014 验收沿袭）', async () => {
+  it('回退：清除当前生效、档案保留，无确认弹窗（走查 6，REQ-014 主流程 4）', async () => {
+    mocked.clearActiveProfile.mockResolvedValue({ detail: 'cleared' })
     const settings = useSettingsStore()
-    settings.save({ baseUrl: 'https://x', model: 'm', apiKey: 'secret' })
-    const wrapper = mount(SettingsForm)
-    await wrapper.find('.btn-text-danger').trigger('click')
-    // ConfirmModal Teleport 到 body，从 document 取确认按钮
-    const danger = document.body.querySelector('.btn-danger') as HTMLButtonElement
-    danger.click()
-    await wrapper.vm.$nextTick()
-    expect(settings.config.apiKey).toBeUndefined()
-    expect(localStorage.getItem('ai-chat:settings')).not.toContain('secret')
+    settings.profiles = [{ id: 'a', name: 'DeepSeek', baseUrl: '', model: '', apiKeyMasked: '' }]
+    settings.activeProfileId = 'a'
+    const w = await mountForm()
+    await w.findAll('button').find((b) => b.text().includes('回退统一密钥'))!.trigger('click')
+    await vi.waitFor(() => {
+      expect(mocked.clearActiveProfile).toHaveBeenCalledTimes(1)
+      expect(settings.activeProfileId).toBeNull()
+      expect(settings.profiles).toHaveLength(1) // 档案保留
+    })
+    // 可逆操作无确认模态
+    expect(w.findComponent({ name: 'ConfirmModal' }).props('open')).toBe(false)
+  })
+
+  it('添加档案：掩码入列表，明文不落地（走查 10/13）', async () => {
+    mocked.createProfile.mockResolvedValue(SERVER_P('new', 'GLM'))
+    const w = await mountForm()
+    await w.findAll('button').find((b) => b.text().includes('添加供应商档案'))!.trigger('click')
+    await w.find('input[type="password"]').setValue('sk-live-abcd9999')
+    const inputs = w.findAll('input')
+    await inputs[0].setValue('GLM')
+    await inputs[1].setValue('https://open.bigmodel.cn/api/paas/v4')
+    await inputs[2].setValue('glm-5.3')
+    await w.findAll('button').find((b) => b.text().includes('保存档案'))!.trigger('click')
+    await vi.waitFor(() => {
+      expect(mocked.createProfile).toHaveBeenCalled()
+      expect(w.text()).toContain('sk-****1234') // 列表显示服务端掩码
+    })
   })
 })

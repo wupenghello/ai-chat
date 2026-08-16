@@ -4,6 +4,7 @@
 每个迁移在事务内执行并更新 user_version，保证可断点续跑。
 """
 
+import os
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -11,7 +12,7 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 MIGRATIONS: dict[int, str] = {
     1: """
@@ -44,6 +45,24 @@ MIGRATIONS: dict[int, str] = {
     );
     CREATE INDEX idx_chat_sessions_user ON chat_sessions(user_id, updated_at);
     """,
+    # iter-7 T2（REQ-018）：供应商档案迁服务端。key 明文存储——「受保护」由可验收条款承载
+    # （不进 git/日志/响应、编辑不回显、文件 0600，design-iter-7 定夺②）；每用户至多一个
+    # 生效档案（部分唯一索引）——存在生效档案 = 自填模式，无 = 统一 key 模式（模式判定规则）
+    3: """
+    CREATE TABLE profiles (
+        id         TEXT    PRIMARY KEY,             -- 服务端生成 uuid
+        user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name       TEXT    NOT NULL,
+        base_url   TEXT    NOT NULL,
+        model      TEXT    NOT NULL,
+        api_key    TEXT    NOT NULL,
+        is_active  INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX idx_profiles_user ON profiles(user_id);
+    CREATE UNIQUE INDEX idx_profiles_one_active ON profiles(user_id) WHERE is_active = 1;
+    """,
 }
 
 
@@ -66,6 +85,14 @@ def init_db(conn: sqlite3.Connection) -> None:
         with conn:  # 事务：DDL + 版本号一起提交
             conn.executescript(MIGRATIONS[version])
             conn.execute(f"PRAGMA user_version = {version}")
+    # REQ-014 受保护条款⑤：数据库文件 0600（自填 key 明文在库，收敛为属主读写；
+    # WAL 伴生文件由 SQLite 按主文件权限创建策略处理，主文件为本条款验收对象）
+    db_file = conn.execute("PRAGMA database_list").fetchone()["file"]
+    if db_file:
+        try:
+            os.chmod(db_file, 0o600)
+        except OSError:
+            pass  # 容器内非属主等场景不阻断启动，验收以部署机实测为准
 
 
 def db_version(conn: sqlite3.Connection) -> int:
