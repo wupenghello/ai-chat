@@ -29,13 +29,21 @@ describe('SessionListItem 单行化与菜单（REQ-026，iter-11 T1）', () => {
     expect(wrapper.find('.del').exists()).toBe(false)
   })
 
-  it('「···」菜单：重命名 / 删除（danger + 前置分隔线，走查 6）', async () => {
+  it('「···」菜单：重命名 / 导出会话 / 删除（danger + 前置分隔线，走查 6 全量/T2）', async () => {
     const wrapper = mount(SessionListItem, { props: { session: makeSession(), active: false } })
     await openMenu(wrapper)
     const items = wrapper.findAll('[role="menuitem"]')
-    expect(items.map((i) => i.text())).toEqual(['重命名', '删除'])
-    expect(items[1].classes()).toContain('danger')
+    expect(items.map((i) => i.text())).toEqual(['重命名', '导出会话', '删除'])
+    expect(items[2].classes()).toContain('danger')
     expect(wrapper.find('.dd-sep').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('菜单「导出会话」触发 export（走查 36，REQ-027 T2）', async () => {
+    const wrapper = mount(SessionListItem, { props: { session: makeSession(), active: false } })
+    await openMenu(wrapper)
+    await wrapper.findAll('[role="menuitem"]')[1].trigger('click')
+    expect(wrapper.emitted('export')).toBeTruthy()
     wrapper.unmount()
   })
 
@@ -53,7 +61,7 @@ describe('SessionListItem 单行化与菜单（REQ-026，iter-11 T1）', () => {
   it('菜单「删除」触发 remove', async () => {
     const wrapper = mount(SessionListItem, { props: { session: makeSession(), active: false } })
     await openMenu(wrapper)
-    await wrapper.findAll('[role="menuitem"]')[1].trigger('click')
+    await wrapper.findAll('[role="menuitem"]')[2].trigger('click')
     expect(wrapper.emitted('remove')).toBeTruthy()
     wrapper.unmount()
   })
@@ -68,7 +76,7 @@ describe('SessionListItem 单行化与菜单（REQ-026，iter-11 T1）', () => {
     await items[0].trigger('click')
     expect(wrapper.find('.edit-input').exists()).toBe(false)
     expect(wrapper.emitted('rename')).toBeUndefined()
-    await items[1].trigger('click')
+    await items[2].trigger('click')
     expect(wrapper.emitted('remove')).toBeTruthy()
     wrapper.unmount()
   })

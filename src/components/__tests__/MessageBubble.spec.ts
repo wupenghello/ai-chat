@@ -7,6 +7,24 @@ function msg(content: string, role: 'user' | 'assistant' = 'assistant', status: 
   return { id: 'm1', role, content, status }
 }
 
+describe('MessageBubble 无头像布局（REQ-027，iter-11 T2，走查 23/24/26）', () => {
+  it('AI 与用户消息均不渲染头像节点（DOM 级，非 CSS 隐藏）', () => {
+    const ai = mount(MessageBubble, { props: { message: msg('回复') } })
+    const user = mount(MessageBubble, { props: { message: msg('提问', 'user') } })
+    expect(ai.find('.avatar').exists()).toBe(false)
+    expect(user.find('.avatar').exists()).toBe(false)
+    // 用户头像原文案「我」不作为任何元素文本出现
+    expect(user.findAll('*').filter((n) => n.text() === '我').length).toBe(0)
+  })
+
+  it('用户消息气泡类（avatar-bg 令牌承载，色值由 guard:style + 浏览器走查把关）+ AI 消息无气泡背景类', () => {
+    const user = mount(MessageBubble, { props: { message: msg('提问', 'user') } })
+    const ai = mount(MessageBubble, { props: { message: msg('回复') } })
+    expect(user.find('.bubble.user').exists()).toBe(true)
+    expect(ai.find('.bubble.assistant').exists()).toBe(true)
+  })
+})
+
 describe('MessageBubble Markdown 渲染（REQ-011，iter-3 T2）', () => {
   it('AI 回复按 Markdown 渲染为 HTML', () => {
     const wrapper = mount(MessageBubble, { props: { message: msg('## 标题\n\n- 列表项') } })

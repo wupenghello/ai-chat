@@ -162,3 +162,17 @@ describe('新建会话（走查 2：点击新建并清空搜索）', () => {
     wrapper.unmount()
   })
 })
+
+describe('导出透传（REQ-027 T2，走查 36：列表项菜单 → App 按会话导出）', () => {
+  it('列表项 emit export → TheSidebar 透传该会话对象', async () => {
+    login(false)
+    const target = makeSession('x1', '导出我', Date.now(), { messages: [{ id: 'm', role: 'user', content: '内容', status: 'done' }] })
+    sessionsMock.sessions = [target]
+    const wrapper = mountSidebar()
+    const item = wrapper.findComponent({ name: 'SessionListItem' })
+    item.vm.$emit('export')
+    expect(wrapper.emitted('export')).toBeTruthy()
+    expect(wrapper.emitted('export')![0][0]).toBe(target)
+    wrapper.unmount()
+  })
+})

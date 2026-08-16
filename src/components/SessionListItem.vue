@@ -6,11 +6,11 @@ import DropdownMenu, { type DropMenuItem } from './DropdownMenu.vue'
 
 /**
  * REQ-026.1（design-iter-11 §1.2，R1 grid 单行）：列表项单行化——仅标题（ellipsis + title），
- * hover 右侧浮现「···」，下拉菜单承载 重命名 / 删除（导出会话项随 REQ-027 T2 落地）。
+ * hover 右侧浮现「···」，下拉菜单承载 重命名 / 导出会话（REQ-027 T2，走查 36）/ 删除。
  * 无逐条时间戳（REQ-026.2 时间分组由 TheSidebar 渲染组头）。
  */
 const props = defineProps<{ session: Session; active: boolean; search?: string; hit?: SearchHit | null }>()
-const emit = defineEmits<{ select: []; remove: []; rename: [title: string] }>()
+const emit = defineEmits<{ select: []; remove: []; rename: [title: string]; export: [] }>()
 
 const editing = ref(false)
 const draft = ref('')
@@ -29,11 +29,13 @@ const menuItems = computed<DropMenuItem[]>(() => [
     disabled: props.session.corrupted,
     reason: '无法读取的会话不可重命名',
   },
+  { key: 'export', label: '导出会话' },
   { key: 'remove', label: '删除', danger: true, separator: true },
 ])
 
 function onMenuSelect(key: string) {
   if (key === 'rename') startEdit()
+  else if (key === 'export') emit('export')
   else if (key === 'remove') emit('remove')
 }
 

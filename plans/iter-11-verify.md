@@ -45,3 +45,50 @@
 - 重写 `src/components/SessionListItem.vue`（grid 单行 + ··· 菜单，删除铅笔/垃圾桶/时间行）+ spec 适配（9 用例）
 - 重写 `src/components/TheSidebar.vue`（时间分组渲染 + 账户区菜单 + rail 收起持久化 + 新建清空搜索，移除旧 footer 五元素）+ spec 重写（9 用例）
 - RTM REQ-026 行更新、周报 iter-11 条目（同提交）
+
+---
+
+# iter-11 验证与走查记录 — T2（REQ-027 消息流与顶栏，2026-08-16）
+
+> 走查口径：对照 design-iter-11 §7.2 清单 23~36 条（37~40 属 T3/REQ-028）。上接 T1 记录（同文件）。
+> **取证环境**：组件级 DOM 断言（vitest，MessageBubble +2 / SessionListItem +1 / TheSidebar +1 用例）
+> + **真实浏览器实测**（vite dev + FastAPI 本地后端，walk11 登录，**发送真实消息走完整流式**（统一 key 经代理打 DeepSeek），
+> 亮暗双主题切验，导出真实触发下载）。取值均为 getComputedStyle 实测。
+> 测试终态：**前端 vitest 240/240（26 文件，T1 后 236 → +4）+ guard:style 通过 + 生产构建通过（CSS 48.88kB，较 T1 -1.5kB——顶栏样式删除）**。后端未动（119/119）。
+
+## §7.2 清单 T2 范围逐条取证
+
+| # | 期望（摘要） | 取证 | 结果 |
+|---|------------|------|------|
+| 23 | 去全部头像（DOM 级非 CSS 隐藏） | MessageBubble.spec「均不渲染头像节点」：`.avatar` 不存在 + 无文本「我」元素；浏览器实测消息流中消息行头像节点为 0 | ✅ |
+| 24 | 用户气泡浅色：avatar-bg + text-1 15px/1.75、padding 10 14、圆角 12/12/4/12 | 浏览器实测：`bg=rgb(232,235,242)`（#E8EBF2）、`color=rgb(31,35,41)`（#1F2329）、`padding=10px 14px`、`radius=12px 12px 4px` | ✅ |
+| 25 | 暗色：#33363E 底 + #E6EAF0 字 = 10.0:1 | 浏览器实测（设置页外观切深色后）：`bg=rgb(51,54,62)`、`color=rgb(230,234,240)`；AI 字色 rgb(230,234,240) | ✅ |
+| 26 | AI 消息全宽无背景 | 浏览器实测：`aiBubbleBg=rgba(0,0,0,0)`、`padding=4px 0`；Markdown `.md` 真实流式渲染正常；内容列 712px 居中沿现状 | ✅ |
+| 27 | 操作栏重排：min-height 24 + opacity 0→1；用户列右对齐/AI 列左对齐 | 现状 CSS 已满足（T2 核对未改）：`.action-row{min-height:24px}`、`.action-btn{opacity:0}` + `.msg-col:hover` 显现、`.msg-col.user{align-items:flex-end}`；浏览器实测 minH=24px | ✅（沿现状核对） |
+| 28 | 版本切换 ‹1/2›：箭头常显 + 计数 tabular-nums min-width 30px | 现状 CSS 已满足（`.version-nav .action-btn{opacity:1}` 常显、`.version-count` tabular-nums min-width 30px）；组件级覆盖沿 MessageBubble.spec 既有用例 | ✅（沿现状核对） |
+| 29 | 生成中光标+提示 | 浏览器实测流式过程中 `.cursor` 出现（等待循环以其消失为完成条件）；样式 token 沿现状未动 | ✅ |
+| 30/31 | 生成中断/已停止 pill | 样式与结构未动（token 沿现状）；无头像布局下位置随操作栏列，组件级覆盖沿 sessions.spec/MessageBubble 既有用例 | ✅（沿现状核对） |
+| 32 | 编辑态面板交互 | 编辑面板结构/交互未动（REQ-015 口径零变化）；MessageBubble.spec 编辑 3 用例全绿 | ✅ |
+| 33 | 错误气泡无头像布局、口径不变 | ErrorBubble 由 MessageList 直接渲染、本无头像；danger-l/danger 令牌与 auth 类「前往高级设置」口径未动（T3 将复验定位联动） | ✅（沿现状核对） |
+| 34 | 完全去顶栏：主区无标题栏/导出钮/主题钮 | 浏览器实测：`.chat-header` 不存在、主区无 `切换到*` 主题钮、无 `.export-btn`；消息区顶留白沿 MessageList padding 24px；空态页自然上移 | ✅ |
+| 35 | 「模型：xxx」副标题移除；无「未设置」误导 | 浏览器实测：全页无「模型：」文本（统一 key 无档案状态下误导显示消失——REQ-027 验收原文达成） | ✅ |
+| 36 | 导出入口迁移：顶栏钮移除 + 列表项「···」→「导出会话」 | 浏览器实测：菜单 [重命名, 导出会话, 删除]；点击真实触发下载 `搜索验证词会话_20260816_1954.md`（按会话导出、文件名=标题+时间戳）；空会话导出 → toast「当前会话暂无消息，未生成文件」（REQ-013 口径不回退）；SessionListItem.spec「导出会话触发 export」+ TheSidebar.spec「透传该会话对象」 | ✅ |
+| 6（复验） | 菜单全量三项（T1 时缺导出项） | 走查 6 全量口径闭环：浏览器实测三项 + danger + 分隔线（T1 已验面板规格 148px/z-40/shadow-2） | ✅（T2 闭环） |
+
+## REQ-017 注记（T2 过渡态）
+
+顶栏主题按钮已移除（定夺①）；T2~T3 之间主题切换入口 = 设置页「外观」分段（既有，与全局同状态同存储）。
+浏览器实测：设置页切深色 → `html[data-theme=dark]` 生效、消息流双主题取值正确；切回浅色恢复。
+T3 设置弹窗化后入口随弹窗迁移（走查 39 届时复验）。登录页/管理页各自的独立主题按钮不在 CHG-006 范围，未动。
+
+## 实现偏差登记
+
+无新增偏差（T2 全部按基线实现）。
+
+## 交付物清单
+
+- `src/components/MessageBubble.vue`：删 AI/用户头像节点与样式；用户气泡 primary-solid 白字 → avatar-bg + text-1；row 布局简化
+- `src/App.vue`：chat-header 整块移除（标题/模型副标题/主题钮/导出钮）+ useTheme 引用移除 + 导出改 `exportBySession(session)`（按会话导出，经 TheSidebar @export）
+- `src/components/SessionListItem.vue`：菜单增「导出会话」项（重命名/导出会话/删除）+ emit export
+- `src/components/TheSidebar.vue`：SessionListItem @export 透传（分组/搜索两分支）
+- 测试：MessageBubble.spec +2（无头像/气泡类）、SessionListItem.spec +1（导出 emit，菜单三项断言更新）、TheSidebar.spec +1（导出透传）

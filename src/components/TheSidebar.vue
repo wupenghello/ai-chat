@@ -18,7 +18,7 @@ import DropdownMenu, { type DropMenuItem } from './DropdownMenu.vue'
 const sessions = useSessionsStore()
 const auth = useAuthStore()
 const router = useRouter()
-const emit = defineEmits<{ openSettings: []; chat: []; logout: [] }>()
+const emit = defineEmits<{ openSettings: []; chat: []; logout: []; export: [session: Session] }>()
 
 const pendingDelete = ref<Session | null>(null)
 
@@ -151,6 +151,7 @@ const avatarChar = computed(() => (auth.user?.username ?? '未').charAt(0))
                 @select="sessions.switchTo(session.id); emit('chat')"
                 @remove="pendingDelete = session"
                 @rename="(title) => sessions.renameSession(session.id, title)"
+                @export="emit('export', session)"
               />
             </template>
           </template>
@@ -166,6 +167,7 @@ const avatarChar = computed(() => (auth.user?.username ?? '未').charAt(0))
             @select="sessions.switchTo(session.id); emit('chat')"
             @remove="pendingDelete = session"
             @rename="(title) => sessions.renameSession(session.id, title)"
+            @export="emit('export', session)"
           />
           <li v-if="filtered.length === 0" class="no-result">无匹配会话</li>
         </template>

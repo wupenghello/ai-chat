@@ -96,20 +96,8 @@ function onEditKey(e: KeyboardEvent) {
 </script>
 
 <template>
+  <!-- REQ-027（design-iter-11 §3.1，走查 23）：去全部头像——AI logo 与「我」均不渲染（DOM 级） -->
   <div class="row" :class="message.role">
-    <div v-if="message.role === 'assistant'" class="avatar ai" aria-hidden="true">
-      <svg viewBox="0 0 128 128" width="16" height="16">
-        <path
-          fill="none"
-          stroke="currentColor"
-          stroke-width="14"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"
-        />
-      </svg>
-    </div>
-
     <div class="msg-col" :class="message.role">
       <!-- REQ-015：编辑态（仅用户消息）替换气泡为编辑面板 -->
       <div v-if="message.role === 'user' && editing" class="edit-form">
@@ -171,39 +159,16 @@ function onEditKey(e: KeyboardEvent) {
         </div>
       </div>
     </div>
-
-    <div v-if="message.role === 'user'" class="avatar user" aria-hidden="true">我</div>
   </div>
 </template>
 
 <style scoped>
+/* REQ-027（走查 23/24/26）：无头像布局——AI 消息全宽无背景，用户消息浅色轻量气泡
+   （avatar-bg + text-1：亮暗对比度 13.2:1 / 10.0:1，设计 §3.2 选型结论） */
 .row {
   display: flex;
-  gap: 8px;
-  align-items: flex-start;
   width: 100%;
   animation: rise 0.25s ease;
-}
-.row.user {
-  flex-direction: row-reverse;
-}
-.avatar {
-  flex: none;
-  width: 28px;
-  height: 28px;
-  border-radius: 999px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-}
-.avatar.ai {
-  background: var(--c-primary-l);
-  color: var(--c-primary);
-}
-.avatar.user {
-  background: var(--c-avatar-bg);
-  color: var(--c-text-2);
 }
 /* CHG-003：消息列（气泡 + 下方操作栏），宽度由本列约束 */
 .msg-col {
@@ -228,8 +193,8 @@ function onEditKey(e: KeyboardEvent) {
   word-break: break-word;
 }
 .bubble.user {
-  background: var(--c-primary-solid);
-  color: #fff;
+  background: var(--c-avatar-bg);
+  color: var(--c-text-1);
   padding: 10px 14px;
   border-radius: 12px 12px 4px 12px;
 }
