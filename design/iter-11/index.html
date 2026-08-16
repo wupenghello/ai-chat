@@ -1,0 +1,2012 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-chat · iter-11 设计稿（REQ-026/027/028 主界面体验对齐，已基线）</title>
+<!--
+  ============================================================
+  ai-chat 迭代 11 T0 设计稿（设计稿即页面骨架，开发对照实现）
+  依据：projects/ai-chat/plans/iter-11.md T0（验收：设计稿经 CEO 批准并打 design-iter-11 tag，
+        含 §7.x 走查清单（v1.4.4 硬要求）；主题按钮去留等待定夺项随稿提交 CEO 拍板——见第 8 节）
+        projects/ai-chat/requirements/spec.md req-baseline-v4（CHG-006）：REQ-026 主界面框架与侧栏重构 /
+        REQ-027 消息流与顶栏视觉对齐 / REQ-028 设置弹窗化（逐条对照见 §7.1）
+        company design-system/tokens.md v1.3/v1.3.1 + components.md v1.0 —— 本稿只用既有令牌，零自造色值、零新增令牌（见 §6/§8-8）
+        design/iter-9/index.html —— 文档外壳 + .tk 令牌作用域 + 演示控制 + 走查清单格式范本（本稿完全沿其结构）
+        现状实现核对（改版对象，保证字段/结构真实）：src/components/TheSidebar.vue、SessionListItem.vue、MessageBubble.vue、
+        MessageList.vue、ErrorBubble.vue、SettingsForm.vue（五区块真实字段）、KeyModeCard.vue、EmptyState.vue、src/App.vue
+  视觉基调（CEO 已定，不得偏离）：iter-9 反转基调延续——侧栏灰底 --c-bg + 正文白底 --c-surface；侧栏宽 264px（iter-9 R2 定夺）；
+        主色飞书蓝 #3370FF（暗色前景 #5C8DFF）；参照物 chat.deepseek.com 交互模式。
+  状态：已基线（2026-08-16 CEO 批准「过了」——8 项定夺全定案：①②③④⑥⑦⑧ 按推荐，⑤ 按 R1 CEO 指示拆分为左侧分区导航；
+        tag design-iter-11）。定夺①落定 = 移除顶栏主题按钮 → REQ-017 存量条款已随基线同步改写（CHG-006 影响评估登记动作）。
+  R1 修订（2026-08-16 CEO 评审两条）：① 会话列表项「···」按钮在部分条目被挤换行——.s-item 由 flex-wrap 改 grid 三列
+        （minmax(0,1fr)/auto/auto），标题列强制收缩省略，pill 与「···」恒居右同排；摘要/重命名框跨全列占第二行（走查 4「长标题不换行」由本修复坐实）。
+        ② 设置弹窗「不要都放在一个弹框里面…拆分一下」——单列滚动改左侧分区导航（定夺⑤按 CEO 指示反转，已定夺）：
+        720px = 左导航 168px（五分区，role=tablist，方向键切换）+ 右分区面板；头部长提示移除（语义并入密钥模式分区说明）；
+        「前往高级设置」由滚动定位改为分区直达 + 高亮（locateAdvanced prop 语义不变）。
+  可交互：右上「演示控制」一键亮/暗（写 localStorage）——下方全部可翻转样件同步（第 5 节锁定帧不随动）；
+        §1 侧栏主样件（分组列表渲染 / hover「···」/ 下拉菜单 / 行内重命名 / 删除确认 / 搜索态 / 收起 rail 切换 + 持久化 / 账户菜单 / 管理员条件渲染）；
+        §2 下拉菜单键盘演练台（↑↓/Enter/Esc/Tab/外点/滚动关闭）；
+        §3 消息流（复制反馈 / 编辑态 / 版本切换 / 错误气泡「前往高级设置」联动 §4 弹窗分区直达）；
+        §4 设置弹窗（开合 / 左侧分区导航切换 + 方向键 / Esc/遮罩/关闭钮 / 未保存拦截 / 外观分段联动全局主题 / 提示词保存 / 改密校验 / 注销层叠 / 档案内层模态）。
+        样件数据（用户名「猫南北」/ 密码 mm2026 / 档案 sk-****）全为演示数据，非真实凭据（铁律 5 口径见 §6）。
+  零外部依赖，双击即开。
+  ============================================================
+-->
+<style>
+/* ============================================================
+   一、文档外壳（说明页自身，浅色固定，不随演示切换；色值 = tokens 浅色原值，沿 iter-5~9 惯例）
+   ============================================================ */
+:root { --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-full: 999px; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-size: 14px; line-height: 1.6; color: #1F2329; background: #F5F6F7; padding: 40px 32px 80px;
+}
+.page { max-width: 1160px; margin: 0 auto; }
+h1 { font-size: 20px; font-weight: 600; }
+.sub { font-size: 13px; color: #8F959E; margin: 4px 0 8px; }
+.sub b { color: #646A73; }
+.badge {
+  display: inline-block; padding: 1px 10px; border-radius: var(--r-full);
+  font-size: 12px; font-weight: 500; background: #FFF7E8; color: #B45309; margin-bottom: 24px;
+}
+section { margin-bottom: 48px; }
+h2 { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+h2 .no { color: #3370FF; margin-right: 4px; }
+.sec-desc { font-size: 13px; color: #8F959E; margin-bottom: 16px; }
+.sec-desc b { color: #646A73; }
+
+table { width: 100%; border-collapse: collapse; background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-md); overflow: hidden; font-size: 13px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #E5E6EB; vertical-align: top; }
+th { color: #8F959E; font-weight: 500; background: #FAFBFC; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+td code, li code, .ann code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; background: #F2F3F5; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
+
+.spec { background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-lg); padding: 24px; box-shadow: 0 1px 2px rgba(31,35,41,.06); margin-bottom: 16px; }
+.spec-title { font-size: 13px; font-weight: 600; color: #646A73; margin-bottom: 12px; }
+.spec-title .tag { font-weight: 400; color: #8F959E; margin-left: 8px; }
+.stage { border: 1px dashed #E5E6EB; border-radius: var(--r-md); padding: 16px; background: #F5F6F7; }
+.ann { font-size: 12px; color: #8F959E; margin-top: 8px; line-height: 1.8; }
+.ann b { color: #646A73; font-weight: 600; }
+.sim-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; font-size: 12px; color: #646A73; margin-bottom: 12px; }
+.sim-row label { cursor: pointer; white-space: nowrap; }
+.lnk-reset { display: inline-block; margin-top: 8px; font-size: 12px; color: #3370FF; cursor: pointer; }
+.lnk-reset:hover { text-decoration: underline; color: #2E5FDF; }
+.frame-cap { text-align: center; font-size: 12px; color: #8F959E; margin-bottom: 8px; }
+.cols { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+.cols > div { flex: 1; min-width: 360px; max-width: 560px; }
+
+/* ---- 演示控制条（文档功能件，非产品组件） ---- */
+.demo-ctl {
+  position: sticky; top: 0; z-index: 500; display: flex; align-items: center; gap: 12px;
+  background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-md);
+  padding: 10px 16px; margin-bottom: 32px; box-shadow: 0 1px 2px rgba(31,35,41,.06);
+  font-size: 13px; color: #646A73; flex-wrap: wrap;
+}
+.demo-ctl .seg { display: inline-flex; border: 1px solid #E5E6EB; border-radius: var(--r-md); overflow: hidden; }
+.demo-ctl .seg button {
+  height: 30px; padding: 0 14px; border: none; background: #FFFFFF; color: #646A73;
+  font-size: 13px; cursor: pointer; transition: background .15s ease, color .15s ease;
+}
+.demo-ctl .seg button.on { background: #3370FF; color: #fff; font-weight: 600; }
+.demo-ctl .note { font-size: 12px; color: #8F959E; }
+
+/* ============================================================
+   二、演示令牌作用域 .tk（组件全部引用 var()，同 src 范式；浅 = tokens v1.3 浅值，暗 = v1.3 暗值，零自造）
+   ============================================================ */
+.tk {
+  --c-bg: #F5F6F7; --c-surface: #FFFFFF; --c-border: #E5E6EB;
+  --c-text-1: #1F2329; --c-text-2: #646A73; --c-text-3: #8F959E;
+  --c-primary: #3370FF; --c-primary-h: #2E5FDF; --c-primary-a: #2860D8; --c-primary-l: #F0F4FF;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #2E5FDF; --c-primary-solid-a: #2860D8;
+  --c-danger: #D93025; --c-danger-l: #FDECEA; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #1A9E5C; --c-success-on-dark: #4CC38A;
+  --c-warning: #B45309; --c-warning-l: #FFF7E8;
+  --c-hover-bg: #F2F3F5; --c-disabled-bg: #C9CFDB; --c-subtle-bg: #FAFBFC;
+  --c-avatar-bg: #E8EBF2; --c-scrollbar: #D5D9E0;
+  --c-toast-bg: #23272E; --c-toast-border: #23272E; --c-primary-on-dark: #A3BCFF;
+  --c-code-head: #23272E; --c-code-bg: #2B303A; --c-code-head-text: #9AA4B2; --c-code-text: #E6EAF0;
+  --c-mask: rgba(31,35,41,.4); --c-focus-ring: rgba(51,112,255,.12);
+  --shadow-1: 0 1px 2px rgba(31,35,41,.06);
+  --shadow-2: 0 4px 16px rgba(31,35,41,.10);
+  --shadow-3: 0 12px 40px rgba(31,35,41,.16);
+  color: var(--c-text-1);
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+.tk.dark, .tk.force-dark {
+  --c-bg: #131417; --c-surface: #1E2026; --c-border: #33363E;
+  --c-text-1: #E6EAF0; --c-text-2: #A2A9B6; --c-text-3: #808896;
+  --c-primary: #5C8DFF; --c-primary-h: #7AA4FF; --c-primary-a: #4C84FF; --c-primary-l: #1D2740;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #4C84FF; --c-primary-solid-a: #3D78FF;
+  --c-danger: #FF8073; --c-danger-l: #361B18; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #4CC38A;
+  --c-warning: #EDA23B; --c-warning-l: #38290F;
+  --c-hover-bg: #262930; --c-disabled-bg: #3D414A; --c-subtle-bg: #24272E;
+  --c-avatar-bg: #33363E; --c-scrollbar: #3A3E46;
+  --c-toast-bg: #2A2D34; --c-toast-border: #33363E; --c-primary-on-dark: #A3BCFF;
+  --c-code-head: #141518; --c-code-bg: #191B20; --c-code-head-text: #9AA4B2; --c-code-text: #E6EAF0;
+  --c-mask: rgba(0,0,0,.55); --c-focus-ring: rgba(92,141,255,.25);
+  --shadow-1: 0 1px 2px rgba(0,0,0,.4);
+  --shadow-2: 0 4px 16px rgba(0,0,0,.45);
+  --shadow-3: 0 12px 40px rgba(0,0,0,.6);
+}
+/* ============================================================
+   三、产品组件样式（全部 var() 引用，零裸色值）
+   3a. 应用外壳与侧栏（REQ-026）：side.full 264px / side.rail 56px / 分组列表 / 账户区
+   3b. 通用下拉菜单（REQ-026.5）
+   3c. 消息流（REQ-027）：ububble 用户浅气泡 / md AI 全宽 / 操作栏 / pill / 错误气泡
+   3d. 设置弹窗（REQ-028）：smask/smodal/内层 imask + 表单复用件（沿 iter-5/9 基线）
+   ============================================================ */
+
+/* ---- 3a. 应用外壳（基调沿 iter-9 定案：侧栏灰 --c-bg + 正文白 --c-surface；宽 264px） ---- */
+.app-stage { position: relative; overflow: hidden; background: var(--c-bg); }
+.app-shell { display: flex; height: 100%; }
+.side { flex: none; display: flex; flex-direction: column; background: var(--c-bg); border-right: 1px solid var(--c-border); }
+.side.full { width: 264px; padding: 12px; gap: 8px; }
+.side.rail { width: 56px; padding: 12px 10px; gap: 8px; display: none; }
+.app-stage.rail-mode .side.full { display: none; }
+.app-stage.rail-mode .side.rail { display: flex; }
+.sp { flex: 1; }
+.brand-row { flex: none; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 2px; }
+.brand-name { font-size: 15px; font-weight: 600; color: var(--c-text-1); }
+.icon-btn {
+  flex: none; width: 28px; height: 28px; border: none; border-radius: var(--r-sm);
+  background: transparent; color: var(--c-text-3); display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background .15s ease, color .15s ease;
+}
+.icon-btn:hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+.icon-btn:focus-visible { box-shadow: 0 0 0 3px var(--c-focus-ring); }
+/* 新建会话（沿现状 36px primary-solid） */
+.new-btn {
+  flex: none; height: 36px; border: none; border-radius: var(--r-md); background: var(--c-primary-solid);
+  color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px;
+  justify-content: center; transition: background .15s ease, transform .1s ease; font-family: inherit;
+}
+.new-btn:hover { background: var(--c-primary-solid-h); }
+.new-btn:active { background: var(--c-primary-solid-a); transform: scale(.98); }
+/* 搜索框（REQ-016 沿现状：32px surface 底） */
+.search-box {
+  flex: none; display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 8px;
+  background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-md);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.search-box:focus-within { border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-focus-ring); }
+.search-box .s-ico { flex: none; color: var(--c-text-3); display: inline-flex; }
+.search-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: 13px; color: var(--c-text-1); font-family: inherit; }
+.search-input::placeholder { color: var(--c-text-3); }
+.search-clear {
+  flex: none; width: 20px; height: 20px; border: none; border-radius: var(--r-sm); background: transparent;
+  color: var(--c-text-3); cursor: pointer; display: none; align-items: center; justify-content: center;
+}
+.search-clear.show { display: inline-flex; }
+.search-clear:hover { background: var(--c-avatar-bg); color: var(--c-text-1); }
+/* 分组列表：组头 12px text-3；项 34px 单行（R1：grid 三列 minmax(0,1fr)/auto/auto——标题列强制收缩省略，
+   pill 与「···」恒居右同排，根治 flex-wrap 下长标题挤换行；摘要/重命名框跨全列占第二行） */
+.s-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding: 2px; scrollbar-width: thin; scrollbar-color: var(--c-scrollbar) transparent; }
+.s-group { flex: none; font-size: 12px; color: var(--c-text-3); padding: 12px 10px 4px; }
+.s-group:first-child { padding-top: 4px; }
+.s-item {
+  flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center;
+  column-gap: 6px; row-gap: 2px; min-height: 34px; padding: 6px 10px;
+  border-radius: var(--r-md); cursor: pointer; transition: background .15s ease;
+}
+.s-item:hover { background: var(--c-hover-bg); }
+.s-item.on { background: var(--c-primary-l); }
+.s-title { grid-column: 1; min-width: 0; font-size: 13px; color: var(--c-text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.s-item.on .s-title { color: var(--c-primary); font-weight: 500; }
+.s-item.corrupted .s-title { color: var(--c-text-3); }
+mark.hl { background: transparent; color: var(--c-primary); font-weight: 600; }
+.s-snip { grid-column: 1 / -1; font-size: 12px; color: var(--c-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pill { flex: none; font-size: 11px; border-radius: var(--r-full); padding: 1px 8px; }
+.pill.broken { color: var(--c-text-3); background: var(--c-hover-bg); }
+.pill.cut { color: var(--c-warning); background: var(--c-warning-l); }
+/* 「···」按钮：28px r-sm，hover 行时浮现（opacity 0→1 .15s；focus-visible 亦浮现） */
+.more-btn {
+  flex: none; width: 28px; height: 28px; border: none; border-radius: var(--r-sm); background: transparent;
+  color: var(--c-text-3); display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  opacity: 0; transition: opacity .15s ease, background .15s ease, color .15s ease;
+}
+.s-item:hover .more-btn, .acct:hover .more-btn, .more-btn:focus-visible { opacity: 1; }
+.more-btn:hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+.more-btn:focus-visible { box-shadow: 0 0 0 3px var(--c-focus-ring); }
+/* 行内重命名（沿现状 SessionListItem：26px 主色描边 + focus ring；R1：grid 下跨全列） */
+.edit-input {
+  grid-column: 1 / -1; min-width: 0; height: 26px; padding: 0 8px; font-size: 13px; font-weight: 500;
+  font-family: inherit; line-height: 26px; border: 1px solid var(--c-primary); border-radius: var(--r-sm);
+  outline: none; color: var(--c-text-1); background: var(--c-surface);
+}
+.edit-input:focus { box-shadow: 0 0 0 3px var(--c-focus-ring); }
+.s-empty { padding: 16px 10px; font-size: 12px; color: var(--c-text-3); text-align: center; }
+/* 底部账户区（REQ-026.3）：头像 24px 圆 avatar-bg 首字 + 用户名 13px/500 text-2 */
+.acct { flex: none; display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--c-border); padding-top: 10px; min-height: 44px; }
+.acct-avatar {
+  flex: none; width: 24px; height: 24px; border-radius: var(--r-full); background: var(--c-avatar-bg);
+  color: var(--c-text-2); font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center;
+}
+.acct-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; color: var(--c-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* rail（收起态）：56px，图标 36px（展开/新建/搜索），底部头像 28px */
+.rail-ico {
+  flex: none; height: 36px; border: none; border-radius: var(--r-md); background: transparent; color: var(--c-text-2);
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.rail-ico:hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+.rail-avatar {
+  flex: none; width: 28px; height: 28px; margin: 0 auto; border: none; border-radius: var(--r-full);
+  background: var(--c-avatar-bg); color: var(--c-text-2); font-size: 12px; font-weight: 500; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; transition: background .15s ease;
+}
+.rail-avatar:hover { background: var(--c-hover-bg); }
+/* 主区（正文白 --c-surface） */
+.chat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--c-surface); }
+.empty-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; text-align: center; }
+.empty-title { font-size: 20px; font-weight: 600; color: var(--c-text-1); }
+.empty-desc { font-size: 14px; color: var(--c-text-3); max-width: 420px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; justify-content: center; }
+.chip {
+  border: 1px solid var(--c-border); background: var(--c-surface); border-radius: var(--r-full); padding: 8px 16px;
+  font-size: 13px; color: var(--c-text-2); cursor: pointer; transition: all .15s ease; font-family: inherit;
+}
+.chip:hover { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-l); }
+
+/* ---- 3b. 通用下拉菜单（REQ-026.5 通用组件：surface + border + shadow-2 + r-md；项 32px/13px） ---- */
+.dd-menu {
+  position: absolute; min-width: 148px; background: var(--c-surface); border: 1px solid var(--c-border);
+  border-radius: var(--r-md); box-shadow: var(--shadow-2); padding: 4px; z-index: 40;
+  animation: ddin .15s ease;
+}
+@keyframes ddin { from { opacity: 0; transform: translateY(-2px); } }
+.mi {
+  display: flex; width: 100%; height: 32px; align-items: center; padding: 0 12px; border: none;
+  border-radius: var(--r-sm); background: transparent; color: var(--c-text-1); font-size: 13px; font-family: inherit;
+  cursor: pointer; text-align: left; transition: background .15s ease, color .15s ease;
+}
+.mi:hover:not(:disabled), .mi:focus, .mi:focus-visible { background: var(--c-hover-bg); outline: none; }
+.mi.danger { color: var(--c-danger); }
+.mi.danger:hover:not(:disabled), .mi.danger:focus:not(:disabled) { background: var(--c-danger-l); }
+.mi:disabled { color: var(--c-text-3); cursor: not-allowed; }
+.mi:disabled:hover { background: transparent; }
+.dd-sep { height: 1px; background: var(--c-border); margin: 4px 8px; }
+
+/* ---- 3c. 消息流（REQ-027：去全部头像；用户浅气泡 avatar-bg；AI 全宽无背景） ---- */
+.msg-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 24px 12px; scrollbar-width: thin; scrollbar-color: var(--c-scrollbar) transparent; }
+.msg-col { max-width: 712px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+.m-row { display: flex; }
+.m-row.user { justify-content: flex-end; }
+.m-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; max-width: 80%; }
+.m-col.ai { flex: 1; max-width: 100%; }
+.m-col.user { align-items: flex-end; }
+/* 用户消息：浅色轻量气泡（--c-avatar-bg 底 + --c-text-1 字 15px；r-lg 12/12/4/12 沿现状圆角形） */
+.ububble {
+  max-width: 100%; background: var(--c-avatar-bg); color: var(--c-text-1); font-size: 15px; line-height: 1.75;
+  padding: 10px 14px; border-radius: var(--r-lg) var(--r-lg) 4px var(--r-lg);
+  white-space: pre-wrap; word-break: break-word;
+}
+/* AI 消息：全宽无气泡背景（沿用） */
+.md { font-size: 15px; line-height: 1.75; color: var(--c-text-1); }
+.md p { margin: 0 0 8px; }
+.md p:last-child { margin-bottom: 0; }
+.md b { font-weight: 600; }
+/* 操作栏（components.md 悬停浮现模式：容器占位 min-height 24px + opacity 0→1） */
+.act-row { display: flex; align-items: center; gap: 4px; min-height: 24px; }
+.abtn {
+  width: 24px; height: 24px; border: none; border-radius: var(--r-sm); background: transparent; color: var(--c-text-3);
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; padding: 0;
+  transition: opacity .15s ease, background .15s ease, color .15s ease;
+}
+.m-col:hover .abtn { opacity: 1; }
+.abtn:hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+.abtn:focus-visible { opacity: 1; box-shadow: 0 0 0 3px var(--c-focus-ring); }
+.ver-nav { display: flex; align-items: center; gap: 2px; }
+.ver-nav .abtn { opacity: 1; }
+.vcount { font-size: 12px; color: var(--c-text-3); min-width: 30px; text-align: center; font-variant-numeric: tabular-nums; }
+.cursor { display: inline-block; width: 2px; height: 1em; background: var(--c-primary-solid); margin-left: 2px; vertical-align: text-bottom; animation: blink .9s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.status-hint { font-size: 12px; color: var(--c-text-3); }
+.pill.cut { margin-top: 0; }
+.pill.stopped { color: var(--c-text-2); background: var(--c-hover-bg); font-weight: 500; display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; }
+/* 编辑态（沿现状 MessageBubble：主色描边面板 + 回填 textarea + 提示 + 右对齐动作） */
+.edit-form { width: 100%; background: var(--c-surface); border: 1px solid var(--c-primary); border-radius: var(--r-lg); padding: 10px 12px; box-shadow: 0 0 0 3px var(--c-focus-ring); }
+.edit-ta { width: 100%; border: none; outline: none; resize: none; background: transparent; font-size: 15px; line-height: 1.6; color: var(--c-text-1); font-family: inherit; }
+.edit-hint { font-size: 12px; color: var(--c-text-3); margin-top: 6px; }
+.edit-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+/* 错误气泡（沿现状 ErrorBubble：danger-l 底 + danger 标题；无头像布局左侧全宽口径不变） */
+.err-bubble { max-width: 76%; border: 1px solid var(--c-danger-l); background: var(--c-danger-l); border-radius: var(--r-lg); padding: 12px 16px; }
+.err-bubble .eb-head { display: flex; align-items: center; gap: 6px; color: var(--c-danger); font-size: 13px; }
+.err-bubble .eb-dot { width: 6px; height: 6px; border-radius: var(--r-full); background: var(--c-danger-solid); }
+.err-bubble .eb-msg { margin: 6px 0 10px; font-size: 14px; line-height: 1.6; color: var(--c-text-2); }
+.err-bubble .eb-acts { display: flex; gap: 8px; }
+/* 输入区（CHG-003 已定案不翻案：仅静态示意） */
+.composer { flex: none; padding: 12px 24px 20px; }
+.composer-col { max-width: 712px; margin: 0 auto; }
+.comp-box { border: 1px solid var(--c-border); border-radius: var(--r-lg); padding: 10px 12px; background: var(--c-surface); }
+.comp-box textarea { width: 100%; border: none; outline: none; resize: none; background: transparent; font-size: 15px; color: var(--c-text-1); font-family: inherit; }
+.comp-box textarea::placeholder { color: var(--c-text-3); }
+.comp-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.comp-hint { font-size: 12px; color: var(--c-text-3); }
+.send-btn {
+  flex: none; width: 28px; height: 28px; border: none; border-radius: var(--r-sm); background: var(--c-primary-solid);
+  color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  transition: background .15s ease, transform .1s ease;
+}
+.send-btn:hover { background: var(--c-primary-solid-h); }
+.send-btn:active { transform: scale(.94); }
+/* ---- 3d. 设置弹窗（REQ-028：模态 720px/80vh 左右分栏，遮罩 --c-mask z-100；内层模态 z 叠层） ---- */
+.smask { position: absolute; inset: 0; background: var(--c-mask); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.smodal {
+  position: relative; width: 720px; max-width: calc(100% - 32px); max-height: calc(100% - 32px);
+  display: flex; flex-direction: column; background: var(--c-surface); border: 1px solid var(--c-border);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-3); overflow: hidden;
+  animation: modalin .15s ease;
+}
+@keyframes modalin { from { opacity: 0; transform: scale(.98); } }
+.sm-head { flex: none; display: flex; align-items: center; gap: 12px; padding: 14px 16px 14px 24px; border-bottom: 1px solid var(--c-border); }
+.sm-title { font-size: 17px; font-weight: 600; color: var(--c-text-1); }
+.sm-close { margin-left: auto; }
+/* R1（CEO「拆分，不要拥挤」）：body 由单列滚动改左右分栏——左导航 168px + 右分区面板（一次只显示一个分区） */
+.sm-body { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+.sm-nav { flex: none; width: 168px; border-right: 1px solid var(--c-border); background: var(--c-subtle-bg); padding: 12px 8px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--c-scrollbar) transparent; }
+.sm-nav button {
+  display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border: none; border-radius: var(--r-md);
+  background: none; font-size: 13px; color: var(--c-text-2); cursor: pointer; text-align: left; font-family: inherit;
+  transition: background .15s ease, color .15s ease;
+}
+.sm-nav button:hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+.sm-nav button:focus-visible { box-shadow: 0 0 0 3px var(--c-focus-ring); outline: none; }
+.sm-nav button.on { background: var(--c-primary-l); color: var(--c-primary); font-weight: 500; }
+.sm-pane { flex: 1; min-width: 0; display: none; overflow-y: auto; padding: 16px 24px 24px; scrollbar-width: thin; scrollbar-color: var(--c-scrollbar) transparent; }
+.sm-pane.on { display: block; }
+/* 区段标题（沿 SettingsForm 现状：14px/600 text-1 + 上缘分隔线 + scroll-margin 定位不贴顶） */
+.sec-label { font-size: 14px; font-weight: 600; color: var(--c-text-1); padding-top: 20px; border-top: 1px solid var(--c-border); margin-top: 20px; scroll-margin-top: 16px; }
+.sec-label.first { border-top: none; margin-top: 0; padding-top: 0; }
+.sec-label.flash { background: var(--c-primary-l); transition: background 1.2s ease; }
+/* 外观分段控件（components.md segmented：选中 primary-l 底 + primary 字 + 500 字重） */
+.seg-picker { display: inline-flex; border: 1px solid var(--c-border); border-radius: var(--r-md); overflow: hidden; background: var(--c-surface); }
+.seg-picker button {
+  height: 32px; padding: 0 16px; border: none; background: transparent; color: var(--c-text-2); font-size: 13px;
+  font-family: inherit; display: inline-flex; align-items: center; cursor: pointer; transition: background .15s ease, color .15s ease;
+}
+.seg-picker button.on { background: var(--c-primary-l); color: var(--c-primary); font-weight: 500; }
+.seg-picker button:not(.on):hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+/* 密钥模式卡（KeyModeCard 真实样式引用：design-iter-7 §1 基线） */
+.mode-card { border: 1px solid var(--c-border); border-radius: var(--r-lg); background: var(--c-surface); box-shadow: var(--shadow-1); padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.mode-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mode-ico { color: var(--c-success); display: inline-flex; }
+.mode-title { font-size: 14px; font-weight: 600; color: var(--c-text-1); }
+.mode-badge { font-size: 12px; padding: 2px 8px; border-radius: var(--r-full); background: var(--c-primary-l); color: var(--c-primary); }
+.mode-desc { margin: 0; font-size: 12px; line-height: 1.6; color: var(--c-text-3); }
+.quota-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--c-text-3); }
+.tag-occ { font-size: 12px; padding: 1px 8px; border-radius: var(--r-full); background: var(--c-warning-l); color: var(--c-warning); }
+.link-adv { border: none; background: transparent; padding: 0; font-size: 12px; color: var(--c-primary); cursor: pointer; font-family: inherit; }
+.link-adv:hover { text-decoration: underline; }
+/* 高级设置：档案列表（SettingsForm 真实样式引用） */
+.adv-intro, .adv-hint { margin: 0; font-size: 12px; line-height: 1.7; color: var(--c-text-3); }
+.adv-box { display: flex; flex-direction: column; gap: 12px; }
+.profile-list { display: flex; flex-direction: column; gap: 8px; }
+.profile-item { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--c-border); border-radius: var(--r-md); background: var(--c-surface); }
+.profile-item.current { border-color: var(--c-primary); background: var(--c-primary-l); }
+.p-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.p-name { font-size: 13px; font-weight: 500; color: var(--c-text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.p-sub { font-size: 12px; color: var(--c-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: "SF Mono", Menlo, Consolas, monospace; }
+.p-current { flex: none; font-size: 12px; color: var(--c-primary); font-weight: 500; }
+.p-btn { flex: none; height: 26px; padding: 0 10px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: transparent; color: var(--c-text-2); font-size: 12px; cursor: pointer; font-family: inherit; transition: border-color .15s ease, color .15s ease; }
+.p-btn:hover { border-color: var(--c-primary); color: var(--c-primary); }
+.p-icon { flex: none; width: 26px; height: 26px; border: none; border-radius: var(--r-sm); background: transparent; color: var(--c-text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .15s ease, color .15s ease; }
+.p-icon:hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+/* 表单字段（iter-5 设置页基线引用：label 13px/500 + 输入 36px r-md 16px + 行内校验） */
+.field { margin-bottom: 16px; display: flex; flex-direction: column; gap: 6px; }
+.field label, .f-label { display: block; font-size: 13px; font-weight: 500; color: var(--c-text-2); }
+.field label .req, .f-label .req { color: var(--c-danger); margin-left: 2px; }
+.opt { font-size: 12px; font-weight: 400; color: var(--c-text-3); margin-left: 6px; }
+.field input, .ipanel input {
+  width: 100%; height: 36px; padding: 0 12px; font-size: 16px; font-family: inherit;
+  border: 1px solid var(--c-border); border-radius: var(--r-md); outline: none;
+  color: var(--c-text-1); background: var(--c-surface);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.field input:focus, .ipanel input:focus { border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-focus-ring); }
+.field.invalid input, .ipanel .field.invalid input { border-color: var(--c-danger); }
+.hint { font-size: 12px; color: var(--c-text-3); }
+.hint.err { color: var(--c-danger); display: none; }
+.field.invalid .hint.err { display: block; }
+.key-row { position: relative; }
+.key-row input { padding-right: 44px; }
+.key-eye { position: absolute; right: 4px; top: 0; width: 36px; height: 36px; border: none; background: transparent; color: var(--c-text-3); cursor: pointer; display: flex; align-items: center; justify-content: center; border-radius: 0 var(--r-md) var(--r-md) 0; }
+.key-eye:hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+/* 系统提示词（REQ-008 沿现状） */
+.prompt-ta {
+  width: 100%; min-height: 96px; max-height: 240px; resize: vertical; overflow-y: auto;
+  border: 1px solid var(--c-border); border-radius: var(--r-md); padding: 8px 12px; font-size: 16px; line-height: 1.6;
+  font-family: inherit; color: var(--c-text-1); background: var(--c-surface); outline: none;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.prompt-ta:focus { border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-focus-ring); }
+.prompt-ta::placeholder { font-size: 14px; color: var(--c-text-3); }
+.char-count { font-size: 12px; color: var(--c-text-3); text-align: right; }
+.saved-flag { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 500; color: var(--c-success); }
+/* 按钮族（沿现状/iter-9：base 32px / primary 36px / danger 32px） */
+.btn-b { height: 32px; padding: 0 12px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-2); border-radius: var(--r-md); font-size: 13px; cursor: pointer; font-family: inherit; transition: border-color .15s ease, color .15s ease; }
+.btn-b:hover { border-color: var(--c-primary); color: var(--c-primary); }
+.btn-p { height: 36px; padding: 0 20px; background: var(--c-primary-solid); color: #fff; border: none; border-radius: var(--r-md); font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; transition: background .15s ease, transform .1s ease; }
+.btn-p:hover { background: var(--c-primary-solid-h); }
+.btn-p:active { background: var(--c-primary-solid-a); transform: scale(.98); }
+.btn-d { height: 32px; padding: 0 16px; background: var(--c-danger-solid); color: #fff; border: none; border-radius: var(--r-md); font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; transition: background .15s ease, transform .1s ease; }
+.btn-d:hover { background: var(--c-danger-solid-h); }
+.btn-d:active { transform: scale(.98); }
+.btn-d:disabled { background: var(--c-disabled-bg); cursor: not-allowed; }
+.btn-text-danger { height: 36px; padding: 0 12px; border: none; background: transparent; color: var(--c-danger); font-size: 13px; cursor: pointer; border-radius: var(--r-sm); font-family: inherit; }
+.btn-text-danger:hover { background: var(--c-danger-l); }
+.actions { display: flex; gap: 8px; align-items: center; }
+/* 改密成功横幅 + 注销危险区（iter-9 基线引用） */
+.ok-banner { display: flex; align-items: flex-start; gap: 8px; border-radius: var(--r-md); padding: 10px 12px; font-size: 13px; line-height: 1.7; background: var(--c-subtle-bg); border: 1px solid var(--c-success); color: var(--c-text-2); }
+.ok-banner .ob-ico { flex: none; color: var(--c-success); font-weight: 600; }
+.ok-banner .ob-title { color: var(--c-success); font-weight: 600; }
+.danger-zone { max-width: 420px; border: 1px solid var(--c-danger); border-radius: var(--r-md); background: var(--c-danger-l); padding: 14px 16px; margin-top: 20px; }
+.dz-title { font-size: 13px; font-weight: 600; color: var(--c-danger); display: flex; align-items: center; gap: 6px; }
+.dz-desc { font-size: 12px; color: var(--c-danger); opacity: .92; line-height: 1.7; margin-top: 4px; }
+.dz-actions { margin-top: 12px; }
+/* 内层模态（叠于设置弹窗之上：absolute inset 0 + --c-mask 叠加变深；面板 = 表单模态基线 440px） */
+.imask { position: absolute; inset: 0; background: var(--c-mask); display: flex; align-items: center; justify-content: center; z-index: 5; border-radius: 0; }
+.ipanel {
+  width: 440px; max-width: calc(100% - 48px); max-height: calc(100% - 32px); overflow-y: auto;
+  background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg);
+  box-shadow: var(--shadow-3); padding: 24px;
+}
+.ipanel h3 { font-size: 17px; font-weight: 600; margin-bottom: 8px; color: var(--c-text-1); }
+.ipanel .c-body { font-size: 14px; color: var(--c-text-2); line-height: 1.7; }
+.ipanel .m-actions2 { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.ipanel .m-note { font-size: 12px; color: var(--c-text-3); line-height: 1.7; margin-top: 10px; }
+/* 深底 toast（tokens v1.3.1 on-dark 族） */
+.toast { display: inline-flex; align-items: center; gap: 8px; background: var(--c-toast-bg); border: 1px solid var(--c-toast-border); color: #fff; font-size: 13px; padding: 10px 16px; border-radius: var(--r-md); box-shadow: var(--shadow-2); }
+.toast .t-ok { color: var(--c-success-on-dark); font-weight: 600; }
+.hint2 { font-size: 12px; color: var(--c-text-3); line-height: 1.8; }
+</style>
+</head>
+<body>
+<div id="toastHost" style="position:fixed;left:50%;bottom:32px;transform:translateX(-50%);z-index:1000;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none;"></div>
+<div class="page">
+
+  <h1>ai-chat · iter-11 设计稿（主界面体验对齐）</h1>
+  <div class="sub">
+    依据：<b>plans/iter-11.md</b> T0（REQ-026~028 设计稿：侧栏重构 / 消息流与顶栏 / 设置弹窗 / 通用下拉菜单交互规格；
+    <b>v1.4.4 硬要求：含 §7.x 走查清单</b>；待定夺 8 项随稿提交 CEO 拍板——见第 8 节）·
+    <b>req-baseline-v4</b>（CHG-006：REQ-026 侧栏与主界面框架 / REQ-027 消息流与顶栏 / REQ-028 设置弹窗化，逐条对照见 7.1）·
+    令牌全部来自公司 <b>design-system/tokens.md v1.3/v1.3.1</b> + <b>components.md v1.0</b>，本稿<b>零新增令牌、零自造色值</b> ·
+    文档结构与 .tk 作用域沿 <b>design-iter-9</b> 范本；设置弹窗字段核对自 <b>SettingsForm.vue / KeyModeCard.vue 现状</b>（五区块真实字段）
+  </div>
+  <div class="badge">状态：设计稿 iter-11 —— <b>已基线</b>（2026-08-16 CEO 批准；8 项定夺：①②③④⑥⑦⑧ 按推荐 + ⑤ R1 拆分定案；tag design-iter-11）</div>
+  <div style="font-size:12px;color:#3370FF;background:#F0F4FF;border:1px solid #E5E6EB;border-radius:8px;padding:8px 12px;margin:-12px 0 28px;line-height:1.7;">
+    <b>视觉基调（CEO 已定，不得偏离）：</b>沿 iter-9 反转基调——<b>侧栏灰底 <code>--c-bg</code>（浅 #F5F6F7 / 暗 #131417）+ 正文白底 <code>--c-surface</code>（浅 #FFFFFF / 暗 #1E2026）</b>；
+    侧栏宽 <b>264px</b>（iter-9 R2 定夺沿用）；主色飞书蓝 <b>#3370FF</b>（暗色前景 #5C8DFF）；交互参照 <b>chat.deepseek.com</b>。
+  </div>
+
+  <!-- 演示控制 -->
+  <div class="demo-ctl">
+    <b>演示控制：</b>
+    <span class="seg">
+      <button id="btnLight" class="on">浅色</button>
+      <button id="btnDark">暗色</button>
+    </span>
+    <span class="note">一键切换下方全部可翻转样件（第 5 节锁定帧不随动）；选择写入 localStorage 刷新保持（REQ-017 机制演示，设置弹窗「外观」分段同步联动）。
+    <b>演示数据：用户名「猫南北」；密码均为 <code>mm2026</code>；档案密钥 sk-**** 均为演示数据（铁律 5 口径见 §6）</b>。</span>
+  </div>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">1</span>REQ-026 侧栏与主界面框架（可交互主样件）</h2>
+    <div class="sec-desc">
+      spec REQ-026 五项：① 会话列表项<b>单行化</b>（仅标题单行省略，hover 右侧浮现「···」，点击开下拉菜单：重命名 / 删除；移除常驻铅笔+垃圾桶双 icon）
+      ② <b>时间分组</b>（今天 / 昨天 / 近 7 天 / 更早，组内无逐条时间戳） ③ 底部<b>账户区精简</b>（「···」菜单：设置 / 管理后台（仅管理员）/ 登出；移除密钥模式标签、盾牌、常驻设置按钮、登出 icon）
+      ④ <b>侧栏收起/展开</b>（窄条形态，状态本地持久化） ⑤ <b>通用下拉菜单组件</b>（外点关闭、Esc、键盘可达——交互规格见第 2 节专章）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.1 侧栏总览（可交互）<span class="tag">单行列表 + 时间分组 + 账户区 + 收起 rail —— 本稿主样件，§1 各小节均在此演示</span></div>
+      <div class="sim-row">
+        <b>试：</b>hover 会话行出「···」→ 点击开菜单（重命名 / 导出会话 / 删除，删除走确认弹窗，重命名为行内编辑）；
+        <label><input type="checkbox" id="aAdmin"> 模拟管理员（账户菜单多「管理后台」项）</label>；
+        点品牌行右端「«」收起为 rail，再点 rail 顶部「»」展开（状态写 localStorage，刷新保持）；搜索框输入「密」看正文命中双行形态。
+        <a class="lnk-reset" id="aReset" style="margin-top:0;">↺ 重置侧栏演示</a>
+      </div>
+      <div class="stage">
+        <div class="tk app-stage" id="aStage" style="height:540px;">
+          <div class="app-shell">
+            <!-- 展开态侧栏 -->
+            <aside class="side full">
+              <div class="brand-row">
+                <svg viewBox="0 0 128 128" width="20" height="20" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+                <span class="brand-name">喵喵</span>
+                <span class="sp"></span>
+                <button class="icon-btn" id="aCollapse" title="收起侧栏" aria-label="收起侧栏"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+              </div>
+              <button class="new-btn" id="aNew"><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>新建会话</button>
+              <div class="search-box">
+                <span class="s-ico"><svg width="14" height="14" viewBox="0 0 24 24"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5Zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14Z"/></svg></span>
+                <input class="search-input" id="aSearch" type="text" placeholder="搜索会话" spellcheck="false" autocomplete="off" aria-label="搜索会话">
+                <button class="search-clear" id="aSearchClear" aria-label="清除搜索" title="清除搜索"><svg width="12" height="12" viewBox="0 0 24 24"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.3 19.7 2.89 18.29 9.17 12 2.89 5.71 4.3 4.29l6.29 6.3 6.3-6.3 1.41 1.42Z"/></svg></button>
+              </div>
+              <div class="s-list" id="aList"></div>
+              <div class="acct" id="aAcct">
+                <span class="acct-avatar" title="猫南北">猫</span>
+                <span class="acct-name" title="猫南北">猫南北</span>
+                <button class="more-btn" id="aAcctMore" aria-label="账户操作" aria-haspopup="true" title="账户操作"><svg width="16" height="16" viewBox="0 0 14 14" fill="currentColor"><circle cx="3" cy="7" r="1.5"/><circle cx="7" cy="7" r="1.5"/><circle cx="11" cy="7" r="1.5"/></svg></button>
+              </div>
+            </aside>
+            <!-- 收起态 rail（56px：展开 / 新建 / 搜索 + 底部头像） -->
+            <aside class="side rail" id="aRail">
+              <button class="rail-ico" data-act="expand" title="展开侧栏" aria-label="展开侧栏"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M5 5l7 7-7 7M12 5l7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+              <button class="rail-ico" data-act="new" title="新建会话" aria-label="新建会话"><svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
+              <button class="rail-ico" data-act="search" title="搜索会话（展开侧栏）" aria-label="搜索会话（展开侧栏）"><svg width="15" height="15" viewBox="0 0 24 24"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5Zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14Z"/></svg></button>
+              <span class="sp"></span>
+              <button class="rail-avatar" data-act="expand" title="展开侧栏" aria-label="展开侧栏">猫</button>
+            </aside>
+            <!-- 主区（正文白底；顶栏形态推荐「完全去顶栏」，见 3.4 / §8-7） -->
+            <div class="chat-main">
+              <div class="empty-wrap">
+                <svg viewBox="0 0 128 128" width="48" height="48" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+                <div class="empty-title">开始新的对话</div>
+                <div class="empty-desc">输入任何问题，AI 会记住本轮对话的上下文。空态页沿 EmptyState 现状（iter-1 基线），仅随去顶栏适配。</div>
+                <div class="chips">
+                  <button class="chip">我叫小明</button>
+                  <button class="chip">用一段话介绍你自己</button>
+                  <button class="chip">帮我写一首关于猫的短诗</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- 删除会话确认（沿现状 ConfirmModal 口径） -->
+          <div class="smask" id="aConfirmMask" style="display:none;">
+            <div class="ipanel" style="width:420px;">
+              <h3>删除这个会话？</h3>
+              <div class="c-body" id="aConfirmBody"></div>
+              <div class="m-actions2"><button class="btn-b" id="aConfirmCancel">取消</button><button class="btn-d" id="aConfirmOk">删除</button></div>
+            </div>
+          </div>
+          <!-- 设置弹窗宿主（REQ-028，见第 4 节；账户菜单「设置」打开） -->
+          <div id="aOvl"></div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>结构（自上而下）</b>：品牌行（logo 20px + 「喵喵」15px/600 + 收起钮 28px，高 32px）/「新建会话」36px <code>--c-primary-solid</code> 白字 r-md /
+        搜索框 32px surface 底（REQ-016 沿现状）/ 分组列表（滚动区）/ 账户区（上缘 <code>--c-border</code> 分隔，min-height 44px）。侧栏宽 <b>264px</b>、灰底 <code>--c-bg</code>、右缘 <code>--c-border</code>（iter-9 R2 定夺）。
+        <b>本稿移除清单</b>（REQ-026.3）：密钥模式标签（profile-tag）、盾牌 icon、常驻「设置」按钮、登出 icon——全部收进账户「···」菜单。
+      </div>
+    </div>
+    <div class="spec">
+      <div class="spec-title">1.2 会话列表项：单行化 + hover「···」+ 下拉菜单<span class="tag">在 1.1 样件中可玩：hover 行 → 「···」 → 重命名（行内编辑）/ 导出会话 / 删除（danger）</span></div>
+      <table>
+        <tr><th style="width:88px">状态</th><th>规格（字号/色值/尺寸标注）</th></tr>
+        <tr><td>默认</td><td>行高 <b>34px</b>（min-height）、r-md、仅标题一列：13px <code>--c-text-1</code> 单行省略 + <code>title</code> 提示全文；<b>无逐条时间戳</b>（REQ-026.2）；移除常驻铅笔/垃圾桶双 icon</td></tr>
+        <tr><td>hover</td><td>行底 <code>--c-hover-bg</code>（#F2F3F5 / #262930）；右侧浮现「···」按钮（28px r-sm <code>--c-text-3</code>，hover <code>--c-hover-bg</code> + <code>--c-text-1</code>；opacity 0→1 .15s；<code>:focus-visible</code> 亦浮现——键盘可达）</td></tr>
+        <tr><td>选中</td><td>行底 <code>--c-primary-l</code>（#F0F4FF / #1D2740）+ 标题 <code>--c-primary</code>/500（沿用现状配色口径）</td></tr>
+        <tr><td>「···」菜单</td><td><b>重命名 / 导出会话 / 删除</b>（删除 danger 色，前置 1px 分隔线）；菜单本体规格见 §2；「导出会话」为待定夺 ② 推荐落形（REQ-013 口径不变）</td></tr>
+        <tr><td>corrupted</td><td>标题显示「无法读取的会话」（<code>--c-text-3</code>）+「无法读取」pill（hover-bg/text-3）；菜单中<b>重命名禁用</b>（text-3 + not-allowed + title「无法读取的会话不支持重命名」）、<b>删除保留</b>（沿现口径）</td></tr>
+        <tr><td>生成中断会话</td><td>标题后缀「生成中断」pill（11px <code>--c-warning-l</code>/<code>--c-warning</code>，flex:none，标题列收缩省略）——状态信息保留、单行不破</td></tr>
+        <tr><td>行内重命名</td><td>标题位替换为 26px 输入框（13px、<code>--c-primary</code> 描边 + 3px <code>--c-focus-ring</code>，surface 底）；Enter/失焦 = 保存（非空且不同才提交），Esc = 取消，空值静默恢复——沿现状 SessionListItem 口径零变化</td></tr>
+      </table>
+      <div class="ann"><b>删除确认</b>：沿现状 ConfirmModal「删除这个会话？」（「「标题」的全部消息将一并删除，无法恢复。」+ 危险实底「删除」），1.1 样件可玩；删除当前选中项后 active 顺延至列表首项。</div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.3 时间分组 + 搜索态方案<span class="tag">今天 / 昨天 / 近 7 天 / 更早（spec 已定口径）；组头 12px 弱色</span></div>
+      <table>
+        <tr><th style="width:110px">组</th><th>判定（本地日期比对，沿用现 timeLabel 思路，不引入时区换算）</th></tr>
+        <tr><td>今天</td><td>updatedAt 与当前为同一本地日（跨零点：昨日 23:59 的会话在 00:01 即落入「昨天」——单测覆盖，plans 风险清单已登记）</td></tr>
+        <tr><td>昨天</td><td>updatedAt 为当前本地日的前一日</td></tr>
+        <tr><td>近 7 天</td><td>updatedAt 距今 2~7 个本地日</td></tr>
+        <tr><td>更早</td><td>其余（组内均按 updatedAt 倒序，沿现有列表排序）</td></tr>
+      </table>
+      <div class="ann">
+        <b>组头</b>：12px <code>--c-text-3</code>（#8F959E / #808896），padding 12px 10px 4px（首组贴顶 4px）；<b>组内不再显示逐条时间戳</b>（REQ-026 验收原文）。空组不渲染组头。<br>
+        <b>搜索态方案（REQ-026 异常分支「分组显隐由本稿定夺」，推荐已落形）</b>：有搜索词时<b>隐藏全部组头、平铺为单一结果列表</b>（结果沿现状排序：标题命中优先，其次正文命中）；标题命中保留主色高亮（mark.hl：<code>--c-primary</code>/600，沿 REQ-016 现状）；<b>正文命中在标题下临时增显第二行片段</b>（12px <code>--c-text-3</code> ellipsis，命中词主色高亮）——即命中项临时双行，非搜索态恒单行；corrupted 会话不可读、不参与命中；无结果显示「无匹配会话」（沿现状）。清除搜索即恢复分组。理由：搜索结果已被相关性重排，时间分组失去导航意义（DeepSeek 同款平铺）。功能口径零变化（REQ-016 不回退）。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.4 底部账户区 + 「···」菜单<span class="tag">头像 + 用户名（待定夺 ④ 推荐落形）；菜单：设置 / 管理后台（仅管理员）/ 登出</span></div>
+      <table>
+        <tr><th style="width:110px">项</th><th>规格</th></tr>
+        <tr><td>账户行</td><td>圆形首字头像（24px <code>--r-full</code> <code>--c-avatar-bg</code> 底 + 用户名首字 12px/500 <code>--c-text-2</code>）+ 用户名 13px/500 <code>--c-text-2</code> ellipsis + 右端「···」（28px，同 §1.2 规格）；上缘 <code>--c-border</code> 分隔线</td></tr>
+        <tr><td>「···」菜单</td><td><b>设置</b>（打开设置弹窗，REQ-028）/ <b>管理后台</b>（仅管理员渲染：<code>v-if="auth.user?.is_admin"</code>，普通用户 DOM 无节点——沿 iter-8 §1.1 安全口径；1.1 样件勾「模拟管理员」对照）/ 分隔线 / <b>登出</b>（<b>非 danger 色</b>——登出可逆、无数据丢失，danger 语义留给不可逆操作；删除会话/注销账号才用 danger）</td></tr>
+        <tr><td>移除项</td><td>密钥模式标签（「统一密钥 / 档案名」）、盾牌（管理后台）icon、常驻「设置」按钮、登出 icon——REQ-026.3 全清单</td></tr>
+      </table>
+      <div class="ann"><b>登出/管理后台行为</b>：登出 = 直接登出无确认（沿 iter-6 §4.2 口径），跳登录页；管理后台 = 路由 <code>/admin</code>（REQ-025 不变）。1.1 样件以 toast 演示。</div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.5 侧栏收起 / 展开<span class="tag">rail 56px（待定夺 ③ 推荐落形）；收起钮位置方案；状态持久化</span></div>
+      <table>
+        <tr><th style="width:130px">项</th><th>规格</th></tr>
+        <tr><td>收起按钮位置（方案）</td><td><b>推荐：顶部品牌行右端</b>（28px chevron-left icon 钮，hover <code>--c-hover-bg</code>）——收起后该角落即 rail 首格的展开钮（»），<b>位置锚定同角落、几乎不动</b>，肌肉记忆一致；备选（未采纳留档）：底部账户区行内（与账户「···」争抢底部空间、目标过密）、列表区上缘工具行（多占一行）</td></tr>
+        <tr><td>收起形态</td><td><b>窄条 rail：56px</b>（4px 栅格；图标钮 36px + 留白）。自上而下：<b>展开（»）</b> / <b>新建（+）</b> / <b>搜索（🔍，点击 = 展开侧栏并聚焦搜索框）</b>，底部<b>头像</b>（28px 圆，点击 = 展开，title「展开侧栏」）；logo 在收起态让位于功能图标</td></tr>
+        <tr><td>动效</td><td>单 aside 宽度 264px ↔ 56px 过渡 <code>.15s ease</code>（本样件以双 DOM 切换示意，T1 实现为同一 aside 宽度动画）；图标钮 hover <code>--c-hover-bg</code> + <code>--c-text-1</code>，全部带 title/aria-label</td></tr>
+        <tr><td>状态持久化</td><td>收起状态写 localStorage（如 <code>mm-sidebar-collapsed</code>），<b>刷新保持</b>（REQ-026.4 验收；1.1 样件即此机制，可刷新验证）</td></tr>
+      </table>
+      <div class="ann"><b>为什么 rail 而非完全隐藏</b>（详见 §8-③）：新建/搜索保持一键可达；主区宽度仅缩 208px 不跳动；头像锚点保留；且顶栏推荐「完全去顶栏」（§8-⑦）后，完全隐藏方案的展开钮将无自然落位——两定夺互为支撑。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">2</span>通用下拉菜单组件规格（REQ-026.5 专章）</h2>
+    <div class="sec-desc">
+      列表项菜单与账户区菜单<b>共用同一组件</b>（T1 沉淀为可复用组件，如 <code>DropdownMenu.vue</code>）。本节是 T1 实现与走查（§7 条 19~22）的交互规格依据；
+      菜单视觉见 5.3 锁定双帧，交互可在 1.1 样件与本节演练台直接验证。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.1 交互规格<span class="tag">触发 / 外点 / Esc / 键盘 / 定位 / 互斥 / 滚动关闭 / 层级</span></div>
+      <table>
+        <tr><th style="width:120px">维度</th><th>规格</th></tr>
+        <tr><td>触发</td><td>点击「···」按钮开；<b>开态再点触发钮 = 关闭</b>（toggle）。触发钮带 <code>aria-haspopup="true"</code> + <code>aria-expanded</code>（开 true / 关 false）；菜单 <code>role="menu"</code>，项 <code>role="menuitem"</code>，禁用项 <code>aria-disabled="true"</code> + <code>title</code> 原因</td></tr>
+        <tr><td>外点关闭</td><td>点击菜单外任意处关闭，且<b>该次点击被吞掉</b>（不冒泡、不触发底层会话选中/按钮）——菜单打开期间的第一次外点只用于收起（capture 阶段拦截），REQ-026 异常分支「不误触发底层操作」的落点</td></tr>
+        <tr><td>Esc 关闭</td><td>关闭菜单，<b>焦点回触发钮</b>（trigger.focus()）</td></tr>
+        <tr><td>键盘可达</td><td>见 2.2 键盘操作矩阵（Tab / ↑↓ / Home/End / Enter / Space / Esc）</td></tr>
+        <tr><td>菜单定位</td><td><b>右对齐</b>：面板右缘对齐触发行右缘（内收 10px），向下展开；触发行下缘到滚动容器底的空间 &lt; 面板高时<b>向上翻转</b>；右对齐保证不向左溢出，水平方向不超出视口；面板垂直溢出视口时同理翻转（1.1 样件在列表底部行可试）</td></tr>
+        <tr><td>多实例互斥</td><td>同一时刻全站<b>至多一个菜单</b>开着：开新菜单即关旧菜单（含列表项菜单 ↔ 账户菜单混开；T1 走查边界场景之一，plans 风险清单已登记）</td></tr>
+        <tr><td>底层滚动关闭</td><td>菜单打开时底层列表发生滚动（滚轮/拖拽滚动条）→ <b>立即关闭</b>菜单，不执行任何项（挂 capture 滚动监听）</td></tr>
+        <tr><td>层级（z-index）</td><td><b>下拉菜单 40</b>（浮于侧栏内容之上）&lt; <b>设置弹窗 100</b>（沿 SettingsForm 既有 modal-mask z-index）&lt; <b>弹窗内层模态 110</b>（档案编辑 / 注销确认，见 4.4）&lt; <b>toast 全局最顶</b>。菜单不会与模态同屏共存（打开模态的菜单项点击即先关菜单）</td></tr>
+        <tr><td>打开动效</td><td>opacity 0→1 + translateY(-2px→0)，<code>.15s ease</code>（动效令牌内；关闭无动效）</td></tr>
+      </table>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.2 键盘操作矩阵<span class="tag">T1 实现依据 + 走查条 21 取证口径</span></div>
+      <table>
+        <tr><th style="width:230px">操作</th><th>行为</th></tr>
+        <tr><td>Tab 聚焦到「···」触发钮 → Enter / Space</td><td>打开菜单，焦点落<b>第一个可用项</b>（跳过禁用项）</td></tr>
+        <tr><td>菜单内 ↓ / ↑</td><td>焦点在可用项间<b>循环移动</b>（跳过禁用项与分隔线）</td></tr>
+        <tr><td>菜单内 Home / End</td><td>跳到第一个 / 最后一个可用项</td></tr>
+        <tr><td>焦点项上 Enter / Space</td><td>执行该项并关闭菜单，<b>焦点回触发钮</b></td></tr>
+        <tr><td>Esc</td><td>关闭菜单，焦点回触发钮</td></tr>
+        <tr><td>Tab / Shift+Tab</td><td>关闭菜单（不执行任何项），焦点按自然 Tab 序移出</td></tr>
+        <tr><td>禁用项</td><td>不可聚焦（原生 disabled）、不可激活；箭头导航跳过；title 说明禁用原因（corrupted 重命名）</td></tr>
+      </table>
+      <div class="sim-row" style="margin-top:12px;"><b>演练台：</b>Tab 聚焦下方「···」或直接点击，再用 ↑↓ / Enter / Esc / Tab 验证矩阵（含禁用项跳过与 danger 项）。</div>
+      <div class="stage">
+        <div class="tk app-stage" id="pgStage" style="height:150px;display:flex;align-items:flex-start;padding:16px;">
+          <div class="s-item" id="pgRow" style="width:240px;background:var(--c-surface);">
+            <span class="s-title">键盘演练行（hover 出「···」）</span>
+            <button class="more-btn" id="pgBtn" aria-label="会话操作" aria-haspopup="true"><svg width="16" height="16" viewBox="0 0 14 14" fill="currentColor"><circle cx="3" cy="7" r="1.5"/><circle cx="7" cy="7" r="1.5"/><circle cx="11" cy="7" r="1.5"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.3 视觉规格（双主题截图位：5.3 锁定帧）<span class="tag">surface 底 + border + shadow-2 + r-md；项 32px/13px</span></div>
+      <table>
+        <tr><th style="width:110px">项</th><th>规格</th></tr>
+        <tr><td>面板</td><td><code>--c-surface</code> 底（#FFFFFF / #1E2026）+ 1px <code>--c-border</code> 描边 + <code>--shadow-2</code> + r-md；min-width <b>148px</b>；padding 4px；z-index 40</td></tr>
+        <tr><td>菜单项</td><td>高 <b>32px</b>、13px <code>--c-text-1</code>、左对齐、padding 0 12px、r-sm；hover / 焦点 <code>--c-hover-bg</code>；<b>danger 项</b>（删除）<code>--c-danger</code> 字 + hover <code>--c-danger-l</code> 底（浅 4.8:1 / 暗 6.7:1，均 AA）；<b>禁用项</b> <code>--c-text-3</code> + not-allowed + 无 hover 底</td></tr>
+        <tr><td>分隔线</td><td>danger 项前 1px <code>--c-border</code>（inset 8px）——把不可逆操作与常规操作隔开</td></tr>
+        <tr><td>双主题</td><td>亮 / 暗截图位见 <b>5.3</b>（同一 DOM 仅令牌覆盖）；走查时暗色帧内任何肉眼发白块即为漏改裸色值</td></tr>
+      </table>
+    </div>
+  </section>
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">3</span>REQ-027 消息流与顶栏（可交互）</h2>
+    <div class="sec-desc">
+      spec REQ-027 三项：① <b>去除全部头像</b>（AI logo 头像 + 用户「我」头像全删）② 用户消息气泡由主色实底改<b>浅色轻量形态</b>（AI 全宽无气泡沿用；操作栏保留随基线）
+      ③ <b>顶栏精简</b>（导出迁走 /「模型」副标题移除 / 主题按钮去留 → §8-①）。全部消息类型（用户/AI/错误/中断/编辑态/版本切换）无头像布局走查见 §7 条 23~36。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">3.1 消息流主样件（可交互）<span class="tag">去全部头像 · 用户浅气泡右对齐 · AI 全宽 · 全状态序列</span></div>
+      <div class="sim-row">
+        <b>试：</b>hover 消息出操作栏（复制点按有「✓」反馈；用户消息「修改」进编辑态：Enter 保存 / Esc 取消）；AI 消息 ‹ 1/2 › 切换版本；
+        错误气泡「前往高级设置」→ <b>打开设置弹窗并定位到高级设置区</b>（REQ-007/028 联动，4.3 详述）。侧栏为静态衬景（交互见 §1）。
+      </div>
+      <div class="stage">
+        <div class="tk app-stage" id="mfStage" style="height:700px;">
+          <div class="app-shell">
+            <div id="mfSideSlot" style="display:contents;"></div>
+            <div class="chat-main">
+              <div class="msg-scroll">
+                <div class="msg-col">
+                  <!-- 用户消息：浅色气泡右对齐（无头像） -->
+                  <div class="m-row user">
+                    <div class="m-col user">
+                      <div class="ububble" id="mfUB1">帮我把这两周的迭代记录整理成一份周报，重点写清楚做了什么、为什么做、下一步计划。</div>
+                      <div class="act-row">
+                        <button class="abtn copybtn" title="复制" aria-label="复制"><svg width="13" height="13" viewBox="0 0 24 24"><path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/></svg></button>
+                      </div>
+                    </div>
+                  </div>
+                  <!-- AI 消息：全宽无气泡 + 版本切换（无头像） -->
+                  <div class="m-row ai">
+                    <div class="m-col ai">
+                      <div class="md">
+                        <p data-v="1">好的，按「做了什么 / 为什么做 / 下一步」三段整理：<br><b>本周完成</b>：iter-11 T0 设计稿（侧栏重构 / 消息流 / 设置弹窗）提交评审；<b>为什么</b>：对齐 DeepSeek 主界面体验（CHG-006）；<b>下一步</b>：T1~T3 按定案开发，走查清单逐条留档。</p>
+                        <p data-v="2" hidden>（版本 2 · 更简洁）本周完成 iter-11 T0 设计稿；动机是对齐 DeepSeek 体验；下一步 T1~T3 开发与走查留档。</p>
+                      </div>
+                      <div class="act-row">
+                        <button class="abtn copybtn" title="复制" aria-label="复制"><svg width="13" height="13" viewBox="0 0 24 24"><path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/></svg></button>
+                        <div class="ver-nav">
+                          <button class="abtn" id="mfPrev" title="上一版本" aria-label="上一版本"><svg width="14" height="14" viewBox="0 0 24 24"><path fill="currentColor" d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg></button>
+                          <span class="vcount" id="mfCnt">1/2</span>
+                          <button class="abtn" id="mfNext" title="下一版本" aria-label="下一版本"><svg width="14" height="14" viewBox="0 0 24 24"><path fill="currentColor" d="M8.59 16.59 10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg></button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <!-- 用户消息（可进编辑态，无头像） -->
+                  <div class="m-row user">
+                    <div class="m-col user">
+                      <div class="ububble" id="mfUB2">语气再正式一点，称呼统一用「您」。</div>
+                      <div class="act-row" id="mfAct2">
+                        <button class="abtn copybtn" title="复制" aria-label="复制"><svg width="13" height="13" viewBox="0 0 24 24"><path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/></svg></button>
+                        <button class="abtn" id="mfEditBtn" title="修改" aria-label="修改"><svg width="13" height="13" viewBox="0 0 24 24"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>
+                      </div>
+                      <!-- 编辑态面板（替换气泡 + 操作栏；沿现状规格，仅随去头像重排） -->
+                      <div class="edit-form" id="mfEditPanel" style="display:none;">
+                        <textarea class="edit-ta" id="mfEditTa" rows="2"></textarea>
+                        <div class="edit-hint" id="mfEditHint">保存后，此消息及其后的 2 条回复将被删除并重新生成</div>
+                        <div class="edit-actions">
+                          <button class="btn-b" id="mfEditCancel">取消</button>
+                          <button class="btn-p" id="mfEditSave" style="height:28px;">保存并重新生成</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <!-- AI 生成中（光标 + 提示，无头像） -->
+                  <div class="m-row ai">
+                    <div class="m-col ai">
+                      <div class="md"><p>正在按正式语气重写周报草稿<span class="cursor"></span></p></div>
+                      <span class="status-hint">正在生成…</span>
+                    </div>
+                  </div>
+                  <!-- AI 生成中断（warning pill，无头像） -->
+                  <div class="m-row ai">
+                    <div class="m-col ai">
+                      <div class="md"><p>本周完成的事项包括——</p></div>
+                      <span class="pill cut">生成中断</span>
+                      <div class="act-row">
+                        <button class="abtn copybtn" title="复制" aria-label="复制"><svg width="13" height="13" viewBox="0 0 24 24"><path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/></svg></button>
+                      </div>
+                    </div>
+                  </div>
+                  <!-- AI 已停止（中性 pill） -->
+                  <div class="m-row ai">
+                    <div class="m-col ai">
+                      <span class="pill stopped"><svg width="10" height="10" viewBox="0 0 10 10"><rect width="10" height="10" rx="1.5" fill="currentColor"/></svg>已停止生成</span>
+                    </div>
+                  </div>
+                  <!-- 错误气泡（无头像布局；auth 类只显「前往高级设置」——沿现状口径） -->
+                  <div class="err-bubble" role="alert">
+                    <div class="eb-head"><span class="eb-dot"></span><strong>密钥未授权</strong></div>
+                    <div class="eb-msg">服务端密钥校验失败（401）。请在高级设置中检查自有密钥，或回退统一密钥模式。（演示文案；真实文案口径沿 REQ-007）</div>
+                    <div class="eb-acts"><button class="btn-p" id="mfGoAdv" style="height:32px;padding:0 14px;">前往高级设置</button></div>
+                  </div>
+                </div>
+              </div>
+              <div class="composer">
+                <div class="composer-col">
+                  <div class="comp-box">
+                    <textarea rows="1" placeholder="输入消息，Enter 发送"></textarea>
+                    <div class="comp-row"><span class="comp-hint">演示件 · 输入区沿 CHG-003 定案，本轮不改版</span><span class="sp"></span><button class="send-btn" title="发送" aria-label="发送"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M12.5 1.5 2 6.2l4.3 1.9 1.9 4.3 4.3-10.9z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></button></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div id="mfOvl"></div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>用户气泡（候选选型见 3.2，推荐 <code>--c-avatar-bg</code>）</b>：右对齐、max-width 80%（沿用）、15px <code>--c-text-1</code> / 1.75 行高、padding 10px 14px、圆角 r-lg 12/12/4/12（右下小角沿现状形制）。<br>
+        <b>AI 消息</b>：全宽无气泡背景（沿用），内容列 712px 居中（沿 MessageList 现状）；操作栏 <b>components.md「悬停浮现」模式</b>不变（容器 min-height 24px 占位 + opacity 0→1），仅随去头像左对齐；用户操作栏右对齐（复制/修改）。<br>
+        <b>代码块/Markdown 富文本样式沿 design-iter-3 基线不重画</b>（本稿不涉）；输入区沿 CHG-003 定案不翻案（plans「本迭代不做」明列）。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">3.2 用户气泡色选型（REQ-027.2：浅色轻量形态，双主题对比度结论）<span class="tag">两候选均为既有令牌；推荐 --c-avatar-bg</span></div>
+      <table>
+        <tr><th>候选</th><th>浅色值 / 对比度（vs --c-text-1）</th><th>暗色值 / 对比度</th><th>与正文底 --c-surface 区分度</th><th>结论</th></tr>
+        <tr>
+          <td><code>--c-hover-bg</code></td>
+          <td>#F2F3F5 / 14.2:1</td>
+          <td>#262930 / 12.1:1</td>
+          <td>浅 1.06:1 · 暗 1.12:1</td>
+          <td>备选（不采纳）</td>
+        </tr>
+        <tr>
+          <td><b><code>--c-avatar-bg</code>（推荐）</b></td>
+          <td>#E8EBF2 / <b>13.2:1</b></td>
+          <td>#33363E / <b>10.0:1</b></td>
+          <td>浅 1.12:1 · <b>暗 1.35:1</b></td>
+          <td><b>采纳</b></td>
+        </tr>
+      </table>
+      <div class="ann">
+        <b>对比度结论（REQ-027 异常分支「暗色下浅色气泡对比度」直接回答）</b>：两候选双主题下正文对比度均 ≥10:1（WCAG AA ≥4.5 远超），均合规；
+        差异在<b>与正文底的区分度</b>——<code>--c-avatar-bg</code> 在两主题下均高一档（暗色 1.35:1 vs 1.12:1），更接近 DeepSeek「一眼可辨」的用户气泡存在感。
+        <b>语义说明</b>：头像本迭代移除后，<code>--c-avatar-bg</code>（值不变）转任「用户侧底色」（用户气泡 / 账户头像底），令牌不闲置、零新增——建议随基线在 components.md 登记新用法（§6）。
+        气泡边界为装饰性（非文本承载），不适用 3:1 UI 组件标准，可辨识由文字对比承担。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">3.3 全状态规格（无头像布局）<span class="tag">走查条 23~33 的预期口径；3.1 样件逐条可查</span></div>
+      <table>
+        <tr><th style="width:120px">状态</th><th>规格（尺寸/色值标注）</th></tr>
+        <tr><td>用户消息</td><td>右对齐浅气泡（3.2）；操作栏在气泡下方<b>右对齐</b>（复制 24px + 修改 24px，hover 浮现，title/aria-label）</td></tr>
+        <tr><td>AI 消息</td><td>全宽无背景；操作栏在文本下方<b>左对齐</b>（复制 + 版本导航 ‹ 1/2 ›，版本箭头常显、计数 12px <code>--c-text-3</code> tabular-nums——components.md 口径）</td></tr>
+        <tr><td>生成中</td><td>行内光标块（2px×1em，<code>--c-primary-solid</code>，0.9s 闪烁）+「正在生成…」12px <code>--c-text-3</code>（沿用）</td></tr>
+        <tr><td>生成中断</td><td>文本下方 pill「生成中断」（12px <code>--c-warning-l</code> 底 + <code>--c-warning</code> 字，r-full，浅 6.6:1 / 暗 6.6:1 AA）</td></tr>
+        <tr><td>已停止</td><td>中性 pill「已停止生成」（<code>--c-hover-bg</code> 底 + <code>--c-text-2</code> 字 + 方块 icon，沿用）</td></tr>
+        <tr><td>编辑态</td><td>气泡位替换为编辑面板（surface 底 + <code>--c-primary</code> 描边 + 3px focus-ring + r-lg；右列 max-width 80%）；Enter 保存 / Shift+Enter 换行 / Esc 取消（含 IME 选词回车不保存，沿现状）；提示文案「保存后…将删除并重新生成」沿用</td></tr>
+        <tr><td>错误气泡</td><td><code>--c-danger-l</code> 底 + <code>--c-danger</code> 标题 13px + 正文 14px <code>--c-text-2</code>，r-lg，左侧 max-width 76%（沿现状；auth 类只显「前往高级设置」，其余类「重试」——REQ-007 口径不变）</td></tr>
+        <tr><td>版本切换</td><td>‹ 1/2 › 互换分支（REQ-019 两分支模型不变），无头像布局下位置随操作栏左对齐、不位移</td></tr>
+      </table>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">3.4 顶栏精简（推荐形态：完全去顶栏，待定夺 ⑦）<span class="tag">导出迁走 /「模型」副标题移除 / 主题按钮 → §8-①</span></div>
+      <table>
+        <tr><th style="width:150px">现状顶栏元素</th><th>处置（本稿）</th><th>依据</th></tr>
+        <tr><td>「导出」按钮</td><td><b>迁至会话列表项「···」菜单「导出会话」</b>（§8-② 推荐；REQ-013 功能口径不变：导出 Markdown、空会话 toast，export.spec 仅点击路径适配）</td><td>REQ-027.3</td></tr>
+        <tr><td>「模型：xxx」副标题</td><td><b>整体移除</b>（不是改文案）：统一 key 模式下模型由服务端配置，顶栏任何模型文案均有误导性；<b>统一 key（无档案）下自然不再出现「模型：未设置」类显示</b>（REQ-027 验收原文达成）</td><td>REQ-027.3</td></tr>
+        <tr><td>主题切换按钮</td><td><b>推荐移除</b>，主题入口收敛至设置弹窗「外观」分段控件（REQ-017 存量条款随基线改写，CHG-006 已预告）——CEO 定夺见 §8-①；备选：移入账户菜单</td><td>REQ-027.3</td></tr>
+        <tr><td>会话标题</td><td>顶栏移除后，当前会话标题由<b>侧栏选中项</b>承载（单行省略 + title 沿现状截断规则）；收起 rail 态暂不可见为已知代价（DeepSeek 同款，§8-⑦ 理由）</td><td>REQ-027 异常分支</td></tr>
+      </table>
+      <div class="cols" style="margin-top:12px;">
+        <div>
+          <div class="frame-cap">备选形态：仅标题（未采纳）——整条栏只为一个截断标题服务</div>
+          <div class="tk force-light app-stage" style="height:120px;">
+            <div class="app-shell">
+              <div class="chat-main">
+                <div style="flex:none;display:flex;align-items:center;padding:12px 24px;border-bottom:1px solid var(--c-border);">
+                  <span style="font-size:15px;font-weight:600;color:var(--c-text-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:420px;">一个特别长的会话标题用来验证截断规则是否沿用现状的单行省略</span>
+                </div>
+                <div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--c-text-3);font-size:12px;">消息区（顶栏占 48px）</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="frame-cap">推荐形态：完全去顶栏（3.1 / 1.1 样件即此形态）——消息区直接开始，垂直空间 +48px</div>
+          <div class="tk force-light app-stage" style="height:120px;">
+            <div class="app-shell">
+              <div class="chat-main">
+                <div style="flex:1;display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;color:var(--c-text-3);font-size:12px;">
+                  <div class="ububble" style="max-width:320px;background:var(--c-avatar-bg);color:var(--c-text-1);">消息区顶留白 24px 沿用，无任何栏</div>
+                  <span>空态页 / 迁移提示条（iter-8）直接置于消息区上方，不受影响</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann"><b>推荐理由摘要</b>（完整见 §8-⑦）：三元素全部迁出后顶栏仅剩标题——一栏换一标题不划算；DeepSeek 参照物无顶栏；标题已由侧栏承载。<b> MigrationBanners（iter-8 全局提示条）</b>随主区顶部自然下移，口径不变。</div>
+    </div>
+  </section>
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">4</span>REQ-028 设置弹窗化（可交互）</h2>
+    <div class="sec-desc">
+      设置由整页视图改为<b>模态弹窗</b>：从侧栏账户区「···」菜单打开；<b>五区块全保留、功能口径零变化</b>（T3 原则「只改容器不改逻辑」）；
+      弹窗尺寸 / 滚动 / 遮罩 / 关闭方式由本稿基线定；联动适配：错误气泡「前往高级设置」（REQ-007）打开弹窗并滚动定位（沿用 locateAdvanced 语义）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.1 弹窗总览（可交互，字段核对自 SettingsForm.vue / KeyModeCard.vue 现状）<span class="tag">§1 账户菜单「设置」/ 3.1 错误气泡均可打开本形态</span></div>
+      <div class="sim-row">
+        <b>试：</b>「打开设置弹窗」从顶部进入；错误气泡「前往高级设置」<b>打开并平滑滚动定位到高级设置区</b>（区段短暂主色浅底高亮）；
+        「外观」分段与右上「演示控制」<b>同状态联动</b>（REQ-017）；对话设置输入几个字后按 Esc 体验<b>未保存拦截</b>（4.2）；账号区「注销账号」看<b>层叠确认</b>（4.4）。
+      </div>
+      <div class="stage">
+        <div class="tk app-stage" id="stStage" style="height:720px;">
+          <div class="app-shell">
+            <div id="stSideSlot" style="display:contents;"></div>
+            <div class="chat-main">
+              <div style="flex:1;display:flex;flex-direction:column;gap:16px;align-items:flex-start;padding:24px;">
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                  <button class="btn-p" id="stOpenBtn">打开设置弹窗</button>
+                  <span class="hint2">（真实入口 = 侧栏账户「···」→ 设置；此处为演示直开）</span>
+                </div>
+                <div class="err-bubble" role="alert">
+                  <div class="eb-head"><span class="eb-dot"></span><strong>密钥未授权</strong></div>
+                  <div class="eb-msg">服务端密钥校验失败（401）。请在高级设置中检查自有密钥，或回退统一密钥模式。（演示文案；真实文案口径沿 REQ-007）</div>
+                  <div class="eb-acts"><button class="btn-p" id="stGoAdv" style="height:32px;padding:0 14px;">前往高级设置</button></div>
+                </div>
+                <p class="hint2">点「前往高级设置」：弹窗打开并直接切到「高级设置」分区（标题短暂高亮；locateAdvanced 语义 = 定位到高级设置，4.3）。</p>
+              </div>
+            </div>
+          </div>
+          <div id="stOvl"></div>
+        </div>
+      </div>
+      <table style="margin-top:12px;">
+        <tr><th style="width:170px">区块（五区块全保留）</th><th>真实字段（核对自 SettingsForm.vue）</th><th>口径</th></tr>
+        <tr><td>① 外观</td><td>主题分段控件：浅色 / 深色（与全局主题同状态同存储，REQ-017）</td><td>即时保存（点击即切换）</td></tr>
+        <tr><td>② 密钥模式</td><td>KeyModeCard：统一 key 态（服务端统一密钥 / 当前模式徽标 / 零配置说明 / 免费额度行含占位徽标 / 「在『高级设置』中添加自有密钥」跨分区跳转链接）↔ 自填态（含「回退统一密钥」）</td><td>切换即时生效（沿 REQ-014/018）</td></tr>
+        <tr><td>③ 高级设置 · 自填供应商密钥</td><td>安全说明 + 档案列表行（名称 / host · 模型 · 掩码密钥 /「当前生效」或「设为当前」/ 编辑 / 删除）+「添加供应商档案」（内层表单模态：档案名称 / Base URL / 模型名 / API Key，编辑时密钥不回显）+ 底部说明</td><td>显式保存（内层模态「保存档案」）；<b>locateAdvanced 定位目标</b></td></tr>
+        <tr><td>④ 对话设置</td><td>系统提示词 textarea（可选 / 字数统计 / 占位文案）+「保存」+「清除」（有已存值才显示）+「已保存」2s 反馈</td><td><b>显式保存</b>（未保存拦截判定源之一，4.2）</td></tr>
+        <tr><td>⑤ 账号</td><td>修改密码三字段（旧密码 / 新密码 / 确认新密码，各带密码显隐与行内校验）+「更新密码」；注销危险区（danger-l 底 + 危险实底「注销账号」→ DeleteAccountModal 二次确认）</td><td>显式提交；注销沿 iter-9 基线</td></tr>
+      </table>
+      <div class="ann"><b>整页版头部提示</b>（「对话默认使用服务端统一密钥…」）不再常驻弹窗头部（R1 去拥挤），其语义并入「密钥模式」分区说明文字；密钥安全口径仍在「高级设置」分区 intro 完整保留。</div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.2 容器规格：尺寸 / 滚动 / 遮罩 / 关闭 / 未保存处置<span class="tag">未保存拦截为待定夺 ⑥ 推荐落形</span></div>
+      <table>
+        <tr><th style="width:130px">项</th><th>规格</th></tr>
+        <tr><td>尺寸</td><td><b>宽 720px</b>（R1 左右分栏：左导航 168px + 右分区面板；内容列 ~504px）；<code>max-width: calc(100vw - 48px)</code>；<b>高 ≤ 80vh</b>（<code>max-height: calc(100vh - 64px)</code> 等效；窄屏不溢出视口，REQ-028 异常分支）；r-lg + <code>--shadow-3</code> + <code>--c-surface</code> 底 + 1px <code>--c-border</code></td></tr>
+        <tr><td>头部</td><td>sticky（面板内不随内容滚动）：标题「设置」17px/600 + 右端关闭钮（28px icon，aria-label「关闭设置」）；头部下缘 <code>--c-border</code> 分隔；R1 后头部不再放提示文案（密钥模式说明随分区呈现，去拥挤）</td></tr>
+        <tr><td>分区（R1）</td><td>左导航 <code>role=tablist</code> 五项（外观/密钥模式/高级设置/对话设置/账号），<code>--c-subtle-bg</code> 底 + 右缘 <code>--c-border</code>；选中态 <code>--c-primary-l</code> 底主色字；一次仅显示一个分区面板（<code>role=tabpanel</code>），各面板独立滚动；键盘 ↑↓←→ 循环切换分区（与「演示控制」无冲突）；切分区不丢表单状态（面板隐藏不销毁）</td></tr>
+        <tr><td>滚动</td><td>仅右侧当前分区面板滚动（<code>overflow-y: auto</code>，细滚动条 <code>--c-scrollbar</code>）；档案内层模态打开时外层不滚动</td></tr>
+        <tr><td>遮罩</td><td><code>--c-mask</code>（rgba(31,35,41,.4) / rgba(0,0,0,.55)），z-index <b>100</b>（沿 SettingsForm 既有 modal-mask 层级）</td></tr>
+        <tr><td>关闭方式（三）</td><td><b>Esc / 点击遮罩 / 关闭按钮</b>；关闭后<b>焦点回触发入口</b>（账户「···」或错误气泡按钮，与菜单组件同口径）</td></tr>
+        <tr><td>打开动效</td><td>opacity 0→1 + scale .98→1，<code>.15s ease</code>；打开时焦点移入弹窗（关闭钮）</td></tr>
+        <tr><td><b>未保存关闭处置（⑥ 推荐）</b></td><td><b>条件拦截确认</b>：关闭时若存在未保存内容 → 小确认模态「有未保存的修改，关闭后将丢失。」（取消 / 直接关闭）；无未保存内容 → 直接关。<b>未保存判定</b>（读 SettingsForm 真实保存模式后定）：系统提示词 textarea 值 ≠ 已保存值，<b>或</b> 改密三字段任一非空（两者均为显式保存字段）；外观/密钥模式/档案为即时或内层显式保存，不参与判定</td></tr>
+      </table>
+      <div class="ann"><b>为什么拦截（⑥ 理由摘要）</b>：SettingsForm 为<b>显式保存</b>模式（系统提示词需点「保存」、改密需点「更新密码」）——弹窗的误关概率远高于整页（Esc / 遮罩误点），静默丢弃已输入内容违背 REQ-028 用户故事「改完即回」；判定为纯前端状态对比，实现轻。<b>备选（未采纳）</b>：直接关（零改动，但静默丢输入）。完整对比见 §8-⑥。</div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.3 联动：错误气泡「前往高级设置」→ 打开 + 定位<span class="tag">locateAdvanced 语义沿用；iter-2 走查 15 场景复跑的入口</span></div>
+      <div class="ann" style="margin-top:0;">
+        流程：消息流错误气泡（auth 类）「前往高级设置」→ <b>打开设置弹窗并直接切到「高级设置」分区</b>（<code>locateAdvanced</code> 语义 = 定位到高级设置；R1 后由「滚动定位」改为「分区直达」）→ 区段标题短暂主色浅底高亮（<code>--c-primary-l</code>，≈1.6s 淡出）提示落点。
+        <b>T3 实现口径</b>：仅容器变化（原为切整页视图 + 定位，现为开弹窗 + 定位），<code>locateAdvanced</code> prop 语义不变；iter-2 走查 15 场景复跑留档（plans T3 验收原文）。
+        4.1 样件错误气泡与 3.1 样件错误气泡均可演示（打开各自舞台内的弹窗实例）。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.4 弹窗内层级方案（注销 DeleteAccountModal / 档案编辑模态）<span class="tag">z-index 110 叠层；Esc 先关最上层</span></div>
+      <table>
+        <tr><th style="width:230px">层（自下而上）</th><th>z-index / 说明</th></tr>
+        <tr><td>主界面</td><td>基线 0（侧栏/消息流）</td></tr>
+        <tr><td>下拉菜单</td><td>40（§2；打开弹窗前必先关闭菜单）</td></tr>
+        <tr><td><b>设置弹窗</b>（遮罩 + 面板）</td><td><b>100</b>（沿 SettingsForm 既有 modal-mask 层级）</td></tr>
+        <tr><td><b>弹窗内层模态</b>：DeleteAccountModal（注销二次确认）/ 档案添加·编辑模态</td><td><b>110</b>：以更深层遮罩叠于设置弹窗之上（遮罩叠加自然加深，面板 surface 底 + shadow-3）；二者不会同开；内层打开时点击区域只在内层遮罩内</td></tr>
+        <tr><td>toast</td><td>全局最顶（不受弹窗影响）</td></tr>
+        <tr><td>Esc 层级</td><td><b>先关最上层</b>：内层模态开着时 Esc 只关内层（再按才关设置弹窗）——由全局 Esc 栈保证（T1/T3 实现为焦点层叠判断）</td></tr>
+      </table>
+      <div class="ann"><b>注销流程演示</b>（4.1 样件 → 账号区「注销账号」）：层叠确认模态沿 design-iter-9 §3.1 基线（标题「注销账号？」/ 删除范围与不可恢复明示 / 密码二次确认 mm2026 / 危险实底「永久注销账号」，空密码 disabled / 生成中自动终止不打断取消）；<b>成功后清凭据跳登录页 + 成功绿 toast，流程零变化</b>（iter-9 基线，本稿不重画，toast 注明）。登出同理不受弹窗化影响（REQ-028 异常分支）。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">5</span>亮暗锁定对照（双帧并置，走查方法 = 找亮色残留）</h2>
+    <div class="sec-desc">同一 DOM，仅根节点令牌覆盖；暗色帧内任何肉眼发白块即为漏改裸色值。本节锁定帧不随「演示控制」切换。</div>
+
+    <div class="spec">
+      <div class="spec-title">5.1 侧栏收起 rail（浅 ↔ 暗）</div>
+      <div class="cols">
+        <div>
+          <div class="frame-cap">浅色（rail 56px 灰 #F5F6F7 + 图标/头像）</div>
+          <div class="tk force-light app-stage" style="height:380px;" id="lockRailL"></div>
+        </div>
+        <div>
+          <div class="frame-cap">暗色（rail 灰 #131417 + 主区白 #1E2026）</div>
+          <div class="tk force-dark app-stage" style="height:380px;" id="lockRailD"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">5.2 消息流：用户浅气泡 + AI 全宽 + 中断 pill（浅 ↔ 暗）</div>
+      <div class="cols">
+        <div>
+          <div class="frame-cap">浅色（用户气泡 #E8EBF2 上正文 13.2:1）</div>
+          <div class="tk force-light app-stage" style="height:430px;" id="lockMsgL"></div>
+        </div>
+        <div>
+          <div class="frame-cap">暗色（用户气泡 #33363E 上正文 10.0:1 —— AA ✓）</div>
+          <div class="tk force-dark app-stage" style="height:430px;" id="lockMsgD"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">5.3 通用下拉菜单（会话菜单 + 账户菜单，浅 ↔ 暗，§2.3 截图位）</div>
+      <div class="cols">
+        <div>
+          <div class="frame-cap">浅色（surface #FFFFFF + shadow-2；danger 项 #D93025 4.8:1）</div>
+          <div class="tk force-light app-stage" style="height:330px;" id="lockMenuL"></div>
+        </div>
+        <div>
+          <div class="frame-cap">暗色（surface #1E2026；danger 项 #FF8073 6.7:1）</div>
+          <div class="tk force-dark app-stage" style="height:330px;" id="lockMenuD"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">6</span>适用性说明 + 令牌与组件使用（v1.4.4 口径）</h2>
+    <div class="spec">
+      <table>
+        <tr><th style="width:190px">项</th><th>结论</th><th>依据</th></tr>
+        <tr><td>移动端 ≤480px 适配</td><td><b>不适用</b>：主界面维持桌面优先（本轮唯一承诺：设置弹窗 <code>max-width: calc(100vw - 48px)</code> 窄屏不溢出视口，REQ-028 异常分支）</td><td>spec 兼容条款：仅登录/注册两页承诺 ≤480px（CEO 定 2026-08-15）</td></tr>
+        <tr><td>ComposerBox 输入区</td><td><b>不改版</b>：CHG-003 已定案（发送按钮与首行文字对齐），3.1 样件为静态示意</td><td>plans/iter-11.md「本迭代不做」明列；若翻案须 CEO 单独定夺</td></tr>
+        <tr><td>消息 Markdown / 代码块样式</td><td><b>不重画</b>：沿 design-iter-3 基线引用；本轮仅去头像与气泡底色</td><td>REQ-027 范围限定</td></tr>
+        <tr><td>空态页 / 迁移提示条</td><td><b>沿用</b>（EmptyState iter-1 / MigrationBanners iter-8），仅随去顶栏自然上移，口径不变</td><td>REQ-027 范围限定</td></tr>
+        <tr><td>REQ-029 管理后台重构</td><td><b>不在本轮</b>：账户菜单「管理后台」仅迁移入口位置，后台页面体验由 design-iter-12 承载</td><td>plans 排期 iter-12</td></tr>
+        <tr><td>样件凭据</td><td>用户名「猫南北」、密码 <code>mm2026</code>、档案密钥 <code>sk-****</code>、额度「—」占位均<b>为演示数据</b>；线上密钥仅存服务端、额度数值只由接口采集渲染（未取到保持占位，不编造）</td><td>铁律 5「度量数据只允许机器采集」+ KeyModeCard 占位口径</td></tr>
+      </table>
+    </div>
+    <table>
+      <tr><th style="width:130px">项</th><th>结论</th></tr>
+      <tr>
+        <td>色值令牌</td>
+        <td>全部取自 tokens.md v1.3/v1.3.1（浅 + 暗 + 前景/实底拆分族 + on-dark 族），<b>本稿零新增令牌、零自造色值</b>（文档外壳沿惯例用浅色原值；产品组件一律 <code>var()</code> 引用语义令牌，含阴影/焦点环/遮罩/toast）。<b>无需 design-system 令牌变更</b>（待定夺 ⑧ 评估结论：无提案）。</td>
+      </tr>
+      <tr>
+        <td>组件沉淀建议</td>
+        <td>随本基线建议在 components.md 登记四项<b>新形态</b>（纯既有令牌组合，资产沉淀不涉令牌批准，沿 iter-7/8/9 惯例）：
+        ① <b>通用下拉菜单</b>（§2 交互规格 + 视觉规格）；② <b>侧栏 rail</b>（56px 收起态）；③ <b>账户区</b>（首字头像 + 「···」菜单）；④ <b>用户浅气泡</b>（<code>--c-avatar-bg</code> 新用途：头像令牌转任用户侧底色，值不变）。</td>
+      </tr>
+      <tr>
+        <td>字号/间距/圆角/阴影/动效</td>
+        <td>全部在 tokens 既定值域内（组头/说明 12px、列表项与菜单 13px、气泡与 AI 正文 15px、弹窗标题 17px、空态标题 20px；行高 34/32/28px 阶梯；间距 4/6/8/12/16/20/24 栅格；圆角 r-sm/r-md/r-lg/r-full；阴影 shadow-1/2/3；过渡 .15s ease、按压 scale .98/.94）。</td>
+      </tr>
+    </table>
+  </section>
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">7</span>T0 验收对照 + 走查清单（v1.4.4 硬要求）</h2>
+    <div class="sec-desc">7.1 对照 plans/iter-11.md T0 验收标准与 REQ-026~028 验收标准原文逐条落点（自查：三个 REQ 每条验收标准在稿内均有呈现或规格说明）；
+    7.2 为本稿全部触点与状态组合的走查清单——<b>T1/T2/T3 实现时对照逐条自查留档（development.md），QA 审计取证</b>。
+    <b>本清单所有条目均须在浅色与暗色两个主题下逐条通过</b>（暗色色值见各条目与 §5 锁定帧）。</div>
+
+    <div class="spec">
+      <div class="spec-title">7.1 T0 验收标准 + REQ 验收标准对照（原文）</div>
+      <table>
+        <tr><th style="width:44%">验收标准（原文）</th><th>本稿落点</th><th>状态</th></tr>
+        <tr><td>〔plans T0〕CEO 批准基线（tag design-iter-11）</td><td>本稿提交 CEO 评审——批准后打 tag（§9 声明）</td><td>☐ 待批准</td></tr>
+        <tr><td>〔plans T0〕主题按钮去留提案随稿提交 CEO 定夺（REQ-017 条款若改写随基线同步）</td><td>§8-①（推荐：移除顶栏主题按钮，收敛至设置弹窗「外观」；REQ-017 条款随基线改写）</td><td>☐ 待定夺</td></tr>
+        <tr><td>〔plans T0〕含 §7.x 走查清单（v1.4.4 硬要求）</td><td>7.2（<b>49 条</b>，含亮暗双态要求与不适用注明）</td><td>☑ 已覆盖</td></tr>
+        <tr><td>〔REQ-026〕design-iter-11 走查清单留档（含亮/暗双主题）</td><td>7.2 条 1~22 + §5 双帧；T1 留档</td><td>☑ 稿内覆盖</td></tr>
+        <tr><td>〔REQ-026〕REQ-003/004/005/012/016 交互验收口径全部不回退</td><td>§1.2（重命名/删除沿现状口径）/ §1.3（搜索态方案：REQ-016 高亮与片段保留）；条 47 汇总；spec 适配全绿为 T1 门槛</td><td>☑ 规格落点</td></tr>
+        <tr><td>〔REQ-026〕分组含跨零点边界单测；组内无逐条时间戳</td><td>§1.3 组判定表（本地日期比对）+ 条 11/12；单测为 T1 交付</td><td>☑ 规格落点</td></tr>
+        <tr><td>〔REQ-026〕收起状态刷新保持；下拉菜单外点关闭/Esc/键盘焦点</td><td>§1.5（localStorage 持久化，1.1 样件可刷新验证）+ §2 全章（条 19~22）</td><td>☑ 稿内覆盖</td></tr>
+        <tr><td>〔REQ-027〕全部消息类型无头像布局走查留档，亮/暗双主题</td><td>§3.1 全状态序列 + §3.3 规格表 + §5.2 双帧（条 23~33）</td><td>☑ 稿内覆盖</td></tr>
+        <tr><td>〔REQ-027〕REQ-013 导出口径不回退（入口变化，spec 适配全绿）</td><td>§3.4（迁列表项「···」菜单，§8-②）+ 条 36；export.spec 点击路径适配为 T2 交付</td><td>☑ 规格落点</td></tr>
+        <tr><td>〔REQ-027〕统一 key 模式下顶栏不再出现「模型：未设置」类误导显示</td><td>§3.4（副标题整体移除）+ 条 35</td><td>☑ 稿内覆盖</td></tr>
+        <tr><td>〔REQ-028〕settings/settings-form/账号全部 spec 弹窗容器下全绿（逻辑零改动）</td><td>§4.1 五区块真实字段表 +「只改容器不改逻辑」原则；全量 vitest 为 T3 门槛</td><td>☑ 规格落点</td></tr>
+        <tr><td>〔REQ-028〕错误气泡「前往高级设置」定位复验（iter-2 走查 15 场景复跑）</td><td>§4.3（locateAdvanced 语义沿用）+ 4.1/3.1 可玩演示 + 条 42；15 场景复跑为 T3 交付</td><td>☑ 稿内覆盖</td></tr>
+        <tr><td>〔REQ-028〕关闭方式与未保存表单数据处置由 design-iter-11 定夺并走查</td><td>§4.2（Esc/遮罩/关闭钮三方式 + 条件拦截确认，§8-⑥ 推荐）+ 条 40/41</td><td>☐ 待定夺（⑥）</td></tr>
+      </table>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">7.2 走查清单（design-iter-11，49 条；勾选框供 T1/T2/T3 自查与 QA 取证）</div>
+      <table>
+        <tr><th style="width:26px">过</th><th style="width:36px">序号</th><th>需求</th><th>触点</th><th>状态组合</th><th>期望表现（= 验收口径；浅 = tokens 浅值 / 暗 = tokens 暗值）</th><th style="width:64px">样件</th></tr>
+        <tr><td><input type="checkbox"></td><td>1</td><td>REQ-026</td><td>应用外壳</td><td>框架基调</td><td>侧栏 264px 灰 <code>--c-bg</code>（#F5F6F7/#131417）+ 右缘 <code>--c-border</code>；主区白 <code>--c-surface</code>（#FFFFFF/#1E2026）；iter-9 基调延续</td><td>1.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>2</td><td>REQ-026</td><td>新建按钮</td><td>默认/hover/active</td><td>36px <code>--c-primary-solid</code> 白字 r-md 13px/600；hover solid-h（#2E5FDF/#4C84FF）；active solid-a + scale .98；点击新建会话并清空搜索</td><td>1.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>3</td><td>REQ-016</td><td>搜索框</td><td>默认/聚焦/有词</td><td>32px surface 底 + border r-md；focus 主色描边 + 3px <code>--c-focus-ring</code>（rgba(51,112,255,.12)/rgba(92,141,255,.25)）；有词显清除钮</td><td>1.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>4</td><td>REQ-026</td><td>列表项</td><td>单行省略</td><td>行 34px r-md，仅标题一列 13px text-1 单行 ellipsis + title 全文；<b>无逐条时间戳</b>；长标题不换行（1.1「一个特别长的会话标题…」行）</td><td>1.2</td></tr>
+        <tr><td><input type="checkbox"></td><td>5</td><td>REQ-026</td><td>列表项</td><td>hover「···」</td><td>行底 hover-bg（#F2F3F5/#262930）；「···」28px r-sm text-3 opacity 0→1（.15s）；「···」hover hover-bg+text-1；<code>:focus-visible</code> 亦浮现（键盘可达）</td><td>1.1/1.2</td></tr>
+        <tr><td><input type="checkbox"></td><td>6</td><td>REQ-026</td><td>会话菜单</td><td>内容与配色</td><td>重命名 / 导出会话 / 删除（danger <code>--c-danger</code> #D93025 4.8:1 / #FF8073 6.7:1，前置 1px 分隔线）；面板 surface+border+shadow-2+r-md，min-width 148px，项 32px/13px</td><td>1.1/2.3</td></tr>
+        <tr><td><input type="checkbox"></td><td>7</td><td>REQ-026</td><td>corrupted 会话</td><td>菜单分支</td><td>标题「无法读取的会话」（text-3）+「无法读取」pill；菜单「重命名」<b>禁用</b>（text-3 + not-allowed + title 原因，箭头导航跳过）；「删除」可用</td><td>1.1/1.2</td></tr>
+        <tr><td><input type="checkbox"></td><td>8</td><td>REQ-005</td><td>行内重命名</td><td>编辑/保存/取消</td><td>标题位换 26px 输入框（primary 描边 + 3px focus-ring，surface 底）；Enter/失焦保存（非空且不同才提交）、Esc 取消、空值静默恢复——沿现状口径</td><td>1.1（可交互）</td></tr>
+        <tr><td><input type="checkbox"></td><td>9</td><td>REQ-005</td><td>删除确认</td><td>确认弹窗</td><td>「删除这个会话？」+「「标题」的全部消息将一并删除，无法恢复。」+ 危险实底「删除」（#D93025 白字 4.8:1）；确认后项移除，删 active 项后顺延首项</td><td>1.1（可交互）</td></tr>
+        <tr><td><input type="checkbox"></td><td>10</td><td>REQ-013</td><td>导出会话</td><td>菜单项</td><td>列表项「···」→「导出会话」：导出该会话 Markdown（口径不变）；空会话 toast「当前会话暂无消息，未生成文件」</td><td>1.1（toast 演示）</td></tr>
+        <tr><td><input type="checkbox"></td><td>11</td><td>REQ-026</td><td>时间分组</td><td>四组组头</td><td>「今天/昨天/近 7 天/更早」12px text-3（#8F959E/#808896），padding 12px 10px 4px；空组不渲染；组内无逐条时间戳</td><td>1.1/1.3</td></tr>
+        <tr><td><input type="checkbox"></td><td>12</td><td>REQ-026</td><td>时间分组</td><td>排序与跨零点</td><td>组内按 updatedAt 倒序；本地日期比对（沿用 timeLabel 思路）；23:59→00:01 会话从「今天」落「昨天」——<b>T1 跨零点单测</b></td><td>1.3</td></tr>
+        <tr><td><input type="checkbox"></td><td>13</td><td>REQ-016</td><td>搜索态</td><td>分组显隐/命中/无结果</td><td>有搜索词：组头全部隐藏、平铺（标题命中优先）；标题命中主色高亮（--c-primary/600）；正文命中第二行片段 12px text-3 ellipsis + 高亮（临时双行）；corrupted 不参与；无结果「无匹配会话」；清除恢复分组</td><td>1.1（搜「密」）</td></tr>
+        <tr><td><input type="checkbox"></td><td>14</td><td>REQ-026</td><td>账户区</td><td>形态</td><td>首字头像 24px 圆 avatar-bg（#E8EBF2/#33363E）+ 12px/500 text-2 首字 + 用户名 13px/500 text-2 ellipsis +「···」；上缘 border 分隔；<b>无密钥标签/盾牌/常驻设置钮/登出 icon</b></td><td>1.1/1.4</td></tr>
+        <tr><td><input type="checkbox"></td><td>15</td><td>REQ-026</td><td>账户菜单</td><td>三项/条件渲染</td><td>设置（打开弹窗）/ 管理后台（<b>仅 is_admin 渲染</b>，普通用户 DOM 无节点，沿 iter-8 口径）/ 分隔线 / 登出（非 danger：可逆操作）；1.1 勾「模拟管理员」对照</td><td>1.1/1.4</td></tr>
+        <tr><td><input type="checkbox"></td><td>16</td><td>REQ-026</td><td>侧栏收起</td><td>rail 形态</td><td>rail 56px 灰 --c-bg：顶部展开（»）/新建（+）/搜索（🔍）图标 36px r-md（hover hover-bg+text-1）+ 底部头像 28px 圆；logo 隐藏；全部 title/aria-label</td><td>1.1/1.5/5.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>17</td><td>REQ-026</td><td>rail 交互</td><td>搜索/头像</td><td>rail 点「搜索」= 展开侧栏并聚焦搜索框；点头像 = 展开；展开/收起钮同角落（品牌行右端 ↔ rail 首格）</td><td>1.1（可交互）</td></tr>
+        <tr><td><input type="checkbox"></td><td>18</td><td>REQ-026</td><td>收起持久化</td><td>刷新保持</td><td>收起状态写 localStorage（如 mm-sidebar-collapsed）；刷新后保持收起/展开原状态；宽度过渡 .15s ease（demo 双 DOM 示意，T1 单 aside 动画）</td><td>1.1（刷新可验）</td></tr>
+        <tr><td><input type="checkbox"></td><td>19</td><td>REQ-026</td><td>下拉菜单</td><td>外点关闭</td><td>点击菜单外任意处关闭，且<b>该次点击被吞掉</b>（不触发底层会话选中/按钮）——REQ-026 异常分支「不误触发底层操作」</td><td>1.1/2.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>20</td><td>REQ-026</td><td>下拉菜单</td><td>Esc</td><td>Esc 关闭菜单，<b>焦点回触发钮</b>；开态再点触发钮 = 关闭（toggle）</td><td>1.1/2.2</td></tr>
+        <tr><td><input type="checkbox"></td><td>21</td><td>REQ-026</td><td>下拉菜单</td><td>键盘矩阵</td><td>触发钮 Enter/Space 开菜单并聚焦首可用项；↓/↑ 循环（跳过禁用）；Home/End 首/末；项上 Enter/Space 执行并关+焦点回触发钮；Tab 关闭自然移焦——按 2.2 矩阵逐键过</td><td>2.2 演练台</td></tr>
+        <tr><td><input type="checkbox"></td><td>22</td><td>REQ-026</td><td>下拉菜单</td><td>互斥/滚动/定位/层级</td><td>开新菜单即关旧（含混开）；底层列表滚动即关；面板右对齐触发行右缘（内收 10px）、下方不足上翻、不溢出视口；z-index 40（&lt;100 弹窗 &lt;110 内层 &lt;toast）</td><td>1.1/2.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>23</td><td>REQ-027</td><td>消息流</td><td>去全部头像</td><td>AI logo 头像与用户「我」头像节点<b>全部不存在</b>（DOM 级验证，非 CSS 隐藏）；消息列左缘对齐文字（AI）/右缘对齐气泡（用户）</td><td>3.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>24</td><td>REQ-027</td><td>用户气泡</td><td>浅色主题</td><td>右对齐 max-width 80%；<code>--c-avatar-bg</code> #E8EBF2 底 + text-1 #1F2329 字 15px/1.75（13.2:1）；padding 10 14；圆角 r-lg 12/12/4/12</td><td>3.1/5.2</td></tr>
+        <tr><td><input type="checkbox"></td><td>25</td><td>REQ-027</td><td>用户气泡</td><td>暗色对比度</td><td>#33363E 底 + #E6EAF0 字 = <b>10.0:1（AA ✓）</b>；与 surface #1E2026 区分度 1.35:1（高于 hover-bg 1.12:1）——REQ-027 异常分支闭环</td><td>3.2/5.2</td></tr>
+        <tr><td><input type="checkbox"></td><td>26</td><td>REQ-027</td><td>AI 消息</td><td>全宽无背景</td><td>无气泡无头像；内容列 712px 居中；Markdown/代码块沿 iter-3 基线（本轮不重画）</td><td>3.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>27</td><td>CHG-003</td><td>操作栏</td><td>重排</td><td>components.md 悬停浮现（min-height 24px + opacity 0→1）：用户列右对齐（复制/修改）、AI 列左对齐（复制/版本）；24px r-sm text-3，hover hover-bg+text-1，title/aria-label</td><td>3.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>28</td><td>REQ-019</td><td>版本切换</td><td>‹ 1/2 ›</td><td>箭头常显 + 计数 12px text-3 tabular-nums min-width 30px；点击互换分支；无头像布局位置随操作栏、不位移</td><td>3.1（可交互）</td></tr>
+        <tr><td><input type="checkbox"></td><td>29</td><td>REQ-002</td><td>生成中</td><td>光标+提示</td><td>行内光标块 2px×1em primary-solid 0.9s 闪烁 +「正在生成…」12px text-3（沿用）</td><td>3.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>30</td><td>REQ-002</td><td>生成中断</td><td>warning pill</td><td>「生成中断」pill：warning-l 底（#FFF7E8/#38290F）+ warning 字（#B45309/#EDA23B，6.6:1）r-full 12px；位置在 AI 文本下方左缘</td><td>3.1/5.2</td></tr>
+        <tr><td><input type="checkbox"></td><td>31</td><td>REQ-002</td><td>已停止</td><td>中性 pill</td><td>「已停止生成」pill：hover-bg 底 + text-2 字 + 方块 icon（沿用）</td><td>3.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>32</td><td>REQ-015</td><td>编辑态</td><td>面板交互</td><td>气泡位换编辑面板（surface+primary 描边+3px focus-ring+r-lg，右列 ≤80%）；Enter 保存/Shift+Enter 换行/Esc 取消/IME 回车不保存；提示「保存后…将删除并重新生成」</td><td>3.1（可交互）</td></tr>
+        <tr><td><input type="checkbox"></td><td>33</td><td>REQ-007</td><td>错误气泡</td><td>无头像布局</td><td>danger-l 底（#FDECEA/#361B18）+ danger 标题 13px（4.8:1/6.5:1）+ 正文 14px text-2；左侧 max-width 76%；auth 类只显「前往高级设置」，其余类「重试」——口径不变</td><td>3.1/4.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>34</td><td>REQ-027</td><td>顶栏</td><td>完全去顶栏（推荐）</td><td>主区无顶栏（无导出钮/无主题钮/无标题栏）；消息区顶留白 24px；空态页与迁移提示条自然上移、口径不变</td><td>1.1/3.1/3.4</td></tr>
+        <tr><td><input type="checkbox"></td><td>35</td><td>REQ-027</td><td>顶栏</td><td>模型副标题</td><td>「模型：xxx」副标题整体移除；<b>统一 key（无档案）下顶栏无「未设置」类误导显示</b>（验收原文达成）</td><td>3.4</td></tr>
+        <tr><td><input type="checkbox"></td><td>36</td><td>REQ-013</td><td>导出入口</td><td>迁移</td><td>顶栏常驻「导出」按钮移除；入口 = 列表项「···」菜单「导出会话」（§8-②）；export.spec 点击路径适配全绿——T2 交付</td><td>3.4/1.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>37</td><td>REQ-028</td><td>设置弹窗</td><td>打开/尺寸/分区</td><td>账户「···」→设置打开；720px × ≤80vh 左右分栏（左导航 168px + 右分区面板；max-width calc(100vw-48px) 窄屏不溢出）；五分区一次只显示一个、各面板独立滚动；导航点击/方向键切换分区、切分区不丢表单状态；遮罩 --c-mask（rgba(31,35,41,.4)/rgba(0,0,0,.55)）z-100；r-lg + shadow-3 + surface；打开动效 .15s</td><td>4.1/4.2（可交互）</td></tr>
+        <tr><td><input type="checkbox"></td><td>38</td><td>REQ-028</td><td>设置弹窗</td><td>五分区完整</td><td>外观/密钥模式/高级设置·自填供应商/对话设置/账号（改密+注销）各自分区字段与整页版一致（4.1 对照表）；「只改容器不改逻辑」——settings/settings-form/账号全量 spec 弹窗下全绿（T3）</td><td>4.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>39</td><td>REQ-017</td><td>外观分段</td><td>同步联动</td><td>弹窗内浅色/深色分段与全局主题同状态同存储；切换即时生效（两入口一致）；REQ-017 条款随基线按 §8-① 改写</td><td>4.1（可交互）</td></tr>
+        <tr><td><input type="checkbox"></td><td>40</td><td>REQ-028</td><td>关闭方式</td><td>Esc/遮罩/关闭钮</td><td>三方式均可关；关闭后焦点回触发入口；头部 sticky 不随内容滚</td><td>4.1/4.2</td></tr>
+        <tr><td><input type="checkbox"></td><td>41</td><td>REQ-028</td><td>未保存拦截（推荐）</td><td>dirty 判定</td><td>系统提示词未保存 或 改密字段非空时关闭 → 「有未保存的修改，关闭后将丢失。」（取消/直接关闭）；无未保存直接关——§8-⑥ 定夺后按定案走查</td><td>4.1/4.2</td></tr>
+        <tr><td><input type="checkbox"></td><td>42</td><td>REQ-007</td><td>定位联动</td><td>前往高级设置</td><td>错误气泡按钮 → 弹窗打开 + smooth 滚动到「高级设置」区段（scroll-margin-top 16px 不贴顶）+ 主色浅底高亮 ≈1.6s；locateAdvanced 语义不变；iter-2 走查 15 场景复跑（T3）</td><td>4.1/3.1（可交互）</td></tr>
+        <tr><td><input type="checkbox"></td><td>43</td><td>REQ-021</td><td>内层级叠</td><td>注销/档案内层模态</td><td>DeleteAccountModal 与档案编辑模态 z-110 叠于弹窗（遮罩加深、面板 surface+shadow-3）；<b>Esc 先关最上层</b>；二者不同开</td><td>4.1/4.4（可交互）</td></tr>
+        <tr><td><input type="checkbox"></td><td>44</td><td>REQ-021</td><td>注销流程</td><td>二次确认</td><td>密码二次确认（演示 mm2026）+ 危险实底「永久注销账号」（空密码 disabled）；生成中自动终止不打断取消；成功清凭据跳登录页 + 成功绿 toast——沿 iter-9 基线零变化</td><td>4.1/4.4</td></tr>
+        <tr><td><input type="checkbox"></td><td>45</td><td>REQ-028</td><td>滚动行为</td><td>内容区/定位/窄屏</td><td>仅内容区滚动（细滚动条 --c-scrollbar）；档案内层模态打开时外层不滚；弹窗整体不溢出视口（≤480px 宽仅保证不溢出）</td><td>4.1/4.2</td></tr>
+        <tr><td><input type="checkbox"></td><td>46</td><td>REQ-017</td><td>全局</td><td>亮暗双主题</td><td>全部条目浅/暗各过一遍；§5 三组锁定双帧暗色无亮色残留；正文对比度 ≥4.5:1（tokens v1.3 计算值：正文 13.5/15.8:1、次级 6.9/5.5:1、弱化 4.6:1、主前景 5.2:1——浅色弱化 ~3.0:1 沿 v1.3 定夺 3 既有口径）</td><td>5.1~5.3</td></tr>
+        <tr><td><input type="checkbox"></td><td>47</td><td>口径</td><td>全局</td><td>不回退汇总</td><td>REQ-003（列表）/004（切换）/005（重命名删除）/012（标题截断）/013（导出）/016（搜索）/019（版本）交互口径不变；对应 spec 适配全绿为 T1/T2 门槛</td><td>1.2/1.3/3.4</td></tr>
+        <tr><td><input type="checkbox"></td><td>48</td><td>铁律5</td><td>样件数据</td><td>全局</td><td>用户名/密码 mm2026/档案 sk-****/额度「—」均为演示数据或占位；真实密钥仅存服务端、额度数值只由接口采集（未取到保持占位不编造）</td><td>§6</td></tr>
+        <tr><td><input type="checkbox"></td><td>49</td><td>适用性</td><td>不适用项</td><td>注明</td><td>移动端（除弹窗不溢出）不承诺；ComposerBox 不改（CHG-003 定案）；Markdown/代码块沿 iter-3 不重画；REQ-029 排 iter-12</td><td>§6</td></tr>
+      </table>
+      <div class="ann">共 <b>49</b> 条（REQ-026 侧栏与菜单 22 条 / REQ-027 消息流与顶栏 14 条 / REQ-028 设置弹窗 9 条 / 全局 4 条）。
+      「可交互」样件在本页可直接操作复核；行为类（跨零点单测、spec 适配全绿、iter-2 15 场景复跑）由 T1/T2/T3 自动化用例或手工走查取证留档。
+      v1.4.4 口径：T1/T2/T3 实现对照本清单逐条自查后再提交（plans 任务表验收标准明列「design-iter-11 走查清单留档」）。<b>所有条目须在浅色与暗色双主题下各过一遍</b>。
+      条 34/35/36/39/41 含待定夺关联（§8-①②⑥⑦），定案后按定案口径走查。</div>
+    </div>
+  </section>
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">8</span>CEO 待定夺项（8 项 —— 已全部定案，2026-08-16 基线批准「过了」）</h2>
+    <div class="sec-desc">
+      沿 iter-1~9 固化模式：设计师给推荐方案与理由 → CEO 拍板 → 固化为决策记录，T1/T2/T3 按定案实现。<b>本稿全部可交互样件已按「推荐」落形</b>（定夺若改选，改稿走评审修订，不默认套用）。
+    </div>
+
+    <div class="spec" style="border-color:#B45309;background:#FFF7E8;">
+      <div class="spec-title" style="color:#1F2329;">定夺区块（待 CEO 拍板 · 推荐方案速览）</div>
+      <div class="ann" style="color:#646A73;">
+        <b>① 顶栏主题按钮</b>——推荐：<b>移除</b>，主题入口收敛至设置弹窗「外观」（REQ-017 条款随基线改写）；<br>
+        <b>② 导出入口</b>——推荐：<b>会话列表项「···」菜单</b>新增「导出会话」；<br>
+        <b>③ 侧栏收起形态</b>——推荐：<b>窄条 rail 56px</b>（展开/新建/搜索图标 + 底部头像）；<br>
+        <b>④ 底部账户区</b>——推荐：<b>圆形首字头像 + 用户名</b>；<br>
+        <b>⑤ 设置弹窗布局</b>——<b>已定夺（2026-08-16 CEO：「不要都放在一个弹框里面…拆分一下」）：弹窗内左侧分区导航</b>；<br>
+        <b>⑥ 设置弹窗未保存关闭</b>——推荐：<b>条件拦截确认</b>（有未保存内容才拦截）；<br>
+        <b>⑦ 顶栏最终形态</b>——推荐：<b>完全去顶栏</b>；<br>
+        <b>⑧ 新令牌提案</b>——评估结论：<b>无提案</b>（零新增令牌；仅 components.md 资产沉淀四项，不涉令牌值）。
+      </div>
+    </div>
+
+    <table>
+      <tr><th style="width:40px">编号</th><th>问题</th><th>选项与推荐（样件已按推荐落形）</th><th>理由 / 备选（未采纳留档）</th></tr>
+      <tr>
+        <td>①</td>
+        <td>顶栏主题切换按钮去留（REQ-027.3：由本稿提案、CEO 基线定夺；设置内外观选项保留）</td>
+        <td><b>推荐：移除</b>——顶栏不再有主题按钮；主题切换唯一入口 = 设置弹窗「外观」分段控件（REQ-017 存量验收条款「顶栏 icon-only ghost」随基线同步改写，CHG-006 影响评估已预告）</td>
+        <td>改主题是低频设置项；DeepSeek/ChatGPT/Claude 均无顶栏主题钮、均在设置内；REQ-028 后设置即点即弹（账户「···」→设置，两击可达），路径损失可接受；顶栏要「完全去顶栏」（⑦）就必须移除此钮。<br>备选（未采纳）：保留顶栏（与去顶栏冲突）；移入账户菜单（两击可达但语义混杂——主题非账号操作，且与设置内入口重复）</td>
+      </tr>
+      <tr>
+        <td>②</td>
+        <td>导出入口位置（REQ-027.3：移除常驻「导出」后收纳入何处；REQ-013 功能口径不变）</td>
+        <td><b>推荐：会话列表项「···」菜单</b>新增「导出会话」项（重命名 / 导出会话 / 删除）——导出的是<b>该列表项对应的会话</b></td>
+        <td>语义正确：导出是会话级操作，落在会话的操作菜单；DeepSeek/ChatGPT 同款（会话菜单内导出/分享）；顺手修正现状「顶栏导出 = 永远导出当前会话」的隐式绑定，入口即对象。<br>备选（未采纳）：顶栏「···」（与⑦去顶栏冲突，且顶栏将不存在）；账户菜单（账号级菜单装会话级操作，语义错位）</td>
+      </tr>
+      <tr>
+        <td>③</td>
+        <td>侧栏收起形态（REQ-026.4：窄条 rail 约 48~56px vs 完全隐藏 + 主区顶部展开按钮）</td>
+        <td><b>推荐：窄条 rail 56px</b>——顶部展开（»）/新建（+）/搜索（🔍）图标 + 底部头像；收起钮在展开态品牌行右端（1.5 方案表）</td>
+        <td>新建/搜索保持一键可达（高频操作不因收起而多一步）；主区宽度仅缩 208px、布局稳定；头像锚点保留；与⑦协同——完全隐藏方案的展开钮需放主区顶部，而顶栏已被去除，无自然落位；DeepSeek 同款 rail。<br>备选（未采纳）：完全隐藏（主区最大化，但新建/搜索全部多一步、展开钮无家安放）</td>
+      </tr>
+      <tr>
+        <td>④</td>
+        <td>底部账户区形态（spec：仅显示用户名，「头像等视觉元素由 design-iter-11 定」）</td>
+        <td><b>推荐：圆形首字头像 + 用户名</b>——头像 24px 圆 <code>--c-avatar-bg</code> + 用户名首字 12px/500；rail 态底部同款头像 28px</td>
+        <td>DeepSeek/ChatGPT/Claude 账户区均带头像（行业通行）；rail 收起态（③）需要头像作账户锚点，展开态保持同款视觉连续；「···」菜单触发区更大更好点。<br>备选（未采纳）：仅用户名（更简，但 rail 态锚点缺失、与收起态视觉不连续）</td>
+      </tr>
+      <tr>
+        <td>⑤</td>
+        <td>设置弹窗布局（单列滚动 vs 弹窗内左侧分区导航）</td>
+        <td><b>已定夺：左侧分区导航</b>（2026-08-16 CEO 拍板「不要把功能显得那么的拥挤，拆分一下」）——720px 弹窗 = 左导航 168px（外观/密钥模式/高级设置/对话设置/账号，role=tablist，方向键可切换）+ 右分区面板（一次只显示一个，各面板独立滚动）</td>
+        <td>CEO 评审反馈单列五区块堆叠过于拥挤；拆分后每屏只呈现一个分区，信息密度可控、视觉与 DeepSeek 设置弹窗对齐。五区块内容与字段<b>零变化</b>（4.1 对照表不变），T3 仍可「只改容器不改逻辑」（分栏为容器层结构，表单组件不动）；「前往高级设置」定位由滚动改为分区直达，<code>locateAdvanced</code> prop 语义不变。原推荐单列（迁移面最小）被 CEO 否决——迁移成本增量可控（容器多一层导航）。</td>
+      </tr>
+      <tr>
+        <td>⑥</td>
+        <td>设置弹窗未保存时 Esc/遮罩关闭（读 SettingsForm 真实保存模式后给推荐）</td>
+        <td><b>推荐：条件拦截确认</b>——关闭时若「系统提示词有未保存修改」或「改密三字段任一非空」（两者为<b>显式保存</b>字段；外观/密钥模式即时生效、档案在内层模态显式保存，不参与判定）→ 弹「有未保存的修改，关闭后将丢失。」（取消 / 直接关闭）；否则直接关</td>
+        <td>SettingsForm 为显式保存模式（提示词需点「保存」、改密需点「更新密码」）；弹窗的误关概率远高于整页（Esc/遮罩误点），静默丢弃已输入内容违背 REQ-028 用户故事「改完即回、不丢失上下文」；判定为纯前端状态对比，实现轻、不打扰无改动用户。<br>备选（未采纳）：直接关（零改动，但静默丢输入；若选此，「清除/保存」提示语需另行补防丢提示）</td>
+      </tr>
+      <tr>
+        <td>⑦</td>
+        <td>顶栏最终形态（精简后仅剩标题的栏 vs 完全去顶栏）</td>
+        <td><b>推荐：完全去顶栏</b>——导出已迁（②）、模型副标题移除、主题钮移除（①）后顶栏仅剩一个截断标题，不再保留；当前会话标题由侧栏选中项承载</td>
+        <td>一整条栏只为一个标题服务不划算（信息侧栏已有）；消息区垂直空间 +48px（长对话收益直接）；DeepSeek 参照物无顶栏；「对齐 DeepSeek」的完成态。已知代价：收起 rail 态看不到当前标题（③ 已知，DeepSeek 同款，可接受）。<br>备选（未采纳）：仅标题栏（保守、改动小，但 48px 换一个 ellipsis 标题性价比低；若 CEO 顾虑收起态迷失，可回退此案）</td>
+      </tr>
+      <tr>
+        <td>⑧</td>
+        <td>新令牌提案（若评估需要）</td>
+        <td><b>无提案</b>——本稿零新增令牌、零自造色值；下拉菜单/rail/账户区/用户浅气泡全部为既有令牌组合</td>
+        <td>tokens v1.3/v1.3.1 值域充足：菜单 = surface/border/shadow-2；用户气泡 = <code>--c-avatar-bg</code>（头像令牌转任用户侧底色，值不变）；rail/账户头像 = avatar-bg。仅建议随基线在 <b>components.md</b> 登记四项新形态（§6，资产沉淀不涉令牌批准，沿 iter-7/8/9 惯例）</td>
+      </tr>
+    </table>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">9</span>基线声明（已基线）</h2>
+    <div class="sec-desc">
+      本稿为 <b>design-iter-11 已基线</b>（2026-08-16 CEO 批准「过了」，tag design-iter-11）：REQ-026 侧栏与主界面框架（单行列表 + 时间分组 + 账户区 + 收起 rail）、
+      REQ-027 消息流与顶栏（去头像 + 用户浅气泡 + 顶栏精简）、REQ-028 设置弹窗化（五分区模态 + 左侧导航 + 定位联动 + 层叠方案）、
+      通用下拉菜单交互规格（§2 专章）+ §7.2 走查清单（49 条，v1.4.4），对应 iter-11.md T0 全部交付点；
+      定夺 8 项（§8）全定案：①②③④⑥⑦⑧ 按推荐、⑤ 按 R1 CEO 指示（左侧分区导航）。
+      T1/T2/T3 按定案开发、对照 7.2 清单逐条自查留档；
+      定夺①落定（移除顶栏主题按钮）→ REQ-017 存量条款已随基线同步改写（CHG-006 影响评估登记动作，不作为实现偏差）。
+      全部色值取自公司 design-system tokens.md v1.3/v1.3.1，零新增令牌；文档结构与 .tk 作用域沿 design-iter-9 范本。
+    </div>
+  </section>
+
+</div>
+
+<script>
+/* ============================================================
+   演示交互（文档功能件）：主题 / toast / Esc 栈 / 通用下拉菜单引擎 /
+   §1 侧栏状态机 / §3 消息流 / §4+设置弹窗 / §5 锁定帧
+   —— 样件数据均为演示数据（铁律 5：线上凭据与额度只由后端/接口处理）
+   ============================================================ */
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+  /* ---------- 主题（写 localStorage；外观分段同步） ---------- */
+  var TKEY = 'mm-demo-theme';
+  var btnLight = $('btnLight'), btnDark = $('btnDark');
+  function applyTheme(t) {
+    document.querySelectorAll('.tk:not(.force-light):not(.force-dark)').forEach(function (f) { f.classList.toggle('dark', t === 'dark'); });
+    btnLight.classList.toggle('on', t === 'light');
+    btnDark.classList.toggle('on', t === 'dark');
+    document.querySelectorAll('[data-stseg="light"]').forEach(function (b) { b.classList.toggle('on', t === 'light'); });
+    document.querySelectorAll('[data-stseg="dark"]').forEach(function (b) { b.classList.toggle('on', t === 'dark'); });
+    try { localStorage.setItem(TKEY, t); } catch (e) {}
+  }
+  var savedTheme = 'light';
+  try { savedTheme = localStorage.getItem(TKEY) || 'light'; } catch (e) {}
+  btnLight.addEventListener('click', function () { applyTheme('light'); });
+  btnDark.addEventListener('click', function () { applyTheme('dark'); });
+
+  /* ---------- toast（深底 on-dark 族令牌） ---------- */
+  function toast(html) {
+    var host = $('toastHost');
+    var el = document.createElement('div');
+    el.className = 'toast';
+    el.innerHTML = html;
+    host.appendChild(el);
+    setTimeout(function () { if (el.parentNode) host.removeChild(el); }, 3200);
+  }
+
+  /* ---------- Esc 栈（LIFO：先关最上层——菜单/弹窗/内层模态共用） ---------- */
+  var escStack = [];
+  function escPush(fn) { escStack.push(fn); }
+  function escRemove(fn) { var i = escStack.indexOf(fn); if (i > -1) escStack.splice(i, 1); }
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    var top = escStack[escStack.length - 1];
+    if (top) { e.preventDefault(); top(); }
+  });
+
+  /* ---------- 通用下拉菜单引擎（§2 交互规格的实现样） ---------- */
+  var menu = null; // { el, trigger, stage, esc }
+  function onMenuDocClick(e) {
+    if (!menu) return;
+    if (menu.el.contains(e.target)) return;           // 菜单内点击：交给菜单项自身
+    e.stopPropagation(); e.preventDefault();          // 外点 = 关闭且吞掉该次点击（§2.1 外点关闭）
+    closeMenu(false);
+  }
+  function onMenuScroll() { if (menu) closeMenu(false); } // 底层滚动即关（§2.1）
+  function closeMenu(focusBack) {
+    if (!menu) return;
+    var m = menu; menu = null;
+    document.removeEventListener('click', onMenuDocClick, true);
+    m.stage.removeEventListener('scroll', onMenuScroll, true);
+    escRemove(m.esc);
+    if (m.el.parentNode) m.el.parentNode.removeChild(m.el);
+    m.trigger.setAttribute('aria-expanded', 'false');
+    if (focusBack) { try { m.trigger.focus(); } catch (err) {} }
+  }
+  function openMenu(stage, anchorRow, trigger, items) {
+    closeMenu(false); // 多实例互斥：开新即关旧（§2.1）
+    var el = document.createElement('div');
+    el.className = 'dd-menu';
+    el.setAttribute('role', 'menu');
+    items.forEach(function (it) {
+      if (it === '-') { var d = document.createElement('div'); d.className = 'dd-sep'; el.appendChild(d); return; }
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'mi' + (it.danger ? ' danger' : '');
+      b.setAttribute('role', 'menuitem');
+      b.textContent = it.label;
+      if (it.disabled) {
+        b.disabled = true;
+        b.setAttribute('aria-disabled', 'true');
+        if (it.reason) b.title = it.reason;
+      } else {
+        b.addEventListener('click', function () { closeMenu(true); it.on(); });
+      }
+      el.appendChild(b);
+    });
+    stage.appendChild(el);
+    // 定位：右对齐触发行右缘（内收 10px）；下方空间不足上翻（§2.1 菜单定位）
+    var sr = stage.getBoundingClientRect(), ar = anchorRow.getBoundingClientRect();
+    var mw = el.offsetWidth, mh = el.offsetHeight;
+    el.style.left = Math.max(4, ar.right - sr.left - mw - 10) + 'px';
+    var below = ar.bottom - sr.top + 4;
+    if (below + mh > sr.height - 8) { el.style.top = 'auto'; el.style.bottom = (sr.bottom - ar.top + 4) + 'px'; }
+    else { el.style.bottom = 'auto'; el.style.top = below + 'px'; }
+    // 键盘矩阵（§2.2）
+    el.addEventListener('keydown', function (e) {
+      var btns = Array.prototype.filter.call(el.querySelectorAll('.mi'), function (b) { return !b.disabled; });
+      var idx = btns.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown') { e.preventDefault(); btns[(idx + 1 + btns.length) % btns.length].focus(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); btns[(idx - 1 + btns.length) % btns.length].focus(); }
+      else if (e.key === 'Home') { e.preventDefault(); if (btns[0]) btns[0].focus(); }
+      else if (e.key === 'End') { e.preventDefault(); if (btns.length) btns[btns.length - 1].focus(); }
+      else if (e.key === 'Tab') { closeMenu(false); }
+    });
+    trigger.setAttribute('aria-expanded', 'true');
+    document.addEventListener('click', onMenuDocClick, true);
+    stage.addEventListener('scroll', onMenuScroll, true);
+    var rec = { el: el, trigger: trigger, stage: stage };
+    rec.esc = function () { closeMenu(true); };
+    escPush(rec.esc);
+    menu = rec;
+    var first = el.querySelector('.mi:not([disabled])');
+    if (first) first.focus();
+  }
+
+  /* ---------- 共用 SVG ---------- */
+  var DOTS_SVG = '<svg width="16" height="16" viewBox="0 0 14 14" fill="currentColor"><circle cx="3" cy="7" r="1.5"/><circle cx="7" cy="7" r="1.5"/><circle cx="11" cy="7" r="1.5"/></svg>';
+  var CHEV_L_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var PLUS_SVG = '<svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+  var SEARCH_SVG = '<svg width="14" height="14" viewBox="0 0 24 24"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5Zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14Z"/></svg>';
+  var EYE_SVG = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M1.5 8S3.8 3.5 8 3.5 14.5 8 14.5 8 12.2 12.5 8 12.5 1.5 8 1.5 8z" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.2"/></svg>';
+  var EYE_OFF_SVG = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 2l12 12" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M6.5 6.6a2 2 0 0 0 2.9 2.9M4 4.5C2.6 5.5 1.5 8 1.5 8s2.3 4.5 6.5 4.5c1.4 0 2.6-.4 3.5-1M14.5 8s-1.1 2.2-3 3.4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>';
+  var COPY_SVG = '<svg width="13" height="13" viewBox="0 0 24 24"><path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/></svg>';
+  var EDIT_SVG = '<svg width="13" height="13" viewBox="0 0 24 24"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>';
+  var TRASH_SVG = '<svg width="13" height="13" viewBox="0 0 24 24"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-3 6h12l-1 12H7L6 9Zm4 2v8h1.5v-8H10Zm3 0v8h1.5v-8H13Z"/></svg>';
+  var SHIELD_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="flex:none;"><path fill="none" stroke="currentColor" stroke-width="1.6" d="M12 3l7 2.6v5.6c0 4.4-3 8.3-7 9.8-4-1.5-7-5.4-7-9.8V5.6L12 3z"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M9.2 9.2l5.6 5.6M14.8 9.2l-5.6 5.6"/></svg>';
+  var LOGO_SVG = '<svg viewBox="0 0 128 128" width="20" height="20" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>';
+  /* ---------- 设置弹窗 HTML 生成器（字段核对自 SettingsForm.vue / KeyModeCard.vue） ---------- */
+  function pwdFieldHtml(P, key, label, ph, hintTxt, errTxt, autocomp) {
+    return '<div class="field" id="' + P + key + 'F">' +
+      '<label>' + label + '<span class="req">*</span></label>' +
+      '<div class="key-row">' +
+      '<input type="password" id="' + P + key + '" placeholder="' + ph + '" autocomplete="' + autocomp + '">' +
+      '<button class="key-eye" data-eye="' + P + key + '" title="显示/隐藏密码" aria-label="显示/隐藏密码"></button>' +
+      '</div>' +
+      (hintTxt ? '<div class="hint">' + hintTxt + '</div>' : '') +
+      '<div class="hint err" id="' + P + key + 'Err">' + errTxt + '</div>' +
+      '</div>';
+  }
+  function settingsModalHtml(P) {
+    return '<div class="smask" id="' + P + 'Mask" style="display:none;">' +
+      '<div class="smodal" role="dialog" aria-modal="true" aria-label="设置">' +
+        '<div class="sm-head">' +
+          '<div class="sm-title">设置</div>' +
+          '<button class="icon-btn sm-close" id="' + P + 'Close" title="关闭设置" aria-label="关闭设置"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>' +
+        '</div>' +
+        /* R1（CEO 定夺：拆分不拥挤）：左导航五分区，一次只显示一个分区；五区块内容与字段零变化（4.1 对照表） */
+        '<div class="sm-body" id="' + P + 'Body">' +
+          '<nav class="sm-nav" role="tablist" aria-label="设置分区">' +
+            '<button type="button" data-pane="appearance" role="tab" aria-selected="true">外观</button>' +
+            '<button type="button" data-pane="mode" role="tab" aria-selected="false">密钥模式</button>' +
+            '<button type="button" data-pane="adv" role="tab" aria-selected="false">高级设置</button>' +
+            '<button type="button" data-pane="chat" role="tab" aria-selected="false">对话设置</button>' +
+            '<button type="button" data-pane="account" role="tab" aria-selected="false">账号</button>' +
+          '</nav>' +
+          '<div class="sm-pane on" data-pane-body="appearance" role="tabpanel">' +
+            '<div class="sec-label first">外观</div>' +
+            '<div class="seg-picker" role="radiogroup" aria-label="主题">' +
+              '<button type="button" data-stseg="light" role="radio">浅色</button>' +
+              '<button type="button" data-stseg="dark" role="radio">深色</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="sm-pane" data-pane-body="mode" role="tabpanel">' +
+            '<div class="sec-label first">密钥模式</div>' +
+            '<div class="mode-card">' +
+              '<div class="mode-head"><span class="mode-ico"><svg width="18" height="18" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.2" stroke="currentColor" stroke-width="1.4"/><path d="M5.4 8.2l1.8 1.8 3.4-3.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' +
+              '<span class="mode-title">服务端统一密钥</span><span class="mode-badge">当前模式</span></div>' +
+              '<p class="mode-desc"><b>零配置</b>：无需填写任何密钥，免费额度内即可对话。请求经服务端代理转发。对话默认使用本模式；密钥仅存服务端。</p>' +
+              '<div class="quota-row"><span>免费额度：每日 — 次对话 · 今日已用 —</span><span class="tag-occ">占位 · 数值由管理员配置（REQ-024，iter-8）</span></div>' +
+              '<div class="mode-actions"><button type="button" class="link-adv" id="' + P + 'AdvLink">在「高级设置」中添加自有密钥，解锁更高配额 →</button></div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="sm-pane" data-pane-body="adv" role="tabpanel">' +
+            '<div class="sec-label first" id="' + P + 'Adv">高级设置 · 自填供应商密钥</div>' +
+            '<div class="adv-box">' +
+              '<p class="adv-intro">填写自有 Base URL / 模型名 / API Key，解锁更高配额。<b>密钥仅存服务端</b>（受保护存储），登录后任意设备可见；浏览器本地不存储任何密钥。</p>' +
+              '<div class="profile-list">' +
+                '<div class="profile-item current"><div class="p-info"><span class="p-name">DeepSeek 官方</span><span class="p-sub">api.deepseek.com · deepseek-chat · sk-****a3f2</span></div><span class="p-current" title="当前生效">当前生效</span></div>' +
+                '<div class="profile-item"><div class="p-info"><span class="p-name">GLM</span><span class="p-sub">open.bigmodel.cn · glm-4.7 · sk-****w9xz</span></div>' +
+                '<button type="button" class="p-btn">设为当前</button>' +
+                '<button type="button" class="p-icon" title="编辑档案" aria-label="编辑档案">' + EDIT_SVG + '</button>' +
+                '<button type="button" class="p-icon" title="删除档案" aria-label="删除档案">' + TRASH_SVG + '</button></div>' +
+              '</div>' +
+              '<div class="actions"><button type="button" class="btn-b" id="' + P + 'ProfAdd"><svg width="13" height="13" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:4px;"><path fill="currentColor" d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5Z"/></svg>添加供应商档案</button></div>' +
+              '<p class="adv-hint">「设为当前」即切换为<b>自填模式</b>，下一次请求生效；<b>当前生效的档案不可删除</b>，请先切换到其他档案或回退统一密钥。</p>' +
+            '</div>' +
+          '</div>' +
+          '<div class="sm-pane" data-pane-body="chat" role="tabpanel">' +
+            '<div class="sec-label first">对话设置</div>' +
+            '<label class="field" style="margin-bottom:0;">' +
+              '<span class="f-label">系统提示词<span class="opt">可选</span></span>' +
+              '<textarea class="prompt-ta" id="' + P + 'Prompt" placeholder="定义 AI 的角色与回复风格，如：你是一个简洁的翻译助手，回复不超过三句话。&#10;留空则不使用系统提示词，按普通对话正常请求。"></textarea>' +
+              '<span class="char-count" id="' + P + 'Count">0 字</span>' +
+            '</label>' +
+            '<div class="actions" style="margin-top:12px;">' +
+              '<button type="button" class="btn-p" id="' + P + 'PromptSave" style="height:32px;padding:0 16px;">保存</button>' +
+              '<button type="button" class="btn-text-danger" id="' + P + 'PromptClear" style="display:none;">清除</button>' +
+              '<span class="saved-flag" id="' + P + 'PromptOk" style="display:none;"><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2.5 7.5l3 3 6-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>已保存</span>' +
+            '</div>' +
+          '</div>' +
+          '<div class="sm-pane" data-pane-body="account" role="tabpanel">' +
+            '<div class="sec-label first">账号</div>' +
+            '<div id="' + P + 'PwdZone">' +
+              pwdFieldHtml(P, 'Old', '旧密码', '输入当前登录密码', '', '旧密码错误', 'current-password') +
+              pwdFieldHtml(P, 'New', '新密码', '至少 8 位，最多 128 位', '至少 8 位，需包含字母与数字；不得与旧密码相同', '新密码至少 8 位，需包含字母与数字', 'new-password') +
+              pwdFieldHtml(P, 'Cf', '确认新密码', '再次输入新密码', '', '两次输入的密码不一致', 'new-password') +
+              '<div class="ok-banner" id="' + P + 'PwdOk" style="display:none;margin-bottom:16px;"><span class="ob-ico">✓</span><span><span class="ob-title">密码已更新。</span>除当前设备外的其他设备已退出登录，需重新登录后再使用。</span></div>' +
+              '<button type="button" class="btn-p" id="' + P + 'PwdSubmit" style="width:100%;max-width:420px;">更新密码</button>' +
+            '</div>' +
+            '<div class="danger-zone">' +
+              '<div class="dz-title">' + SHIELD_SVG + '注销账号</div>' +
+              '<div class="dz-desc">将删除账号「猫南北」与<b>全部云端数据</b>（会话、供应商档案、密钥等），此操作<b>不可恢复</b>。</div>' +
+              '<div class="dz-actions"><button type="button" class="btn-d" id="' + P + 'DelAcct">注销账号</button></div>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        /* 内层模态（z-110 叠层，4.4）：档案添加 / 注销二次确认 / 未保存确认 */
+        '<div class="imask" id="' + P + 'ProfMask" style="display:none;z-index:110;">' +
+          '<div class="ipanel">' +
+            '<h3>添加供应商档案</h3>' +
+            '<div class="c-body" style="margin-bottom:12px;">按 OpenAI 兼容协议填写三项；<b>密钥仅存服务端</b>（受保护存储），浏览器本地不保留。</div>' +
+            '<div class="field"><label>档案名称<span class="req">*</span></label><input type="text" placeholder="如：DeepSeek / GLM / 公司中转"><div class="hint">列表中显示，用于区分多套档案</div></div>' +
+            '<div class="field"><label>Base URL<span class="req">*</span></label><input type="text" placeholder="https://api.deepseek.com"></div>' +
+            '<div class="field"><label>模型名<span class="req">*</span></label><input type="text" placeholder="deepseek-chat"></div>' +
+            '<div class="field"><label>API Key<span class="req">*</span></label><input type="password" placeholder="sk-…"><div class="hint">填写后仅上传服务端保存，界面不再回显明文（编辑时留空 = 沿用原密钥，沿 design-iter-7 §2.2）</div></div>' +
+            '<div class="m-actions2"><button type="button" class="btn-b" id="' + P + 'ProfCancel">取消</button><button type="button" class="btn-p" id="' + P + 'ProfSave">保存档案</button></div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="imask" id="' + P + 'DelMask" style="display:none;z-index:110;">' +
+          '<div class="ipanel" style="width:420px;">' +
+            '<h3>注销账号？</h3>' +
+            '<div class="c-body">将删除账号「<b style="color:var(--c-text-1);">猫南北</b>」与<b>全部云端数据</b>（会话、供应商档案、密钥等）。此操作<b>不可恢复</b>，删除后无法找回。</div>' +
+            '<div class="field" style="margin-top:16px;" id="' + P + 'DelPwdF"><label>输入登录密码确认<span class="req">*</span></label>' +
+            '<div class="key-row"><input type="password" id="' + P + 'DelPwd" placeholder="输入当前登录密码" autocomplete="current-password"><button class="key-eye" data-eye="' + P + 'DelPwd" title="显示/隐藏密码" aria-label="显示/隐藏密码"></button></div>' +
+            '<div class="hint err" id="' + P + 'DelErr">密码不正确，账号与数据未发生任何变更</div></div>' +
+            '<div class="m-actions2"><button type="button" class="btn-b" id="' + P + 'DelCancel">取消</button><button type="button" class="btn-d" id="' + P + 'DelOk" disabled>永久注销账号</button></div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="imask" id="' + P + 'DirtyMask" style="display:none;z-index:120;">' +
+          '<div class="ipanel" style="width:420px;">' +
+            '<h3>有未保存的修改</h3>' +
+            '<div class="c-body">关闭后将丢失未保存的修改（系统提示词 / 密码输入）。确定要关闭设置吗？</div>' +
+            '<div class="m-actions2"><button type="button" class="btn-b" id="' + P + 'DirtyCancel">取消</button><button type="button" class="btn-d" id="' + P + 'DirtyClose">直接关闭</button></div>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+  var SETTINGS = {};
+  function bindSettings(P) {
+    var mask = $(P + 'Mask'), body = $(P + 'Body'), adv = $(P + 'Adv');
+    var prompt = $(P + 'Prompt'), count = $(P + 'Count');
+    var promptOk = $(P + 'PromptOk'), promptClear = $(P + 'PromptClear');
+    var savedPrompt = ''; // 已保存值（显式保存模式：dirty 判定源之一）
+    var lastOpener = null, okTimer = null;
+    var openEsc = function () { attemptClose(); };
+    /* R1：左侧分区导航（role=tablist）——一次只显示一个分区；「前往高级设置」= 切 adv 分区 + flash（4.3） */
+    var navBtns = mask.querySelectorAll('.sm-nav [data-pane]');
+    var navArr = Array.prototype.slice.call(navBtns);
+    function curPane() {
+      var on = mask.querySelector('.sm-nav button.on');
+      return on ? on.getAttribute('data-pane') : 'appearance';
+    }
+    function showPane(key, focusNav) {
+      navBtns.forEach(function (b) {
+        var isOn = b.getAttribute('data-pane') === key;
+        b.classList.toggle('on', isOn);
+        b.setAttribute('aria-selected', isOn ? 'true' : 'false');
+      });
+      mask.querySelectorAll('.sm-pane').forEach(function (p) {
+        p.classList.toggle('on', p.getAttribute('data-pane-body') === key);
+      });
+      var pane = mask.querySelector('.sm-pane[data-pane-body="' + key + '"]');
+      if (pane) pane.scrollTop = 0;
+      if (focusNav) { var nb = mask.querySelector('.sm-nav [data-pane="' + key + '"]'); if (nb) try { nb.focus(); } catch (e) {} }
+    }
+    navBtns.forEach(function (b) {
+      b.addEventListener('click', function () { showPane(b.getAttribute('data-pane'), false); });
+      b.addEventListener('keydown', function (e) {
+        var i = navArr.indexOf(b), n = navArr.length, j = -1;
+        if (e.key === 'ArrowDown' || e.key === 'ArrowRight') j = (i + 1) % n;
+        else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') j = (i - 1 + n) % n;
+        if (j >= 0) { e.preventDefault(); showPane(navArr[j].getAttribute('data-pane'), true); }
+      });
+    });
+    function flashAdv() {
+      adv.classList.add('flash');
+      setTimeout(function () { adv.classList.remove('flash'); }, 1600);
+    }
+    function isOpen() { return mask.style.display === 'flex'; }
+    function showInner(el, escFn) { el.style.display = 'flex'; escPush(escFn); }
+    function hideInner(el, escFn) { el.style.display = 'none'; escRemove(escFn); }
+    /* 内层 Esc（先关最上层，4.4） */
+    var profEsc = function () { hideProf(); };
+    var delEsc = function () { hideDel(); };
+    var dirtyEsc = function () { hideDirty(); };
+    function hideProf() { hideInner($(P + 'ProfMask'), profEsc); }
+    function hideDel() { hideInner($(P + 'DelMask'), delEsc); }
+    function hideDirty() { hideInner($(P + 'DirtyMask'), dirtyEsc); }
+    function isDirty() {
+      if (!isOpen()) return false;
+      if (prompt.value !== savedPrompt) return true;
+      return !!($(P + 'Old').value || $(P + 'New').value || $(P + 'Cf').value);
+    }
+    function open(locate, opener) {
+      if (opener) lastOpener = opener;
+      mask.style.display = 'flex';
+      escPush(openEsc);
+      if (locate) showPane('adv', false); /* 「前往高级设置」：直接落在高级设置分区并高亮（4.3） */
+      requestAnimationFrame(function () { if (locate) flashAdv(); });
+      setTimeout(function () { try { $(P + 'Close').focus(); } catch (e) {} }, 0);
+    }
+    function forceClose() {
+      hideProf(); hideDel(); hideDirty();
+      mask.style.display = 'none';
+      escRemove(openEsc);
+      [P + 'Old', P + 'New', P + 'Cf'].forEach(function (k) { var el = $(k); if (el) el.value = ''; });
+      [P + 'Old', P + 'New', P + 'Cf'].forEach(function (k) { var f = $(k + 'F'); if (f) f.classList.remove('invalid'); });
+      if (lastOpener && lastOpener.focus) { try { lastOpener.focus(); } catch (e) {} }
+    }
+    function attemptClose() {
+      if (!isOpen()) return;
+      if (isDirty()) showInner($(P + 'DirtyMask'), dirtyEsc);
+      else forceClose();
+    }
+    /* 关闭三方式（4.2） */
+    $(P + 'Close').addEventListener('click', attemptClose);
+    mask.addEventListener('click', function (e) { if (e.target === mask) attemptClose(); });
+    $(P + 'DirtyCancel').addEventListener('click', hideDirty);
+    $(P + 'DirtyClose').addEventListener('click', function () { forceClose(); });
+    /* 外观分段：与全局主题同状态同存储（REQ-017） */
+    mask.querySelectorAll('[data-stseg]').forEach(function (b) {
+      b.addEventListener('click', function () { applyTheme(b.getAttribute('data-stseg')); });
+    });
+    /* 密钥模式卡「在高级设置…」→ 切到高级设置分区并高亮 */
+    $(P + 'AdvLink').addEventListener('click', function () {
+      showPane('adv', false);
+      requestAnimationFrame(flashAdv);
+    });
+    /* 档案添加内层模态（4.4） */
+    $(P + 'ProfAdd').addEventListener('click', function () { showInner($(P + 'ProfMask'), profEsc); });
+    $(P + 'ProfCancel').addEventListener('click', hideProf);
+    $(P + 'ProfSave').addEventListener('click', function () { hideProf(); toast('档案已保存（演示）——字段校验与密钥不回显口径沿 design-iter-7 §2.2'); });
+    /* 注销二次确认（沿 design-iter-9 §3.1 基线） */
+    $(P + 'DelAcct').addEventListener('click', function () {
+      $(P + 'DelPwd').value = '';
+      $(P + 'DelOk').disabled = true;
+      $(P + 'DelPwdF').classList.remove('invalid');
+      showInner($(P + 'DelMask'), delEsc);
+    });
+    $(P + 'DelCancel').addEventListener('click', hideDel);
+    $(P + 'DelPwd').addEventListener('input', function () {
+      $(P + 'DelOk').disabled = this.value.trim() === '';
+      $(P + 'DelPwdF').classList.remove('invalid');
+    });
+    $(P + 'DelOk').addEventListener('click', function () {
+      if ($(P + 'DelPwd').value.trim() !== 'mm2026') { $(P + 'DelPwdF').classList.add('invalid'); return; }
+      hideDel();
+      toast('<span class="t-ok">✓ 账号已删除（演示）</span>真实流程：清凭据跳登录页 + 成功 toast（沿 design-iter-9 基线）');
+    });
+    /* 对话设置（显式保存：dirty 判定源） */
+    function updCount() { count.textContent = prompt.value.trim().length + ' 字'; }
+    prompt.addEventListener('input', function () { updCount(); });
+    $(P + 'PromptSave').addEventListener('click', function () {
+      savedPrompt = prompt.value;
+      promptOk.style.display = 'inline-flex';
+      promptClear.style.display = savedPrompt ? 'inline-block' : 'none';
+      clearTimeout(okTimer);
+      okTimer = setTimeout(function () { promptOk.style.display = 'none'; }, 2000);
+    });
+    promptClear.addEventListener('click', function () {
+      prompt.value = ''; savedPrompt = ''; updCount();
+      promptClear.style.display = 'none';
+      toast('已清除，后续对话将不使用系统提示词（演示）');
+    });
+    /* 改密（沿 SettingsForm 校验文案；正确旧密码 = mm2026） */
+    function setPwdErr(key, msg) { var f = $(P + key + 'F'); f.classList.add('invalid'); if (msg) $(P + key + 'Err').textContent = msg; }
+    [P + 'Old', P + 'New', P + 'Cf'].forEach(function (k) {
+      $(k).addEventListener('input', function () { $(k + 'F').classList.remove('invalid'); });
+    });
+    $(P + 'PwdSubmit').addEventListener('click', function () {
+      [P + 'Old', P + 'New', P + 'Cf'].forEach(function (k) { $(k + 'F').classList.remove('invalid'); });
+      $(P + 'PwdOk').style.display = 'none';
+      var o = $(P + 'Old').value.trim(), n = $(P + 'New').value, c = $(P + 'Cf').value;
+      if (!o) { setPwdErr('Old', '必填：请输入旧密码'); return; }
+      if (!n) { setPwdErr('New', '必填：请输入新密码'); return; }
+      if (!c) { setPwdErr('Cf', '必填：请再次输入新密码'); return; }
+      if (o !== 'mm2026') { setPwdErr('Old', '旧密码错误'); return; }
+      if (n.length < 8 || !/[a-zA-Z]/.test(n) || !/\d/.test(n)) { setPwdErr('New', '新密码至少 8 位，需包含字母与数字'); return; }
+      if (n === o) { setPwdErr('New', '新密码不能与旧密码相同'); return; }
+      if (n !== c) { setPwdErr('Cf', '两次输入的密码不一致'); return; }
+      $(P + 'PwdOk').style.display = 'flex';
+      $(P + 'Old').value = ''; $(P + 'New').value = ''; $(P + 'Cf').value = '';
+      toast('<span class="t-ok">✓ 密码已更新</span>其他设备已退出登录（演示）');
+    });
+    SETTINGS[P] = { open: open };
+  }
+  /* 注入三处弹窗实例并绑定（a = §1 舞台 / mf = §3 / st = §4） */
+  ['a', 'mf', 'st'].forEach(function (P) {
+    $(P + 'Ovl').innerHTML = settingsModalHtml(P);
+  });
+  /* 密码显隐（注入后统一绑定） */
+  document.querySelectorAll('.key-eye[data-eye]').forEach(function (btn) {
+    btn.innerHTML = EYE_SVG;
+    btn.addEventListener('click', function () {
+      var input = $(btn.getAttribute('data-eye'));
+      if (!input) return;
+      var show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.innerHTML = show ? EYE_OFF_SVG : EYE_SVG;
+      btn.setAttribute('title', show ? '隐藏密码' : '显示密码');
+      btn.setAttribute('aria-label', show ? '隐藏密码' : '显示密码');
+    });
+  });
+  bindSettings('a'); bindSettings('mf'); bindSettings('st');
+  applyTheme(savedTheme); // 注入后应用（外观分段初始态同步）
+  /* ============================================================
+     §1 侧栏状态机（演示数据全为编造样例；corrupted/中断 pill/搜索命中分支齐全）
+     ============================================================ */
+  var RKEY = 'mm-demo-iter11-rail';
+  var GROUPS = [
+    { key: 'today', label: '今天' },
+    { key: 'yesterday', label: '昨天' },
+    { key: 'week', label: '近 7 天' },
+    { key: 'earlier', label: '更早' }
+  ];
+  var SDATA_SEED = [
+    { id: 's1', g: 'today', t: '帮我写一封请假邮件，主题是家中有事需要请假一天', body: '' },
+    { id: 's2', g: 'today', t: '流式请求的代码示例', body: '用 fetch 实现 SSE 流式读取，含 AbortController 中止' },
+    { id: 's3', g: 'today', t: 'DeepSeek 接入配置', body: '统一密钥模式零配置，高级设置里添加了自有供应商档案', pill: 'cut' },
+    { id: 's4', g: 'yesterday', t: 'Vue3 组合式 API 最佳实践整理', body: '' },
+    { id: 's5', g: 'yesterday', t: '一个特别长的会话标题用来验证单行省略与 title 提示是否生效', body: '' },
+    { id: 's6', g: 'week', t: '周报草稿', body: '' },
+    { id: 's7', g: 'week', t: 'SQLite 备份恢复方案', body: '', corrupted: true, pill: 'broken' },
+    { id: 's8', g: 'week', t: '喵喵公司流程梳理', body: '把公司宪法、OSSP 流程与 registry 的关系讲清楚' },
+    { id: 's9', g: 'earlier', t: '欢迎会话', body: '' },
+    { id: 's10', g: 'earlier', t: '登录页设计稿评审意见', body: '' }
+  ];
+  var st = { sessions: SDATA_SEED.slice(), activeId: 's1', q: '', admin: false };
+  var nid = 0;
+  function byId(id) { for (var i = 0; i < st.sessions.length; i++) if (st.sessions[i].id === id) return st.sessions[i]; return null; }
+  function hlText(text, q) {
+    if (!q) return esc(text);
+    var lt = text.toLowerCase(), i = lt.indexOf(q);
+    if (i < 0) return esc(text);
+    return esc(text.slice(0, i)) + '<mark class="hl">' + esc(text.substr(i, q.length)) + '</mark>' + esc(text.slice(i + q.length));
+  }
+  function itemHtml(s, q, bodyHit) {
+    var on = s.id === st.activeId ? ' on' : '';
+    var cor = s.corrupted ? ' corrupted' : '';
+    var titleAttr = s.corrupted ? '无法读取的会话' : s.t;
+    var titleInner = s.corrupted ? '无法读取的会话' : hlText(s.t, q);
+    var pill = s.pill === 'broken' ? '<span class="pill broken">无法读取</span>'
+      : s.pill === 'cut' ? '<span class="pill cut">生成中断</span>' : '';
+    var snip = bodyHit ? '<div class="s-snip">' + hlText(s.body || '', q) + '</div>' : '';
+    return '<div class="s-item' + on + cor + '" data-id="' + s.id + '">' +
+      '<span class="s-title" title="' + esc(titleAttr) + '">' + titleInner + '</span>' + pill +
+      '<button class="more-btn" aria-label="会话操作" aria-haspopup="true" title="会话操作">' + DOTS_SVG + '</button>' + snip + '</div>';
+  }
+  function renderSide() {
+    var host = $('aList'), html = '';
+    var q = st.q.trim().toLowerCase();
+    if (!q) {
+      GROUPS.forEach(function (g) {
+        var items = st.sessions.filter(function (s) { return s.g === g.key; });
+        if (!items.length) return;
+        html += '<div class="s-group">' + g.label + '</div>';
+        items.forEach(function (s) { html += itemHtml(s, '', false); });
+      });
+      if (!st.sessions.length) html += '<div class="s-empty">暂无会话，点击「新建会话」开始</div>';
+    } else {
+      var hits = [];
+      st.sessions.forEach(function (s) {
+        if (s.corrupted) return; // 不可读会话不参与命中（§1.3）
+        if (s.t.toLowerCase().indexOf(q) > -1) hits.push({ s: s, bodyHit: false });
+        else if (s.body && s.body.toLowerCase().indexOf(q) > -1) hits.push({ s: s, bodyHit: true });
+      });
+      if (!hits.length) html += '<div class="s-empty">无匹配会话</div>';
+      hits.forEach(function (h) { html += itemHtml(h.s, q, h.bodyHit); });
+    }
+    host.innerHTML = html;
+  }
+  renderSide();
+  /* 列表交互（委托）：选中 / 「···」菜单 */
+  $('aList').addEventListener('click', function (e) {
+    var item = e.target.closest('.s-item');
+    if (!item) return;
+    var id = item.getAttribute('data-id');
+    if (e.target.closest('.more-btn')) {
+      e.stopPropagation();
+      openSessionMenu(item, e.target.closest('.more-btn'), id);
+      return;
+    }
+    if (e.target.closest('.edit-input')) return;
+    st.activeId = id;
+    renderSide();
+  });
+  function openSessionMenu(itemEl, btn, id) {
+    var s = byId(id);
+    if (!s) return;
+    openMenu($('aStage'), itemEl, btn, [
+      { label: '重命名', disabled: !!s.corrupted, reason: '无法读取的会话不支持重命名', on: function () { startRename(id); } },
+      { label: '导出会话', on: function () { toast('已导出「' + esc(s.t) + '」.md（演示，未生成真实文件）——REQ-013 口径不变'); } },
+      '-',
+      { label: '删除', danger: true, on: function () { askDelete(id); } }
+    ]);
+  }
+  /* 行内重命名（Enter/失焦保存，Esc 取消，空值静默恢复——沿现状口径） */
+  function startRename(id) {
+    var item = $('aList').querySelector('.s-item[data-id="' + id + '"]');
+    var s = byId(id);
+    if (!item || !s) return;
+    var titleEl = item.querySelector('.s-title');
+    if (!titleEl) return;
+    var input = document.createElement('input');
+    input.className = 'edit-input';
+    input.value = s.t;
+    input.setAttribute('aria-label', '重命名会话');
+    input.setAttribute('spellcheck', 'false');
+    var done = false;
+    function confirmEdit() {
+      if (done) return; done = true;
+      var v = input.value.trim();
+      if (v && v !== s.t) s.t = v; // 非空且不同才提交；空/未变静默恢复
+      renderSide();
+    }
+    function cancelEdit() { if (done) return; done = true; renderSide(); }
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); confirmEdit(); }
+      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancelEdit(); }
+    });
+    input.addEventListener('blur', confirmEdit);
+    input.addEventListener('click', function (e) { e.stopPropagation(); });
+    titleEl.replaceWith(input);
+    input.focus();
+    try { input.select(); } catch (err) {}
+  }
+  /* 删除确认（沿现状 ConfirmModal 口径） */
+  var pendingDelete = null;
+  var confirmEsc = function () { hideConfirm(); };
+  function showConfirm() { $('aConfirmMask').style.display = 'flex'; escPush(confirmEsc); }
+  function hideConfirm() { $('aConfirmMask').style.display = 'none'; escRemove(confirmEsc); pendingDelete = null; }
+  function askDelete(id) {
+    var s = byId(id);
+    if (!s) return;
+    pendingDelete = id;
+    $('aConfirmBody').innerHTML = '「' + esc(s.corrupted ? '无法读取的会话' : s.t) + '」的全部消息将一并删除，无法恢复。';
+    showConfirm();
+  }
+  $('aConfirmCancel').addEventListener('click', hideConfirm);
+  $('aConfirmMask').addEventListener('click', function (e) { if (e.target === this) hideConfirm(); });
+  $('aConfirmOk').addEventListener('click', function () {
+    if (pendingDelete) {
+      st.sessions = st.sessions.filter(function (s) { return s.id !== pendingDelete; });
+      if (st.activeId === pendingDelete) st.activeId = st.sessions.length ? st.sessions[0].id : null;
+    }
+    hideConfirm();
+    renderSide();
+  });
+  /* 搜索（REQ-016 沿现状 + §1.3 搜索态方案） */
+  $('aSearch').addEventListener('input', function () {
+    st.q = this.value;
+    $('aSearchClear').classList.toggle('show', !!this.value);
+    renderSide();
+  });
+  $('aSearchClear').addEventListener('click', function () {
+    $('aSearch').value = ''; st.q = '';
+    $('aSearchClear').classList.remove('show');
+    renderSide(); $('aSearch').focus();
+  });
+  /* 新建会话（rail 与展开态共用；搜索态自动退出） */
+  function doNew() {
+    nid++;
+    var id = 'n' + nid;
+    st.sessions.unshift({ id: id, g: 'today', t: '新会话', body: '' });
+    st.activeId = id;
+    if (st.q) { st.q = ''; $('aSearch').value = ''; $('aSearchClear').classList.remove('show'); }
+    renderSide();
+  }
+  $('aNew').addEventListener('click', doNew);
+  /* 侧栏收起 / 展开（持久化 localStorage，刷新保持） */
+  function setRail(v) {
+    $('aStage').classList.toggle('rail-mode', v);
+    try { localStorage.setItem(RKEY, v ? '1' : '0'); } catch (e) {}
+  }
+  $('aCollapse').addEventListener('click', function () { setRail(true); });
+  $('aRail').addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-act]');
+    if (!btn) return;
+    var act = btn.getAttribute('data-act');
+    if (act === 'expand') setRail(false);
+    else if (act === 'new') doNew();
+    else if (act === 'search') { setRail(false); setTimeout(function () { $('aSearch').focus(); }, 60); }
+  });
+  try { if (localStorage.getItem(RKEY) === '1') setRail(true); } catch (e) {}
+  /* 账户区「···」菜单（设置 / 管理后台·仅管理员 / 登出） */
+  $('aAcctMore').addEventListener('click', function (e) {
+    e.stopPropagation();
+    var btn = this;
+    var items = [{ label: '设置', on: function () { SETTINGS.a.open(false, btn); } }];
+    if (st.admin) items.push({ label: '管理后台', on: function () { toast('跳转管理后台 /admin（演示）——入口仅迁移位置，后台重构排 iter-12'); } });
+    items.push('-');
+    items.push({ label: '登出', on: function () { toast('已登出（演示）——真实流程：清会话跳登录页（沿 design-iter-6 基线）'); } });
+    openMenu($('aStage'), $('aAcct'), btn, items);
+  });
+  $('aAdmin').addEventListener('change', function () { st.admin = this.checked; });
+  $('aReset').addEventListener('click', function () {
+    st = { sessions: SDATA_SEED.slice(), activeId: 's1', q: '', admin: $('aAdmin').checked };
+    $('aSearch').value = ''; $('aSearchClear').classList.remove('show');
+    setRail(false);
+    renderSide();
+  });
+
+  /* ============================================================
+     §2 演练台（键盘矩阵验证）
+     ============================================================ */
+  $('pgBtn').addEventListener('click', function (e) {
+    e.stopPropagation();
+    openMenu($('pgStage'), $('pgRow'), $('pgBtn'), [
+      { label: '示例操作一', on: function () { toast('执行「示例操作一」（演示）'); } },
+      { label: '示例操作二', on: function () { toast('执行「示例操作二」（演示）'); } },
+      { label: '禁用项（不可聚焦）', disabled: true, reason: '演示禁用态：箭头导航跳过' },
+      '-',
+      { label: '危险操作', danger: true, on: function () { toast('执行「危险操作」（演示）'); } }
+    ]);
+  });
+
+  /* ============================================================
+     §3 消息流交互（复制反馈 / 编辑态 / 版本切换 / 错误气泡联动）
+     ============================================================ */
+  var CHECK_SVG_TXT = '<span style="font-size:12px;font-weight:600;">✓</span>';
+  function bindCopy(scope) {
+    scope.querySelectorAll('.copybtn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var orig = btn.innerHTML;
+        btn.innerHTML = CHECK_SVG_TXT;
+        btn.title = '已复制'; btn.setAttribute('aria-label', '已复制');
+        setTimeout(function () { btn.innerHTML = orig; btn.title = '复制'; btn.setAttribute('aria-label', '复制'); }, 1500);
+      });
+    });
+  }
+  bindCopy($('mfStage'));
+  /* 版本切换 ‹ 1/2 ›（REQ-019 两分支模型） */
+  var mfVer = 1;
+  function mfSetVer(v) {
+    mfVer = v;
+    $('mfStage').querySelectorAll('.md p[data-v]').forEach(function (p) {
+      p.hidden = p.getAttribute('data-v') !== String(v);
+    });
+    $('mfCnt').textContent = v + '/2';
+  }
+  $('mfPrev').addEventListener('click', function () { mfSetVer(mfVer === 1 ? 2 : 1); });
+  $('mfNext').addEventListener('click', function () { mfSetVer(mfVer === 1 ? 2 : 1); });
+  /* 编辑态（气泡位替换面板；Enter 保存 / Esc 取消） */
+  function mfEdit(show) {
+    $('mfUB2').style.display = show ? 'none' : 'block';
+    $('mfAct2').style.display = show ? 'none' : 'flex';
+    $('mfEditPanel').style.display = show ? 'block' : 'none';
+    if (show) { $('mfEditTa').value = $('mfUB2').textContent; setTimeout(function () { $('mfEditTa').focus(); }, 0); }
+  }
+  $('mfEditBtn').addEventListener('click', function () { mfEdit(true); });
+  $('mfEditCancel').addEventListener('click', function () { mfEdit(false); });
+  $('mfEditSave').addEventListener('click', function () {
+    var v = $('mfEditTa').value.trim();
+    if (!v) return; // 空不可保存（沿现状 canSave）
+    $('mfUB2').textContent = v;
+    mfEdit(false);
+    toast('已保存并重新生成（演示）——其后回复将被删除并重新生成（REQ-015 口径）');
+  });
+  $('mfEditTa').addEventListener('keydown', function (e) {
+    if (e.isComposing) return;
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); mfEdit(false); }
+    else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('mfEditSave').click(); }
+  });
+  /* 错误气泡「前往高级设置」→ 打开弹窗并定位（4.3） */
+  $('mfGoAdv').addEventListener('click', function () { SETTINGS.mf.open(true, this); });
+
+  /* ============================================================
+     §4 舞台按钮（打开弹窗 / 从错误气泡定位打开）
+     ============================================================ */
+  $('stOpenBtn').addEventListener('click', function () { SETTINGS.st.open(false, this); });
+  $('stGoAdv').addEventListener('click', function () { SETTINGS.st.open(true, this); });
+  /* ============================================================
+     静态衬景侧栏（§3/§4：不可交互，交互见 §1）+ §5 锁定帧渲染
+     ============================================================ */
+  function sItemStatic(title, on, pill) {
+    var p = pill === 'broken' ? '<span class="pill broken">无法读取</span>' : pill === 'cut' ? '<span class="pill cut">生成中断</span>' : '';
+    return '<div class="s-item' + (on ? ' on' : '') + (pill === 'broken' ? ' corrupted' : '') + '" style="cursor:default;">' +
+      '<span class="s-title" title="' + esc(title) + '">' + esc(pill === 'broken' ? '无法读取的会话' : title) + '</span>' + p +
+      '<button class="more-btn" tabindex="-1">' + DOTS_SVG + '</button></div>';
+  }
+  function staticSidebarHtml() {
+    return '<aside class="side full" style="pointer-events:none;">' +
+      '<div class="brand-row">' + LOGO_SVG + '<span class="brand-name">喵喵</span><span class="sp"></span>' +
+      '<span class="icon-btn" style="cursor:default;">' + CHEV_L_SVG + '</span></div>' +
+      '<button class="new-btn" style="cursor:default;">' + PLUS_SVG + '新建会话</button>' +
+      '<div class="search-box"><span class="s-ico">' + SEARCH_SVG + '</span><input class="search-input" placeholder="搜索会话" readonly></div>' +
+      '<div class="s-list" style="overflow:hidden;">' +
+      '<div class="s-group">今天</div>' +
+      sItemStatic('帮我写一封请假邮件，主题是家中有事需要请假一天', true, null) +
+      sItemStatic('流式请求的代码示例', false, null) +
+      '<div class="s-group">昨天</div>' +
+      sItemStatic('Vue3 组合式 API 最佳实践整理', false, null) +
+      sItemStatic('SQLite 备份恢复方案', false, 'broken') +
+      '</div>' +
+      '<div class="acct"><span class="acct-avatar">猫</span><span class="acct-name">猫南北</span>' +
+      '<button class="more-btn" tabindex="-1">' + DOTS_SVG + '</button></div>' +
+      '</aside>';
+  }
+  $('mfSideSlot').innerHTML = staticSidebarHtml();
+  $('stSideSlot').innerHTML = staticSidebarHtml();
+
+  /* 5.1 rail 锁定帧 */
+  function railFrameHtml() {
+    return '<div class="app-shell">' +
+      '<aside class="side rail" style="display:flex;">' +
+      '<button class="rail-ico" tabindex="-1" title="展开侧栏">' + '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M5 5l7 7-7 7M12 5l7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' +
+      '<button class="rail-ico" tabindex="-1" title="新建会话">' + PLUS_SVG.replace('width="13" height="13"', 'width="15" height="15"') + '</button>' +
+      '<button class="rail-ico" tabindex="-1" title="搜索会话（展开侧栏）">' + SEARCH_SVG.replace('width="14" height="14"', 'width="15" height="15"') + '</button>' +
+      '<span class="sp"></span>' +
+      '<button class="rail-avatar" tabindex="-1" title="展开侧栏">猫</button>' +
+      '</aside>' +
+      '<div class="chat-main"><div class="empty-wrap">' + LOGO_SVG.replace('width="20" height="20"', 'width="36" height="36"') +
+      '<div class="empty-title" style="font-size:17px;">开始新的对话</div>' +
+      '<div class="empty-desc" style="font-size:12px;">rail 56px：展开 / 新建 / 搜索 + 底部头像（演示锁定帧）</div>' +
+      '</div></div></div>';
+  }
+  $('lockRailL').innerHTML = railFrameHtml();
+  $('lockRailD').innerHTML = railFrameHtml();
+
+  /* 5.2 消息流锁定帧（用户浅气泡 + AI 全宽 + 中断/停止 pill + 操作栏） */
+  function msgFrameHtml() {
+    return '<div class="app-shell"><div class="chat-main"><div class="msg-scroll"><div class="msg-col">' +
+      '<div class="m-row user"><div class="m-col user">' +
+      '<div class="ububble">帮我把这两周的迭代记录整理成一份周报，重点写清楚做了什么、为什么做、下一步计划。</div>' +
+      '<div class="act-row"><button class="abtn" style="opacity:1;cursor:default;">' + COPY_SVG + '</button><button class="abtn" style="opacity:1;cursor:default;">' + EDIT_SVG + '</button></div>' +
+      '</div></div>' +
+      '<div class="m-row ai"><div class="m-col ai">' +
+      '<div class="md"><p>好的，按「做了什么 / 为什么做 / 下一步」三段整理：<br><b>本周完成</b>：iter-11 T0 设计稿；<b>为什么</b>：对齐 DeepSeek 主界面体验；<b>下一步</b>：T1~T3 按定案开发。</p></div>' +
+      '<div class="act-row"><button class="abtn" style="opacity:1;cursor:default;">' + COPY_SVG + '</button>' +
+      '<div class="ver-nav"><button class="abtn" style="cursor:default;"><svg width="14" height="14" viewBox="0 0 24 24"><path fill="currentColor" d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg></button>' +
+      '<span class="vcount">1/2</span>' +
+      '<button class="abtn" style="cursor:default;"><svg width="14" height="14" viewBox="0 0 24 24"><path fill="currentColor" d="M8.59 16.59 10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg></button></div></div>' +
+      '</div></div>' +
+      '<div class="m-row ai"><div class="m-col ai"><div class="md"><p>本周完成的事项包括——</p></div>' +
+      '<span class="pill cut">生成中断</span></div></div>' +
+      '<div class="m-row ai"><div class="m-col ai"><span class="pill stopped"><svg width="10" height="10" viewBox="0 0 10 10"><rect width="10" height="10" rx="1.5" fill="currentColor"/></svg>已停止生成</span></div></div>' +
+      '</div></div></div></div>';
+  }
+  $('lockMsgL').innerHTML = msgFrameHtml();
+  $('lockMsgD').innerHTML = msgFrameHtml();
+
+  /* 5.3 菜单锁定帧（会话菜单 + 账户菜单，静态开态） */
+  function menuFrameHtml() {
+    return '<div style="padding:20px;display:flex;flex-direction:column;gap:28px;background:var(--c-bg);height:100%;">' +
+      '<div>' +
+      '<div class="s-item" style="background:var(--c-hover-bg);cursor:default;">' +
+      '<span class="s-title" title="流式请求的代码示例">流式请求的代码示例</span><span class="pill cut">生成中断</span>' +
+      '<button class="more-btn" style="opacity:1;background:var(--c-surface);cursor:default;">' + DOTS_SVG + '</button></div>' +
+      '<div class="dd-menu" style="position:relative;display:block;width:max-content;min-width:148px;margin:4px 0 0 auto;">' +
+      '<button class="mi" style="cursor:default;">重命名</button>' +
+      '<button class="mi" style="cursor:default;">导出会话</button>' +
+      '<div class="dd-sep"></div>' +
+      '<button class="mi danger" style="cursor:default;">删除</button>' +
+      '</div></div>' +
+      '<div>' +
+      '<div class="acct" style="border-top:1px solid var(--c-border);">' +
+      '<span class="acct-avatar">猫</span><span class="acct-name">猫南北</span>' +
+      '<button class="more-btn" style="opacity:1;background:var(--c-surface);cursor:default;">' + DOTS_SVG + '</button></div>' +
+      '<div class="dd-menu" style="position:relative;display:block;width:max-content;min-width:148px;margin:4px 0 0 auto;">' +
+      '<button class="mi" style="cursor:default;">设置</button>' +
+      '<button class="mi" style="cursor:default;">管理后台</button>' +
+      '<button class="mi" style="cursor:default;background:var(--c-hover-bg);">登出</button>' +
+      '</div></div>' +
+      '</div>';
+  }
+  $('lockMenuL').innerHTML = menuFrameHtml();
+  $('lockMenuD').innerHTML = menuFrameHtml();
+})();
+</script>
+</body>
+</html>
