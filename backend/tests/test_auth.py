@@ -65,6 +65,18 @@ class TestRegister:
         assert resp.status_code == 422
         assert "密码最长 128" in resp.json()["detail"][0]["msg"]
 
+    def test_password_letters_only_rejected(self, client: TestClient):
+        """8 位纯字母：无数字，422（design-iter-9 复杂度定案，CEO 2026-08-16）。"""
+        resp = register(client, "bob", password="abcdefgh")
+        assert resp.status_code == 422
+        assert "字母与数字" in resp.json()["detail"][0]["msg"]
+
+    def test_password_digits_only_rejected(self, client: TestClient):
+        """8 位纯数字：无字母，422。"""
+        resp = register(client, "bob", password="12345678")
+        assert resp.status_code == 422
+        assert "字母与数字" in resp.json()["detail"][0]["msg"]
+
     def test_chinese_username_and_valid_charset_accepted(self, tmp_path: Path):
         """规则允许的字符全通过：中文/字母/数字/_/-。
 
@@ -171,6 +183,16 @@ class TestChangePassword:
         )
         assert resp.status_code == 422
         assert "密码" in resp.json()["detail"][0]["msg"]
+
+    def test_new_password_digits_only_rejected(self, client: TestClient):
+        """新密码 8 位纯数字：无字母，422（复杂度定案）。"""
+        register(client, "bob")
+        resp = client.post(
+            "/api/auth/change-password",
+            json={"old_password": "password123", "new_password": "12345678"},
+        )
+        assert resp.status_code == 422
+        assert "字母与数字" in resp.json()["detail"][0]["msg"]
 
     def test_new_password_same_as_old_rejected(self, client: TestClient):
         """新密码 = 旧密码：拒绝（design-iter-9 走查条目 5）。"""

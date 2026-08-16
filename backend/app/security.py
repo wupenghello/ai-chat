@@ -17,6 +17,17 @@ def hash_password(plain: str) -> str:
     return bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt()).decode("ascii")
 
 
+def password_meets_complexity(plain: str) -> bool:
+    """密码复杂度（design-iter-9 定案，CEO 2026-08-16 拍板）：至少含一个字母（a-zA-Z）+ 一个数字。
+
+    长度（8~128）由 PASSWORD_MIN/MAX_LENGTH 承担，本函数只判断字符构成；
+    中文等非 ASCII 字符不算「字母」，避免「密码123456」这类仅中文+数字通过。
+    """
+    has_alpha = any("a" <= c.lower() <= "z" for c in plain)
+    has_digit = any(c.isdigit() for c in plain)
+    return has_alpha and has_digit
+
+
 def verify_password(plain: str, password_hash: str) -> bool:
     try:
         return bcrypt.checkpw(plain.encode("utf-8"), password_hash.encode("ascii"))

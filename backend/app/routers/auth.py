@@ -21,6 +21,7 @@ from app.security import (
     USERNAME_PATTERN,
     hash_password,
     new_session_token,
+    password_meets_complexity,
     token_hash,
     verify_password,
 )
@@ -48,6 +49,8 @@ class Credentials(BaseModel):
             raise ValueError(f"密码最短 {PASSWORD_MIN_LENGTH} 位")
         if len(v) > PASSWORD_MAX_LENGTH:
             raise ValueError(f"密码最长 {PASSWORD_MAX_LENGTH} 位")
+        if not password_meets_complexity(v):
+            raise ValueError("密码需包含字母与数字")
         return v
 
 
@@ -55,6 +58,31 @@ class UserOut(BaseModel):
     id: int
     username: str
     is_admin: bool = False
+
+
+class LoginBody(BaseModel):
+    """登录凭据：密码只做上限校验（防超长 DoS），不做最小长度/复杂度校验。
+
+    登录时格式不合法与密码错误统一 401「用户名或密码错误」，不泄露密码规则
+    （区别于注册/改密的格式校验——那里密码由用户新设，须校验强度）。
+    """
+
+    username: str
+    password: str
+
+    @field_validator("username")
+    @classmethod
+    def username_rule(cls, v: str) -> str:
+        if not _USERNAME_RE.fullmatch(v):
+            raise ValueError("用户名需为 2~32 字符，仅限中文、字母、数字、下划线、连字符")
+        return v
+
+    @field_validator("password")
+    @classmethod
+    def password_max_rule(cls, v: str) -> str:
+        if len(v) > PASSWORD_MAX_LENGTH:
+            raise ValueError(f"密码最长 {PASSWORD_MAX_LENGTH} 位")
+        return v
 
 
 def _now() -> datetime:
@@ -145,7 +173,7 @@ def register(
 
 @router.post("/login")
 def login(
-    body: Credentials,
+    body: LoginBody,
     response: Response,
     conn: DatabaseDep,
     settings: Annotated[Settings, Depends(get_settings)],
@@ -196,6 +224,8 @@ class ChangePasswordBody(BaseModel):
             raise ValueError(f"密码最短 {PASSWORD_MIN_LENGTH} 位")
         if len(v) > PASSWORD_MAX_LENGTH:
             raise ValueError(f"密码最长 {PASSWORD_MAX_LENGTH} 位")
+        if not password_meets_complexity(v):
+            raise ValueError("密码需包含字母与数字")
         return v
 
 
