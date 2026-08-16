@@ -90,15 +90,28 @@ git 提交 10 个（777d22e~bcf4a03 + 整改中），T0~T3 全部完成（Σ10�
 
 **技术栈首迭代校准数据**（复盘用）：T1 实际 = L 估算（吻合）；T2 实际 < M（复用既有表单模式充分）；T3 后端半侧 < L 前端半侧 ≈ M；总体 Σ10 估算 vs 实际——无砍范围、无延期，新栈 ramp-up 未构成阻塞（<2 天阈值远未触及）。
 
+### iter-7（08-16，开发完成 + QA 审计 3 NCR 整改）
+
+git 提交 5 个（63b6b4d 计划 / 50ef5d1 T0 设计 / 3fad772 T1 / ad8fe6a T2 / dcfafcd T3 + 整改中），T0~T3 全部完成（Σ10）：
+
+- T0 design-iter-7 设计基线（高级设置双模式 + 4 项技术定夺 CEO 拍板 + §7.2 走查清单 26 条——v1.4.4 首次设计稿内置清单）
+- T1 REQ-023 流式代理端到端（统一 key 零配置真实 DeepSeek 流式打通、首块额外延迟为负、错误映射 §3.1 定稿、REQ-001/002/007 复验销账 NCR-iter6-005；DEF-015 sqlite 线程绑定偶发 500 修复）
+- T2 REQ-014/018 密钥与档案迁服务端（db v3 profiles 表 + 掩码下发 + 0600 + 编辑不回显 + KeyModeCard 双态 UI；走查 26 条留档，走查 15 偏差当场修复=DEF-016；多设备一致/回退/无效 key 引导实测）
+- T3 REQ-022 断网暂存与自动重试（persistence 暂存队列 LWW 压缩 + 三触发按序重放 + 「部分更改未同步」提示；断网→恢复→第二设备逐字可见闭环实测）
+- GLM 自填模式 CEO 决策（2026-08-16）不补验，延续 DEF-002 口径——DeepSeek 实测承载
+- QA 审计（retros/qa-audit-iter-7.md，3 NCR + 8 观察项）整改：①RTM REQ-023 行漏更②本章节+Code Review+技术债③DEF-016 补登记；**Code Review 整改执行中发现并修复 DEF-017（重放出队竞态，严重）**
+
+测试结果（迭代末汇总，整改后终值）：**前端 141/141 通过**（17 文件，+pending-sync 10 用例/settings 系服务端源重写）、**后端 pytest 69/69**（+test_profiles 16 + test_proxy 16 改写）、ruff clean、跳过 0；走查 26 条：23 过 + 3 占位（iter-8 基线自标注）；生产构建（vue-tsc + vite）通过；密钥安全四处检索（git 全量历史/工作区/docker 日志/dist）0 命中；db 文件 0600。
+
 ## 进行中与阻塞
 
 | 任务 | 状态 | 阻塞原因 / 需要的决策 |
 |------|------|---------------------|
-| iter-6 QA 审计 NCR 整改 | 全部完成 | 6/6 整改完毕（见下方处置表），待复盘确认关闭 |
-| iter-6 复盘 + G4 关闭 | 待办 | Code Review CEO 过目 + 复盘四问 |
+| iter-7 QA 审计 NCR 整改 | 全部完成 | 3/3 整改完毕（见下方处置表），待复盘确认关闭 |
+| iter-7 复盘 + G4 关闭 | 待办 | Code Review CEO 过目 + 复盘四问 |
 | v0.5.0 发布 | 不适用本迭代 | 基线 v3 分三段交付，v0.5.0 随 iter-8 收口（计划已批） |
 
-（iter-5 QA 审计 5 NCR 已全部关闭；v0.4.0 已发布。）
+（iter-6 QA 审计 6 NCR 已全部关闭（iter-7 审计复查确认）；v0.4.0 已发布。）
 
 ## 计划偏差
 
@@ -143,6 +156,16 @@ iter-3 计划当日完成，无延期。容量 Σ=9 全部交付（≤10 上限�
   - **风险如实说明**：新栈（FastAPI/uv/Docker）无项目内校准数据，本轮为首个基线；bcrypt rounds 用默认（12），无性能调优；/api/dev/sse-echo 在生产容器可达（需登录、上限 20 块，观察项 6 登记 iter-7 评估）
   - 无新发现缺陷（走查中已当场修复 5xx 重试缺口）；120/120+37/37 测试与 27 条走查为旁证
   - **CEO 过目确认：2026-08-16，已过目确认**（变更范围、review 结论与风险说明；G4 前置条件满足）
+- **iter-7（本次执行）**：范围 `63b6b4d..dcfafcd`（后端 6 文件：app/{main,config,db,routers/proxy,routers/profiles} + tests 3；前端 13 文件：api/{client,backend}、stores/{settings,sessions}、db/persistence、SettingsForm/KeyModeCard/ErrorBubble/TheSidebar/EmptyState/App + 测试 5）。重点审密钥路径（迭代风险清单点名）与断网队列并发。发现与结论：
+  - 密钥路径专项核对：代理转发请求头全新构造（`build_request` 显式 Authorization+Accept，绝不透传 Cookie/其余头）；profiles.py 全部响应经 `mask_key()`（明文零出口，pytest 逐响应断言）；后端无任何 print/logging 输出点（QA 审计复核同结论）；`.env` 三变量被 .gitignore 覆盖（git 全量历史检索 0 命中）；DB 文件 0600；编辑模态 key 不回显（留空=沿用服务端语义）
+  - **发现 DEF-017（严重，已修复）**：暂存队列重放出队 `slice(1)` 与入队竞态——重放某操作的 await 期间同 id 新入队（enqueue 按 id 压缩重排）后，slice(1) 会错删其他待同步会话的操作（数据丢失类）。修复：PendingOp 加单调 seq 身份，出队改按 seq filter 精确移除；回归用例「重放期间同 id 新入队不错删他项」（141/141）
+  - 代理错误分支核对：上游 401/403→502 upstream_auth（防与 Cookie 会话 401 混淆触发跳登录，设计稿定稿映射）；429 透传、5xx→502、超时→504、统一密钥缺配→503、流中断补帧——16 用例 + 浏览器断网/无效 key 实测旁证
+  - 模式路由/CHG-002 核对：代理每请求读 DB 生效档案（profiles 部分唯一索引保证每用户至多一行 is_active）——生成中切换/回退天然「旧配置跑完、下一请求生效」；activate 同事务先清后置，无中间双活态
+  - 前端换源核对：settings store 档案全走后端 API（localStorage 仅 systemPrompt，旧档案字段停读不清留 iter-8 导入——tailoring 登记）；generate 直连分支删除后 `streamChat` 成死代码（登记技术债）
+  - 低风险遗留（不构成缺陷）：settings.boot() 失败后本会话不重试（档案列表空至刷新页面）——技术债登记 iter-8 候补
+  - **风险如实说明**：性能取证「首块额外延迟为负」依赖共享 AsyncClient 连接池复用 TLS，iter-8 全链路 Compose 部署形态变化后需复测（观察项 5）；GLM 经代理未实测（CEO 决策 DEF-002 延续）
+  - 141/141+69/69 测试、26 条走查、QA 审计 4 项主会话补证为旁证
+  - **CEO 过目确认：待 CEO 过目**（本记录与变更范围；G4 前置条件待满足）
 
 
 ## QA 审计与 NCR 处置（iter-2）
@@ -179,6 +202,16 @@ iter-3 计划当日完成，无延期。容量 Σ=9 全部交付（≤10 上限�
 
 观察项处置：1 数字订正（随 005）；2 tailoring 版本行 v1.4.3（已更）；3 iter-5 审计补档 retros/qa-audit-iter-5-summary.md；5 backend README 已更；4/6/7/8 登记 iter-7/复盘跟踪。
 
+## QA 审计与 NCR 处置（iter-7，2026-08-16）
+
+| 编号 | 内容 | 处置 | 状态 |
+|------|------|------|------|
+| NCR-iter7-001 | RTM REQ-023 行未随完成更新（同条款连续第二迭代） | 整改：该行更新为「已实现并验证（v3 口径，iter-7 T1/T2）」——实现（proxy.py/client.ts）、测试（test_proxy 16 + client.spec 代理组）、quota 注记齐备；REQ-022 状态行同步（观察项 8 顺带） | 已整改，待复盘确认 |
+| NCR-iter7-002 | 周报 iter-7 章节 + Code Review + 技术债缺失（同型第 5 次复发） | 整改：本章节 + Code Review iter-7 全量记录（含 DEF-017 发现与修复——review 的直接产出）+ 技术债 2 条新增；CEO 过目落痕待 CEO | 已整改（CEO 过目待办） |
+| NCR-iter7-003 | 走查 15 偏差当场修复未落 DEF 登记（v1.4.4 C 条首迭代执行走样） | 整改：DEF-016 补登记（含修复提交号 ad8fe6a 回填）；顺带 DEF-015 提交号补齐（观察项 3） | 已整改，待复盘确认 |
+
+观察项处置：1 T3 断网验收口径注记已补 tailoring（追加裁剪 2026-08-16 第 3 行）；2 直连死代码入技术债（iter-8 定夺）；3 已随 NCR-003 顺带完成；4 复盘固化口径（提交前测试暴露≠交付缺陷）；5 iter-8 部署形态复测；6/7 组织级，随下次制度修订；8 已随 NCR-001 顺带统一 REQ-022 行。主会话补证 4 项（运行时复现 69/69+141/141+构建、提交落位、key 全量检索、db 0600）全部通过并回填审计报告。
+
 ## 技术债登记
 
 | 位置 | 内容 | 原因 | 状态 |
@@ -187,9 +220,10 @@ iter-3 计划当日完成，无延期。容量 Σ=9 全部交付（≤10 上限�
 | 全局 | 窄视口（<768px）无响应式 | spec 明确 MVP 不承诺 | 保留（需求变更时） |
 | ~~渲染~~ | ~~AI 回复纯文本渲染，Markdown 源码可见~~ | ~~REQ-011（P1）iter-2 容量不足未排入~~ | **已销账（08-15）**：iter-3 T2 实现 Markdown 渲染（markdown-it + DOMPurify） |
 | ~~metrics~~ | ~~collect.sh 需人工绕行（DEF-001）~~ | ~~根因未明~~ | **已销账（08-15）**：根因查明并修复，采集恢复全自动 |
+| api/client.ts | 直连版 `streamChat`（L116-165）+ `ApiClientConfig.apiKey` + client.spec 5 条旧用例：T2 后无生产调用方，成死代码 | QA 审计观察项 2——tailoring「直连分支已删除」按调用路径口径成立，函数本体未删 | iter-8 定夺删除或保留 |
+| stores/settings | boot() 失败（断网起页）后本会话不重试，档案列表空至刷新 | iter-7 Code Review 发现（低风险：登录后 Root 重挂载会重跑） | iter-8 候补（进设置页时惰性重拉） |
 
 ## 下周计划
 
-- iter-6 复盘 + G4 关闭（6 NCR 已整改，Code Review 待 CEO 过目）→ 基线 v3 第一段（后端地基+注册登录闭环+会话云存储）交付
-- iter-7 主线：REQ-023 流式代理 + REQ-014/018 密钥档案迁服务端 + 全链路 Compose + 断网重试；候补：useTheme 单测、过期会话清理、dev 路由裁剪
-- v0.5.0 随 iter-8 收口（治理：REQ-024 配额 / REQ-025 管理后台 / REQ-021 账号管理 / 存量迁移）
+- iter-7 复盘 + G4 关闭（3 NCR 已整改，Code Review 待 CEO 过目）→ 基线 v3 第二段（流式代理+密钥双模式+断网重试）交付
+- iter-8 主线：全链路 Compose 一键起 + v0.5.0 发布形态收口（Docker Compose 部署 + 自部署文档）+ REQ-024 配额 + REQ-025 管理后台 + REQ-021 账号管理 + 存量迁移（档案+会话一键导入）；候补：auth_sessions 过期清理、dev 路由按环境裁剪、useTheme 单测、直连死代码定夺

@@ -22,9 +22,12 @@ import { useToastStore } from '../stores/toast'
 
 export type { PersistedSession }
 
-type PendingOp =
-  | { kind: 'put'; id: string; data: PersistedSession }
-  | { kind: 'delete'; id: string }
+type PendingOp = {
+  seq: number // 单调序号：重放出队按身份移除（DEF-017 竞态——重放期间同 id 新入队时 slice(1) 会错删他项）
+  kind: 'put' | 'delete'
+  id: string
+  data?: PersistedSession
+}
 
 const QUEUE_KEY = 'ai-chat:pending-ops'
 
@@ -60,9 +63,10 @@ function warnUnsynced(): void {
   useToastStore().push('部分更改未同步，恢复网络后自动重试')
 }
 
-function enqueue(op: PendingOp): void {
+function enqueue(op: Omit<PendingOp, 'seq'>): void {
   const q = loadQueue().filter((o) => o.id !== op.id) // 同会话只留最后操作（LWW 压缩）
-  q.push(op)
+  const seq = (q.at(-1)?.seq ?? 0) + 1
+  q.push({ ...op, seq })
   storeQueue(q)
   warnUnsynced()
 }
@@ -120,10 +124,12 @@ export async function flushPending(): Promise<void> {
       } catch (e) {
         if (isTransient(e)) return // 仍断网：保留队列，等下一轮触发
         // 非临时性失败（毒丸）：丢弃该条继续，避免卡死后续操作
-        storeQueue(loadQueue().slice(1))
+        storeQueue(loadQueue().filter((o) => o.seq !== op.seq))
         continue
       }
-      storeQueue(loadQueue().slice(1))
+      // 按 seq 身份出队：重放的 await 期间可能同 id 新入队（DEF-017 竞态），
+      // slice(1) 会错删队头之后被压缩重排的其他项——filter 精确移除本条
+      storeQueue(loadQueue().filter((o) => o.seq !== op.seq))
     }
     unsyncWarned = false // 队列清空：下一次积压重新提示
   } finally {

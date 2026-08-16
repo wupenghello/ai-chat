@@ -150,4 +150,28 @@ describe('断网暂存（REQ-022 异常分支「写回失败」，iter-7 T3）',
     const toast = useToastStore()
     expect(toast.items).toHaveLength(0)
   })
+
+  it('重放期间同 id 新入队：不错删他项（DEF-017 竞态回归）', async () => {
+    mocked.mockRejectedValue(new ApiBackendError(0, 'down'))
+    await saveSession(session('a')) // 入队 a
+    await saveSession(session('b')) // 入队 b
+    // 重放 a：request 挂起（gate），期间用户对 a 再次写回失败 → a' 入队（压缩掉旧 a）
+    let release!: () => void
+    const gate = new Promise<void>((res) => (release = res))
+    mocked.mockImplementationOnce(() => gate.then(() => undefined))
+    const flushing = flushPending()
+    await new Promise((r) => setTimeout(r, 10)) // 让 flushPending 进入 a 的 await
+    await saveSession(session('a', 'v2')) // 同 id 新入队：队列应为 [b, a']
+    release() // a 的重放请求完成
+    await flushing
+    const q = JSON.parse(localStorage.getItem('ai-chat:pending-ops')!) as Array<{
+      id: string
+      data?: { messages: Array<{ content: string }> }
+    }>
+    const ids = q.map((o) => o.id)
+    expect(ids).toContain('b') // 旧实现 slice(1) 会丢 b
+    expect(ids).toContain('a')
+    expect(q.find((o) => o.id === 'a')?.data?.messages[0].content).toBe('v2') // 保留的是最新整档
+    expect(pendingOpsCount()).toBe(2)
+  })
 })
