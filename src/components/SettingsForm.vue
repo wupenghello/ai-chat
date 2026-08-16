@@ -111,10 +111,18 @@ function close() {
   emit('close')
 }
 
-/** 弹窗层 Esc：内层模态（档案编辑/注销/删除确认/未保存确认）各自处理时让行 */
+/** 弹窗层 Esc（走查 43：先关最上层）：未保存确认 > 档案编辑模态 > （注销/删除确认各自组件处理）> 外层弹窗 */
 function onModalKey(e: KeyboardEvent) {
   if (e.key !== 'Escape') return
-  if (editing.value || deleteOpen.value || pendingDelete.value || dirtyConfirm.value) return
+  if (dirtyConfirm.value) {
+    dirtyConfirm.value = false
+    return
+  }
+  if (editing.value) {
+    editing.value = false
+    return
+  }
+  if (deleteOpen.value || pendingDelete.value) return // DeleteAccountModal/ConfirmModal 各有 Esc
   attemptClose()
 }
 
