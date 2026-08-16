@@ -101,3 +101,12 @@
 
 5. 迁移条堆叠视觉与亮暗观感（42 迁移部分）
 6. REQ-014 全量口径浏览器端检索复验（导入后 localStorage/IndexedDB 无 key）
+
+
+---
+
+## 修正记录（2026-08-16，CEO 走查发现）
+
+- **设计稿 §4.1 暗色锁定帧表格白底**（基线后修订 R1，design-iter-8 头部已登记）：根因 = 设计稿文档外壳全局 `table{background:#FFFFFF}` 渗入演示组件，`.adm-table` 未自声明背景；修复 = `.adm-table` 补 `background:transparent`（表面底由 `.tbl-wrap` 承载）。无头 Chrome 计算样式复核：两帧表格背景均 rgba(0,0,0,0)，暗帧透出 surface #1E2026。
+- **实现侧不受影响**：AdminView.vue 的 `.adm-table` 自带 `background:var(--c-surface)`，且应用无全局 table 规则——本缺陷仅存在于设计稿演示层。
+- 撤销事项：CEO 早前误点「底色不够黑」触发的暗色令牌 v1.4 提案任务已终止（真实诉求即本缺陷，无需规范变更）。

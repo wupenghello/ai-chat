@@ -200,7 +200,7 @@ td code, li code, .ann code { font-family: "SF Mono", Menlo, Consolas, monospace
 
 /* ---- 数据表格（本稿新增形态：th subtle-bg / 行 hover / 可排序列头） ---- */
 .tbl-wrap { border: 1px solid var(--c-border); border-radius: var(--r-md); overflow: hidden; background: var(--c-surface); }
-.adm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.adm-table { width: 100%; border-collapse: collapse; font-size: 13px; background: transparent; }
 .adm-table th { text-align: left; font-size: 12px; font-weight: 500; color: var(--c-text-3); background: var(--c-subtle-bg); padding: 8px 12px; border-bottom: 1px solid var(--c-border); white-space: nowrap; }
 .adm-table td { padding: 10px 12px; border-bottom: 1px solid var(--c-border); vertical-align: middle; color: var(--c-text-2); }
 .adm-table tbody tr { transition: background .15s ease; }
@@ -354,6 +354,12 @@ td code, li code, .ann code { font-family: "SF Mono", Menlo, Consolas, monospace
     登录页/侧栏底栏沿 <b>design-iter-6 基线</b>引用，密钥模式卡/配额提示文案沿 <b>design-iter-7 基线</b>引用
   </div>
   <div class="badge">状态：已基线（2026-08-16 CEO 批准；tag design-iter-8；§8 四项定夺随基线全按推荐定案：①档位徽标+今日 x/N+全站配额条 ②暂不导入下次登录再提示 ③侧栏盾牌入口仅管理员渲染+403 双保险 ④用量 4 列+2 筛选+3 排序）</div>
+  <!-- 基线后修订（design.md：基线后改动必须登记）：
+       2026-08-16 R1 —— CEO 走查发现：§4.1 暗色锁定帧内表格主体为白底。根因：文档外壳全局
+       table{background:#FFFFFF} 渗入演示组件，.adm-table 未自声明背景。修复：.adm-table 补
+       background:transparent（表面底由 .tbl-wrap 的 --c-surface 承载，明暗两帧同构）。
+       仅渲染缺陷修复，不改任何规范取值与交互口径；实现侧 AdminView.vue 自带
+       background:var(--c-surface)，无此缺陷。 -->
 
   <!-- 演示控制 -->
   <div class="demo-ctl">
