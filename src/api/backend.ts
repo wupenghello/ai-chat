@@ -130,11 +130,32 @@ export interface AdminUsageRow {
   tokens: number
 }
 
-/** REQ-025（iter-8 T2）：全站配额条数据（design-iter-8 §1.2：统一 key 当日消耗/总量） */
+/** REQ-025（iter-8 T2）：全站配额条数据 + REQ-029（iter-12 T1）统计卡三指标（design-iter-12 §4.3，定夺④） */
 export interface AdminOverview {
   day: string
   unified_used: number
   unified_daily_total: number
+  /** 总用户数（含已封禁与管理员）；今日 = 服务器本地自然日、全模式合计；无记录 = 0 不估算 */
+  total_users: number
+  today_requests: number
+  today_tokens: number
+}
+
+/** REQ-029（iter-12 T1）：用户列表分页信封（design-iter-12 §4.1，定夺①——传参才返回） */
+export interface AdminUsersPage {
+  items: AdminUserRow[]
+  total: number
+  limit: number
+  offset: number
+}
+
+/** REQ-029（iter-12 T1）：用量列表分页信封（§4.2——distinct_days 为缺失时段全窗口判定数据源） */
+export interface AdminUsagePage {
+  items: AdminUsageRow[]
+  total: number
+  limit: number
+  offset: number
+  distinct_days: number
 }
 
 /** 服务端供应商档案视图（REQ-018 iter-7 T2）：key 只有掩码，明文绝不下发前端 */
@@ -177,16 +198,34 @@ export const backend = {
   clearActiveProfile: () => request<{ detail: string }>('DELETE', '/api/profiles/active'),
   // REQ-024/014（iter-8 T1 后端、T2 前端接入）：当前用户配额口径
   getQuota: () => request<QuotaStatus>('GET', '/api/quota'),
-  // REQ-025（iter-8 T2）：管理后台（非管理员一律 403，服务端为安全边界）
-  adminUsers: () => request<AdminUserRow[]>('GET', '/api/admin/users'),
+  // REQ-025（iter-8 T2）+ REQ-029（iter-12 T1/T2）：管理后台（非管理员一律 403，服务端为安全边界）
+  adminUsers: () => request<AdminUserRow[]>('GET', '/api/admin/users'), // 无参数 = 纯列表全量（§4.1 兼容形态，用量筛选下拉数据源）
   adminOverview: () => request<AdminOverview>('GET', '/api/admin/overview'),
-  adminUsage: (params: { user_id?: number; date_from?: string; date_to?: string }) => {
+  adminUsersPage: (params: { search?: string; limit?: number; offset?: number }) => {
+    const q = new URLSearchParams()
+    if (params.search != null) q.set('search', params.search)
+    if (params.limit != null) q.set('limit', String(params.limit))
+    if (params.offset != null) q.set('offset', String(params.offset))
+    return request<AdminUsersPage>('GET', `/api/admin/users?${q.toString()}`)
+  },
+  adminUsagePage: (params: {
+    user_id?: number
+    date_from?: string
+    date_to?: string
+    sort_key?: 'day' | 'requests' | 'tokens'
+    sort_dir?: 'asc' | 'desc'
+    limit?: number
+    offset?: number
+  }) => {
     const q = new URLSearchParams()
     if (params.user_id != null) q.set('user_id', String(params.user_id))
     if (params.date_from) q.set('date_from', params.date_from)
     if (params.date_to) q.set('date_to', params.date_to)
-    const qs = q.toString()
-    return request<AdminUsageRow[]>('GET', `/api/admin/usage${qs ? `?${qs}` : ''}`)
+    if (params.sort_key) q.set('sort_key', params.sort_key)
+    if (params.sort_dir) q.set('sort_dir', params.sort_dir)
+    if (params.limit != null) q.set('limit', String(params.limit))
+    if (params.offset != null) q.set('offset', String(params.offset))
+    return request<AdminUsagePage>('GET', `/api/admin/usage?${q.toString()}`)
   },
   banUser: (id: number) => request<{ detail: string }>('POST', `/api/admin/users/${id}/ban`),
   unbanUser: (id: number) => request<{ detail: string }>('POST', `/api/admin/users/${id}/unban`),

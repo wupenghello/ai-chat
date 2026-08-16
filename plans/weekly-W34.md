@@ -16,8 +16,15 @@
   - usage 增 `sort_key`/`sort_dir`（Literal 白名单，非法 422；tie-break username 升序保证翻页不重不漏）+ 分页信封含 `distinct_days`（缺失时段「不估算补齐」的全窗口判定，不受翻页影响）；越界钳制到最后一页 + 真实 total（定夺②）
   - overview 加法扩展 `total_users`/`today_requests`/`today_tokens`（定夺④：今日 = 服务器本地自然日、全模式合计、无记录 0 不估算补齐——铁律 5）；既有三字段零变化；ban/unban/quota 三端点零改动
   - 测试：test_admin 新增 **20 用例**（搜索 5 / 分页 6 / 排序分页 7 / 统计 2），pytest **139/139（119→139）** + ruff clean；**既有 19 用例零改动复跑通过**（design-iter-12 §4 兼容硬门槛）；批量造数走 `_insert_users`（bcrypt 占位直插，绕开 45 次哈希成本）与 `_seed_usage`（三日三用户含 tie-break 数据）
-- 测试：后端 139/139 + ruff clean；前端未动（247/247 基线不变）
-- 下一步：T2 AdminView 前端重构（统计卡四卡 + 搜索框 + 双列表分页 + 灰底白卡视觉，REQ-025 走查零回退复验；design-iter-12 §7.2 清单 52 条留档）
+- **T2 AdminView 前端重构已实现并验证**（2026-08-17，REQ-029）：
+  - 概览统计卡四卡（tabs 上方常驻，进度条常态 #3370FF / ≥80% #B45309 / 熔断 #D93025）+ near/burst 页面级警示条（文案逐字沿用 iter-8 口径，常态条退役——定夺⑤）
+  - 用户搜索（260×32、防抖 300ms/Enter 立即/清除重置回第 1 页、大小写不敏感、mark.hl 命中高亮复用 REQ-016 highlightSegments、空态空盒+清除动作）+ 分页控件（20/页、单页隐藏、>7 页折叠「…」、边界禁用、翻页 scrollIntoView）
+  - 用量排序迁后端（sort_key/sort_dir + tie-break username——定夺⑥）+ 分页同口径 + distinct_days 缺失行全窗口判定（不受翻页影响）；灰底白卡 1080px 视觉重构（定夺⑦，零新令牌，guard:style 过）
+  - 治理操作/403/入口/封禁横幅零改动（REQ-025 零回退）
+  - 测试：AdminView.spec 15→22 用例（三态用例按定夺⑤登记适配为新载体断言），前端 vitest **254/254（247→254）** + guard:style + 生产构建
+  - 走查：**真实 Chrome 49/49 全过**（scripts/e2e-walkthrough-12.mjs 新沉淀；design-iter-12 §7.2 52 条逐条留档 plans/iter-12-verify.md，10 截图 /tmp/e2e12/shots/；46 用户+跨 7 天含缺失造数、亮暗双主题、网络面板参数取证、同源三口径比对）。首轮 40/48 的 8 项 FAIL 全为脚本断言问题（选择器作用域/箭头字符/前导空格），零产品缺陷，已登记
+- 测试：前端 254/254 + guard + 构建；后端 139/139 + ruff clean
+- 下一步：QA 审计（/mm-qa-audit）→ Code Review 材料产出 → 复盘关闭（G4）
 
 ## 技术债
 
