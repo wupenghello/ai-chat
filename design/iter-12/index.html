@@ -1,0 +1,1380 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-chat · iter-12 设计稿（REQ-029 管理后台体验重构，已基线）</title>
+<!--
+  ============================================================
+  ai-chat 迭代 12 T0 设计稿（设计稿即页面骨架，开发对照实现）
+  依据（逐条登记）：
+  1. projects/ai-chat/plans/iter-12.md T0（2026-08-16 CEO 批准草案原样通过 Σ8=M+M+L）：
+     概览统计卡（四指标）+ 用户搜索框与分页控件形态 + 视觉重构方向 + 后端分页 API 口径；
+     验收 = CEO 批准基线（tag design-iter-12）+「今日」界定/缺失时段处理（不估算补齐，铁律 5）/
+     分页参数与响应结构随稿定案；T1/T2 验收直接引用本稿 §7 走查清单（v1.4.4 任务级门槛）
+  2. requirements/spec.md（req-baseline-v4）：
+     REQ-029 管理后台体验重构（L563~578：四项范围 + 主流程「概览卡先入眼→搜索/翻页→治理沿用→用量翻页」
+     + 异常分支「分页越界/空页、搜索无结果空态、统计缺失不估算补齐」+ 验收「REQ-025 全部不回退 + 分页/搜索用例 + 走查留档」）；
+     REQ-025 管理员 Web 后台（L474~495：三类能力 + 异常分支 + 验收五条——功能口径零回退基准）；
+     REQ-024（L456~472：配额默认 30/500/2000、熔断次日恢复——全站用量与档位口径来源）
+  3. requirements/changes.md CHG-006（2026-08-16 批准，基线 v4）：REQ-029 段 + 影响评估
+     「REQ-025 由 REQ-029 增强体验，六端点功能与验收零回退」「design-iter-12 承载 REQ-029，随 iter-12 启动」
+  4. plans/iter-8-verify.md T2 段：REQ-025 走查清单 #1~29 + #42/43/44 —— 零回退复验清单，
+     本稿 §7.2 零回退条目逐条映射其编号（「iter-8#」列），T2 复验直接对照
+  5. design/iter-11/index.html（已基线）：文档外壳 / .tk 令牌作用域 / 演示控制亮暗切换 /
+     §7 走查清单格式 / §8 定夺项格式——本稿完全沿其结构
+  6. design/iter-8/index.html（已基线）：管理后台上一版（REQ-025 初版 = 本次改版对象前身）——
+     全站条/表格/徽标/模态/403 视觉语言沿用其令牌组合；R1 教训吸收：.adm-table 显式
+     background:transparent（文档外壳全局 table 白底渗入问题，本稿预防性自声明）
+  7. 现状实现核对（保证字段/结构真实）：src/views/AdminView.vue（用户表六列/用量表四列/全站条三态
+     类名 site-bar near burst/封禁确认 ConfirmModal/调配额模态双选项与正整数校验/403 卡/加载失败态文案）、
+     src/api/backend.ts（AdminUserRow 10 字段 / AdminUsageRow 5 字段 / AdminOverview 3 字段 + 六端点调用）
+  8. 后端口径：backend/app/routers/admin.py（users/ban/unban/quota/usage/overview 六端点现有参数与响应：
+     users ORDER BY created_at,id 无分页；usage 过滤 user_id/date_from/date_to + ORDER BY day DESC,username、
+     排序在前端；overview = day/unified_used/unified_daily_total）、backend/app/quota.py（today() = 服务器本地
+     自然日；site_unified_used = SUM(requests WHERE day AND mode='unified')；record_tokens 流结束补记 token
+     归请求日——跨零点一致）、backend/app/config.py（quota_free_daily=30 / quota_self_daily=500 /
+     unified_daily_total=2000）、backend/app/db.py 迁移 v4/v5（usage_daily 粒度 (day,user_id,mode)、
+     users.quota_override NULL=默认档）、backend/tests/test_admin.py（19 用例 = 兼容门槛：默认形状零改动通过）
+  9. 公司设计规范 design-system/tokens.md v1.3/v1.3.1 + components.md v1.0：只用既有令牌，零自造色值、
+     零新增令牌（评估结论 §8-⑧）；新形态（统计卡/分页控件/后台搜索框）建议随基线登记 components.md，
+     不涉令牌批准（沿 iter-7/8/9/11 惯例）
+  视觉基调（CEO 已定，不得偏离）：延续 iter-9/11——正文白底 --c-surface、页面灰底 --c-bg、主色飞书蓝
+     #3370FF（暗色前景 #5C8DFF）；参考现代管理后台（信息层级/卡片/留白/状态徽标），交互参照 DeepSeek。
+  硬约束落实：REQ-025 六端点全部界面能力在稿（§7.2 条 23~32/37~47 + §5 映射表）；分页 API 口径随稿定案
+     （§4 + §8-①②③）；统计口径随稿定案（§4.3 + §8-④）；「今日」= 服务器本地自然日（usage_daily.day 先例）；
+     缺失时段不估算补齐（铁律 5）；统计卡为数值卡不做趋势图（CHG-004 定案）；移动端不做（仅模态
+     max-width 不溢出视口，沿 REQ-028 口径）；演示数据全为虚构（用户名/用量数值，铁律 5）。
+  状态：已基线（2026-08-17 CEO 批准「批准，全部按推荐定案」——八项定夺 ①分页信封兼容（默认纯列表零变化，
+     传参才信封）②越界钳制到最后一页 + 参数非法 422 ③默认 20/页不做切换、单页隐藏 ④统计口径（本地自然日/
+     全模式合计/分母 2000/无记录 0 不估算）⑤全站条三态并入卡 4 + near/burst 页面级警示条、常态条退役
+     ⑥用量排序迁后端（tie-break username）⑦灰底白卡/内容列 1080px/表格入卡 ⑧零新令牌 + components.md
+     登记三形态；tag design-iter-12）。
+  可交互：右上「演示控制」一键亮/暗（写 localStorage）；§1 主样件可真实操作——
+     分页翻页/页码跳转/模拟越界（钳制演示）、搜索过滤（大小写不敏感 + 命中高亮 + 空态）、
+     封禁确认/解封/调配额（正整数校验/清空覆盖）、列表状态切换（仅管理员/加载/失败）、
+     用量筛选排序分页 + 缺失时段标注、全站配额三态（卡 4 进度条 + near/burst 警示条）。
+     零外部依赖，双击即开。
+  ============================================================
+-->
+<style>
+/* ============================================================
+   一、文档外壳（说明页自身，浅色固定，不随演示切换；色值 = tokens 浅色原值，沿 iter-5~11 惯例）
+   ============================================================ */
+:root { --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-full: 999px; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-size: 14px; line-height: 1.6; color: #1F2329; background: #F5F6F7; padding: 40px 32px 80px;
+}
+.page { max-width: 1160px; margin: 0 auto; }
+h1 { font-size: 20px; font-weight: 600; }
+.sub { font-size: 13px; color: #8F959E; margin: 4px 0 8px; }
+.sub b { color: #646A73; }
+.badge {
+  display: inline-block; padding: 1px 10px; border-radius: var(--r-full);
+  font-size: 12px; font-weight: 500; background: #FFF7E8; color: #B45309; margin-bottom: 24px;
+}
+section { margin-bottom: 48px; }
+h2 { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+h2 .no { color: #3370FF; margin-right: 4px; }
+.sec-desc { font-size: 13px; color: #8F959E; margin-bottom: 16px; }
+.sec-desc b { color: #646A73; }
+
+table { width: 100%; border-collapse: collapse; background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-md); overflow: hidden; font-size: 13px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #E5E6EB; vertical-align: top; }
+th { color: #8F959E; font-weight: 500; background: #FAFBFC; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+td code, li code, .ann code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; background: #F2F3F5; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
+pre { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; background: #F2F3F5; border: 1px solid #E5E6EB; border-radius: var(--r-md); padding: 10px 14px; overflow: auto; line-height: 1.7; color: #1F2329; margin: 8px 0 0; }
+pre code { background: none; padding: 0; white-space: pre; }
+
+.spec { background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-lg); padding: 24px; box-shadow: 0 1px 2px rgba(31,35,41,.06); margin-bottom: 16px; }
+.spec-title { font-size: 13px; font-weight: 600; color: #646A73; margin-bottom: 12px; }
+.spec-title .tag { font-weight: 400; color: #8F959E; margin-left: 8px; }
+.stage { border: 1px dashed #E5E6EB; border-radius: var(--r-md); padding: 16px; background: #F5F6F7; }
+.ann { font-size: 12px; color: #8F959E; margin-top: 8px; line-height: 1.8; }
+.ann b { color: #646A73; font-weight: 600; }
+.sim-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; font-size: 12px; color: #646A73; margin-bottom: 12px; }
+.sim-row label { cursor: pointer; white-space: nowrap; }
+.lnk-reset { display: inline-block; margin-top: 8px; font-size: 12px; color: #3370FF; cursor: pointer; }
+.lnk-reset:hover { text-decoration: underline; color: #2E5FDF; }
+.frame-cap { text-align: center; font-size: 12px; color: #8F959E; margin-bottom: 8px; }
+.cols { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+.cols > div { flex: 1; min-width: 380px; max-width: 580px; }
+
+/* ---- 演示控制条（文档功能件，非产品组件） ---- */
+.demo-ctl {
+  position: sticky; top: 0; z-index: 500; display: flex; align-items: center; gap: 12px;
+  background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-md);
+  padding: 10px 16px; margin-bottom: 32px; box-shadow: 0 1px 2px rgba(31,35,41,.06);
+  font-size: 13px; color: #646A73; flex-wrap: wrap;
+}
+.demo-ctl .seg { display: inline-flex; border: 1px solid #E5E6EB; border-radius: var(--r-md); overflow: hidden; }
+.demo-ctl .seg button {
+  height: 30px; padding: 0 14px; border: none; background: #FFFFFF; color: #646A73;
+  font-size: 13px; cursor: pointer; transition: background .15s ease, color .15s ease;
+}
+.demo-ctl .seg button.on { background: #3370FF; color: #fff; font-weight: 600; }
+.demo-ctl .note { font-size: 12px; color: #8F959E; }
+
+/* ============================================================
+   二、演示令牌作用域 .tk（组件全部引用 var()，同 src 范式；浅 = tokens v1.3 浅值，暗 = v1.3 暗值，零自造）
+   ============================================================ */
+.tk {
+  --c-bg: #F5F6F7; --c-surface: #FFFFFF; --c-border: #E5E6EB;
+  --c-text-1: #1F2329; --c-text-2: #646A73; --c-text-3: #8F959E;
+  --c-primary: #3370FF; --c-primary-h: #2E5FDF; --c-primary-a: #2860D8; --c-primary-l: #F0F4FF;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #2E5FDF; --c-primary-solid-a: #2860D8;
+  --c-danger: #D93025; --c-danger-l: #FDECEA; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #1A9E5C; --c-success-on-dark: #4CC38A;
+  --c-warning: #B45309; --c-warning-l: #FFF7E8;
+  --c-hover-bg: #F2F3F5; --c-disabled-bg: #C9CFDB; --c-subtle-bg: #FAFBFC;
+  --c-avatar-bg: #E8EBF2; --c-scrollbar: #D5D9E0;
+  --c-toast-bg: #23272E; --c-toast-border: #23272E; --c-primary-on-dark: #A3BCFF;
+  --c-mask: rgba(31,35,41,.4); --c-focus-ring: rgba(51,112,255,.12);
+  --shadow-1: 0 1px 2px rgba(31,35,41,.06);
+  --shadow-2: 0 4px 16px rgba(31,35,41,.10);
+  --shadow-3: 0 12px 40px rgba(31,35,41,.16);
+  color: var(--c-text-1);
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+.tk.dark, .tk.force-dark {
+  --c-bg: #131417; --c-surface: #1E2026; --c-border: #33363E;
+  --c-text-1: #E6EAF0; --c-text-2: #A2A9B6; --c-text-3: #808896;
+  --c-primary: #5C8DFF; --c-primary-h: #7AA4FF; --c-primary-a: #4C84FF; --c-primary-l: #1D2740;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #4C84FF; --c-primary-solid-a: #3D78FF;
+  --c-danger: #FF8073; --c-danger-l: #361B18; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #4CC38A;
+  --c-warning: #EDA23B; --c-warning-l: #38290F;
+  --c-hover-bg: #262930; --c-disabled-bg: #3D414A; --c-subtle-bg: #24272E;
+  --c-avatar-bg: #33363E; --c-scrollbar: #3A3E46;
+  --c-toast-bg: #2A2D34; --c-toast-border: #33363E; --c-primary-on-dark: #A3BCFF;
+  --c-mask: rgba(0,0,0,.55); --c-focus-ring: rgba(92,141,255,.25);
+  --shadow-1: 0 1px 2px rgba(0,0,0,.4);
+  --shadow-2: 0 4px 16px rgba(0,0,0,.45);
+  --shadow-3: 0 12px 40px rgba(0,0,0,.6);
+}
+.tk.force-light {
+  --c-bg: #F5F6F7; --c-surface: #FFFFFF; --c-border: #E5E6EB;
+  --c-text-1: #1F2329; --c-text-2: #646A73; --c-text-3: #8F959E;
+  --c-primary: #3370FF; --c-primary-h: #2E5FDF; --c-primary-a: #2860D8; --c-primary-l: #F0F4FF;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #2E5FDF; --c-primary-solid-a: #2860D8;
+  --c-danger: #D93025; --c-danger-l: #FDECEA; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #1A9E5C;
+  --c-warning: #B45309; --c-warning-l: #FFF7E8;
+  --c-hover-bg: #F2F3F5; --c-disabled-bg: #C9CFDB; --c-subtle-bg: #FAFBFC;
+  --c-avatar-bg: #E8EBF2; --c-scrollbar: #D5D9E0;
+  --c-mask: rgba(31,35,41,.4); --c-focus-ring: rgba(51,112,255,.12);
+  --shadow-1: 0 1px 2px rgba(31,35,41,.06);
+  --shadow-2: 0 4px 16px rgba(31,35,41,.10);
+  --shadow-3: 0 12px 40px rgba(31,35,41,.16);
+  color: var(--c-text-1);
+}
+/* ============================================================
+   三、产品组件样式（全部 var() 引用，零裸色值）
+   3a. 后台框架：admin-frame / 顶栏 52px / 内容列 1080px / 分段 tab
+   3b. 概览统计卡（REQ-029.1）：stat-grid 四卡 + 卡内进度条（三态着色）
+   3c. 页面级警示条（near/burst；常态不渲染——定夺⑤ 推荐落形）
+   3d. 表格卡 + 徽标 + 行内操作（REQ-025 视觉语言沿用 iter-8）
+   3e. 搜索框 + 工具行 + 分页控件（REQ-029.2/3）
+   3f. 加载 / 失败 / 空态 / 缺失标注
+   3g. 模态（封禁确认 / 调配额；沿 components.md 表单模态口径）
+   3h. 403 卡 + 账户菜单引用（iter-11）+ 登录封禁横幅引用（iter-6/8）
+   ============================================================ */
+
+/* ---- 3a. 后台框架（顶栏结构零变化 = REQ-025 零回退项 iter-8#5；页面底改 --c-bg 灰、内容列 1080px） ---- */
+.admin-frame { position: relative; overflow: hidden; border: 1px solid var(--c-border); border-radius: var(--r-lg); background: var(--c-bg); }
+.adm-top { flex: none; height: 52px; padding: 0 20px; border-bottom: 1px solid var(--c-border); background: var(--c-surface); display: flex; align-items: center; gap: 8px; }
+.adm-brand { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; color: var(--c-text-1); }
+.adm-tag { padding: 0 8px; height: 20px; line-height: 20px; border-radius: var(--r-full); font-size: 12px; font-weight: 500; background: var(--c-primary-l); color: var(--c-primary); }
+.adm-sp { flex: 1; }
+.btn-icon32 { width: 32px; height: 32px; padding: 0; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-2); border-radius: var(--r-md); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: border-color .15s ease, color .15s ease, background .15s ease, transform .1s ease; }
+.btn-icon32:hover { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-l); }
+.btn-icon32:active { transform: scale(.94); }
+.btn-ghost { height: 30px; padding: 0 12px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-2); border-radius: var(--r-md); font-size: 13px; cursor: pointer; font-family: inherit; transition: border-color .15s ease, color .15s ease, background .15s ease, transform .1s ease; }
+.btn-ghost:hover { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-l); }
+.btn-ghost:active { transform: scale(.98); }
+.btn-ghost.btn-sm { height: 26px; padding: 0 10px; font-size: 12px; }
+.adm-body { width: min(1080px, calc(100% - 48px)); margin: 24px auto 32px; }
+/* tab = components.md「分段控件」：外框 1px border + r-md，选中段 primary-l + primary + 500（现状零变化） */
+.adm-tabs { display: inline-flex; border: 1px solid var(--c-border); border-radius: var(--r-md); overflow: hidden; background: var(--c-surface); }
+.adm-tabs button { height: 32px; padding: 0 16px; border: none; background: transparent; color: var(--c-text-2); font-size: 13px; cursor: pointer; font-family: inherit; transition: background .15s ease, color .15s ease; }
+.adm-tabs button:hover { color: var(--c-text-1); background: var(--c-hover-bg); }
+.adm-tabs button.on { background: var(--c-primary-l); color: var(--c-primary); font-weight: 500; }
+
+/* ---- 3b. 概览统计卡（REQ-029.1：surface 卡 + border + r-lg + shadow-1；label 13 text-2 / value 20/600 tabular / sub 12 text-3） ---- */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 16px; }
+.stat-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: var(--shadow-1); padding: 16px 20px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.sc-label { font-size: 13px; color: var(--c-text-2); display: flex; align-items: center; gap: 6px; }
+.sc-label .sc-ico { color: var(--c-text-3); display: inline-flex; }
+.sc-value { font-size: 20px; font-weight: 600; color: var(--c-text-1); font-variant-numeric: tabular-nums; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-total { font-size: 14px; font-weight: 400; color: var(--c-text-3); }
+.sc-sub { font-size: 12px; color: var(--c-text-3); }
+/* 卡 4 进度条：track hover-bg（沿 iter-8 mb-prog 语法）；fill 三态 = primary-solid / warning(≥80%) / danger-solid(=100%) */
+.sc-prog { height: 6px; border-radius: var(--r-full); background: var(--c-hover-bg); overflow: hidden; margin-top: 2px; }
+.sc-prog .fill { height: 100%; border-radius: var(--r-full); background: var(--c-primary-solid); transition: width .2s ease, background .15s ease; }
+.stat-card.near .sc-prog .fill { background: var(--c-warning); }
+.stat-card.burst .sc-prog .fill { background: var(--c-danger-solid); }
+.sc-state { font-size: 12px; color: var(--c-text-3); }
+.sc-state.warn { color: var(--c-warning); font-weight: 500; }
+.sc-state.danger { color: var(--c-danger); font-weight: 500; }
+
+/* ---- 3c. 页面级警示条（iter-8 site-strip 视觉语言沿用：surface + 左缘 3px 语义色 + r-md；仅 near/burst 渲染——定夺⑤） ---- */
+.site-strip { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 14px; margin-bottom: 16px; border: 1px solid var(--c-border); border-left: 3px solid var(--c-primary); border-radius: var(--r-md); background: var(--c-surface); font-size: 13px; color: var(--c-text-2); }
+.site-strip .ss-label { font-weight: 600; color: var(--c-text-1); }
+.site-strip .ss-num b { color: var(--c-text-1); font-variant-numeric: tabular-nums; }
+.site-strip .ss-note { font-size: 12px; color: var(--c-text-3); }
+.site-strip.near { border-left-color: var(--c-warning); background: var(--c-warning-l); color: var(--c-warning); }
+.site-strip.near .ss-label, .site-strip.near .ss-note { color: var(--c-warning); }
+.site-strip.burst { border-left-color: var(--c-danger); background: var(--c-danger-l); color: var(--c-danger); }
+.site-strip.burst .ss-label, .site-strip.burst .ss-note { color: var(--c-danger); }
+
+/* ---- 3d. 表格卡 + 徽标（六列/四列结构零变化；留白加深 td 12/16；adm-table 显式 transparent —— iter-8 R1 教训） ---- */
+.tbl-card { border: 1px solid var(--c-border); border-radius: var(--r-md); background: var(--c-surface); overflow-x: auto; box-shadow: var(--shadow-1); }
+.adm-table { width: 100%; border-collapse: collapse; font-size: 13px; background: transparent; }
+.adm-table th { text-align: left; font-size: 12px; font-weight: 500; color: var(--c-text-3); background: var(--c-subtle-bg); padding: 10px 16px; border-bottom: 1px solid var(--c-border); white-space: nowrap; }
+.adm-table th.num { text-align: right; }
+.adm-table td { padding: 12px 16px; border-bottom: 1px solid var(--c-border); vertical-align: middle; color: var(--c-text-2); white-space: nowrap; }
+.adm-table tbody tr { transition: background .15s ease; }
+.adm-table tbody tr:hover { background: var(--c-hover-bg); }
+.adm-table tbody tr:last-child td { border-bottom: none; }
+.adm-table td.num { text-align: right; }
+.adm-table th.sortable { cursor: pointer; user-select: none; }
+.adm-table th.sortable:hover { color: var(--c-text-1); }
+.sort-ind { font-size: 10px; margin-left: 3px; color: var(--c-primary); }
+.mono { font-variant-numeric: tabular-nums; }
+.cell-time { font-size: 12px; color: var(--c-text-3); font-variant-numeric: tabular-nums; }
+.uname { font-size: 13px; font-weight: 600; color: var(--c-text-1); display: inline-block; max-width: 150px; vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+mark.hl { background: transparent; color: var(--c-primary); font-weight: 600; }
+/* 状态徽标（胶囊 20px / r-full / 12px·500；色组合沿 iter-8 定夺①，零变化） */
+.pill { display: inline-flex; align-items: center; padding: 0 8px; height: 20px; border-radius: var(--r-full); font-size: 12px; font-weight: 500; white-space: nowrap; vertical-align: middle; }
+.pill-ok { background: var(--c-subtle-bg); color: var(--c-success); border: 1px solid var(--c-border); }
+.pill-ban { background: var(--c-danger-l); color: var(--c-danger); }
+.pill-admin { background: var(--c-primary-l); color: var(--c-primary); margin-left: 6px; }
+.pill-def { background: var(--c-subtle-bg); color: var(--c-text-2); border: 1px solid var(--c-border); }
+.pill-cut { background: var(--c-primary-l); color: var(--c-primary); }
+.q-used { font-size: 12px; color: var(--c-text-3); font-variant-numeric: tabular-nums; margin-left: 6px; white-space: nowrap; }
+.q-full { color: var(--c-danger); font-weight: 500; }
+/* 行内操作按钮（26px / r-sm / 12px，沿 iter-8） */
+.btn-row { height: 26px; padding: 0 10px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); font-size: 12px; cursor: pointer; margin-right: 6px; font-family: inherit; color: var(--c-text-2); transition: border-color .15s ease, color .15s ease, background .15s ease, transform .1s ease; }
+.btn-row:active { transform: scale(.96); }
+.btn-row.act-quota:hover, .btn-row.act-unban:hover { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-l); }
+.btn-row.act-ban { color: var(--c-danger); }
+.btn-row.act-ban:hover { border-color: var(--c-danger); background: var(--c-danger-l); }
+.btn-row:disabled { color: var(--c-text-3); opacity: .45; cursor: not-allowed; }
+.btn-row:disabled:hover { border-color: var(--c-border); background: var(--c-surface); }
+.acts { white-space: nowrap; }
+
+/* ---- 3e. 搜索框（沿 iter-11 §1.1 语法：32px surface + icon + 清除钮 + 焦点环）+ 工具行 + 分页控件 ---- */
+.adm-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.adm-toolbar .tb-label { font-size: 12px; color: var(--c-text-3); }
+.adm-toolbar select, .adm-toolbar input[type=date] { height: 32px; padding: 0 10px; border: 1px solid var(--c-border); border-radius: var(--r-md); background: var(--c-surface); color: var(--c-text-1); font-size: 13px; font-family: inherit; outline: none; transition: border-color .15s ease, box-shadow .15s ease; }
+.adm-toolbar select:focus, .adm-toolbar input[type=date]:focus { border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-focus-ring); }
+.tb-count { font-size: 12px; color: var(--c-text-3); }
+.search-box { display: flex; align-items: center; gap: 6px; width: 260px; height: 32px; padding: 0 8px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-md); transition: border-color .15s ease, box-shadow .15s ease; }
+.search-box:focus-within { border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-focus-ring); }
+.search-box .s-ico { flex: none; color: var(--c-text-3); display: inline-flex; }
+.search-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: 13px; color: var(--c-text-1); font-family: inherit; }
+.search-input::placeholder { color: var(--c-text-3); }
+.search-clear { flex: none; width: 20px; height: 20px; border: none; border-radius: var(--r-sm); background: transparent; color: var(--c-text-3); cursor: pointer; display: none; align-items: center; justify-content: center; }
+.search-clear.show { display: inline-flex; }
+.search-clear:hover { background: var(--c-avatar-bg); color: var(--c-text-1); }
+/* 分页控件：左信息右控件；pg-btn 28px r-sm；on = primary-l/primary/500；边界 disabled .45 + not-allowed */
+.pager { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+.pg-info { font-size: 12px; color: var(--c-text-3); font-variant-numeric: tabular-nums; }
+.pg-ctl { margin-left: auto; display: flex; gap: 4px; align-items: center; }
+.pg-btn { height: 28px; min-width: 28px; padding: 0 8px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-text-2); font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-family: inherit; font-variant-numeric: tabular-nums; transition: border-color .15s ease, color .15s ease, background .15s ease, transform .1s ease; }
+.pg-btn:hover:not(:disabled):not(.on) { border-color: var(--c-primary); color: var(--c-primary); }
+.pg-btn:active:not(:disabled) { transform: scale(.94); }
+.pg-btn.on { background: var(--c-primary-l); color: var(--c-primary); font-weight: 500; border-color: var(--c-primary); cursor: default; }
+.pg-btn:disabled { opacity: .45; cursor: not-allowed; }
+.pg-ellipsis { color: var(--c-text-3); font-size: 12px; padding: 0 2px; }
+
+/* ---- 3f. 加载 / 失败 / 空态 / 缺失标注（口径沿现状 AdminView） ---- */
+.adm-state { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 48px 0; color: var(--c-text-3); font-size: 12px; }
+.spin-p { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--c-primary-l); border-top-color: var(--c-primary); animation: spin .8s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.err-banner { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: var(--r-md); background: var(--c-danger-l); color: var(--c-danger); font-size: 13px; flex-wrap: wrap; }
+.err-banner .btn-ghost { border-color: currentColor; color: inherit; background: transparent; }
+.err-banner .btn-ghost:hover { background: var(--c-surface); border-color: currentColor; color: inherit; opacity: .85; }
+.empty-box { padding: 40px 0; text-align: center; color: var(--c-text-3); font-size: 13px; border: 1px dashed var(--c-border); border-radius: var(--r-md); background: var(--c-surface); display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.empty-box .e-ico { color: var(--c-text-3); margin-bottom: 4px; }
+.empty-box .e-hint { font-size: 12px; }
+.gap-note { padding: 8px 14px; margin-bottom: 8px; border-radius: var(--r-md); background: var(--c-warning-l); color: var(--c-warning); font-size: 12px; }
+
+/* ---- 3g. 模态（components.md「表单模态/模态确认」口径；宽 400 max-width calc(100% - 32px)——弹窗不溢出视口沿 REQ-028） ---- */
+.modal-mask { position: absolute; inset: 0; background: var(--c-mask); display: flex; align-items: center; justify-content: center; z-index: 20; }
+.modal { width: 400px; max-width: calc(100% - 32px); background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: var(--shadow-3); padding: 20px 24px; }
+.modal h3 { font-size: 15px; font-weight: 600; margin-bottom: 8px; color: var(--c-text-1); }
+.modal .m-body { font-size: 13px; color: var(--c-text-2); line-height: 1.7; }
+.modal .m-note { font-size: 12px; color: var(--c-text-3); line-height: 1.7; margin-top: 10px; }
+.modal .m-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.btn-cancel { height: 32px; padding: 0 12px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-2); border-radius: var(--r-md); font-size: 13px; cursor: pointer; font-family: inherit; transition: border-color .15s ease, color .15s ease; }
+.btn-cancel:hover { border-color: var(--c-primary); color: var(--c-primary); }
+.btn-primary { height: 32px; padding: 0 16px; background: var(--c-primary-solid); color: #fff; border: none; border-radius: var(--r-md); font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; transition: background .15s ease, transform .1s ease; }
+.btn-primary:hover { background: var(--c-primary-solid-h); }
+.btn-primary:active { background: var(--c-primary-solid-a); transform: scale(.98); }
+.btn-danger { height: 32px; padding: 0 16px; background: var(--c-danger-solid); color: #fff; border: none; border-radius: var(--r-md); font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; transition: background .15s ease, transform .1s ease; }
+.btn-danger:hover { background: var(--c-danger-solid-h); }
+.btn-danger:active { transform: scale(.98); }
+/* 调配额选项行（沿 iter-8/admin 现状） */
+.q-opt { display: flex; gap: 8px; padding: 10px 12px; border: 1px solid var(--c-border); border-radius: var(--r-md); margin-top: 8px; cursor: pointer; font-size: 13px; color: var(--c-text-1); align-items: flex-start; background: var(--c-surface); transition: border-color .15s ease; }
+.q-opt:hover { border-color: var(--c-primary); }
+.q-opt input[type=radio] { margin-top: 3px; accent-color: var(--c-primary); }
+.q-opt .q-desc { display: block; font-size: 12px; color: var(--c-text-3); margin-top: 2px; }
+.q-num { width: 76px; height: 28px; padding: 0 8px; font-size: 14px; font-family: inherit; border: 1px solid var(--c-border); border-radius: var(--r-sm); outline: none; color: var(--c-text-1); background: var(--c-surface); margin: 0 4px; transition: border-color .15s ease, box-shadow .15s ease; }
+.q-num:focus { border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-focus-ring); }
+.q-opt.invalid .q-num { border-color: var(--c-danger); }
+.hint-err { font-size: 12px; color: var(--c-danger); margin-top: 6px; display: none; }
+.hint-err.show { display: block; }
+
+/* ---- 3h. 403 卡（沿 iter-8/现状）+ 账户菜单（iter-11 引用）+ 登录封禁横幅（iter-6/8 定稿文案引用） ---- */
+.forbid-frame { position: relative; height: 300px; border: 1px solid var(--c-border); border-radius: var(--r-lg); background: var(--c-bg); display: flex; align-items: center; justify-content: center; }
+.forbid-card { text-align: center; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: var(--shadow-1); padding: 28px 32px; width: 360px; max-width: calc(100% - 32px); }
+.forbid-card .f-title { font-size: 17px; font-weight: 600; color: var(--c-text-1); margin-top: 10px; }
+.forbid-card .f-desc { font-size: 13px; color: var(--c-text-2); margin: 6px 0 16px; }
+.acct { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--c-border); padding-top: 10px; min-height: 44px; }
+.acct-avatar { flex: none; width: 24px; height: 24px; border-radius: var(--r-full); background: var(--c-avatar-bg); color: var(--c-text-2); font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; }
+.acct-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; color: var(--c-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.more-btn { flex: none; width: 28px; height: 28px; border: none; border-radius: var(--r-sm); background: transparent; color: var(--c-text-3); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: background .15s ease, color .15s ease; }
+.more-btn:hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+.dd-menu { min-width: 148px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-md); box-shadow: var(--shadow-2); padding: 4px; }
+.mi { display: flex; width: 100%; height: 32px; align-items: center; padding: 0 12px; border: none; border-radius: var(--r-sm); background: transparent; color: var(--c-text-1); font-size: 13px; font-family: inherit; cursor: pointer; text-align: left; transition: background .15s ease; }
+.mi:hover { background: var(--c-hover-bg); outline: none; }
+.dd-sep { height: 1px; background: var(--c-border); margin: 4px 8px; }
+.auth-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: var(--shadow-1); padding: 24px; }
+.auth-title { font-size: 17px; font-weight: 600; color: var(--c-text-1); }
+.auth-sub { font-size: 13px; color: var(--c-text-3); margin: 4px 0 16px; }
+.field { margin-bottom: 16px; }
+.field label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: var(--c-text-1); }
+.field input { width: 100%; height: 36px; padding: 0 12px; font-size: 16px; font-family: inherit; border: 1px solid var(--c-border); border-radius: var(--r-md); outline: none; color: var(--c-text-1); background: var(--c-surface); transition: border-color .15s ease, box-shadow .15s ease; }
+.field input:focus { border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-focus-ring); }
+.form-banner { display: flex; align-items: flex-start; gap: 8px; border-radius: var(--r-md); padding: 8px 12px; font-size: 13px; line-height: 1.6; margin-bottom: 12px; flex-wrap: wrap; }
+.form-banner .b-ico { flex: none; font-weight: 600; }
+.form-banner.warn { background: var(--c-warning-l); color: var(--c-warning); }
+/* 深底 toast（tokens v1.3.1 on-dark 族） */
+.toast { display: inline-flex; align-items: center; gap: 8px; background: var(--c-toast-bg); border: 1px solid var(--c-toast-border); color: #fff; font-size: 13px; padding: 10px 16px; border-radius: var(--r-md); box-shadow: var(--shadow-2); transition: opacity .3s ease; }
+.toast .t-ok { color: var(--c-success-on-dark); font-weight: 600; }
+</style>
+</head>
+<body>
+<div id="toastHost" style="position:fixed;left:50%;bottom:32px;transform:translateX(-50%);z-index:1000;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none;"></div>
+<div class="page">
+
+  <h1>ai-chat · iter-12 设计稿（REQ-029 管理后台体验重构）</h1>
+  <div class="sub">
+    依据：<b>plans/iter-12.md</b> T0（REQ-029 设计稿：概览统计卡 + 用户搜索与分页控件形态 + 视觉重构方向 + 后端分页 API 口径；
+    <b>v1.4.4 硬要求：§7 走查清单为 T1/T2 任务级验收门槛</b>；「今日」界定/缺失时段/分页参数与响应结构随稿定案——§4 + §8）·
+    <b>req-baseline-v4</b> REQ-029（CHG-006）+ <b>REQ-025 功能口径零回退</b>（复验清单 = plans/iter-8-verify.md T2 段，§7.2「iter-8#」列逐条映射）·
+    令牌全部来自公司 <b>design-system/tokens.md v1.3/v1.3.1</b> + <b>components.md v1.0</b>，本稿<b>零新增令牌、零自造色值</b>（§8-⑧）·
+    文档结构沿 <b>design-iter-11</b> 范本；改版对象前身 = <b>design-iter-8</b>（REQ-025 初版，视觉语言沿用）；
+    字段核对自 <b>src/views/AdminView.vue / src/api/backend.ts 现状</b>；后端口径核对自 <b>backend/app/routers/admin.py / quota.py / config.py / db.py 迁移 v4·v5</b>
+  </div>
+  <div class="badge">状态：设计稿 iter-12 —— <b>待 CEO 评审基线</b>（批准后打 tag design-iter-12；§8 八项定夺随基线拍板，样件已按推荐落形）</div>
+  <div style="font-size:12px;color:#3370FF;background:#F0F4FF;border:1px solid #E5E6EB;border-radius:8px;padding:8px 12px;margin:-12px 0 28px;line-height:1.7;">
+    <b>视觉基调（CEO 已定，不得偏离）：</b>延续 iter-9/11——页面灰底 <code>--c-bg</code>（浅 #F5F6F7 / 暗 #131417）+ 内容白卡 <code>--c-surface</code>（浅 #FFFFFF / 暗 #1E2026）；
+    主色飞书蓝 <b>#3370FF</b>（暗色前景 #5C8DFF）；参考现代管理后台（信息层级/卡片/留白/状态徽标）。REQ-025 六端点全部界面能力零回退（§5 映射表 + §7.2 复验组）。
+  </div>
+
+  <!-- 演示控制 -->
+  <div class="demo-ctl">
+    <b>演示控制：</b>
+    <span class="seg">
+      <button id="btnLight" class="on">浅色</button>
+      <button id="btnDark">暗色</button>
+    </span>
+    <span class="note">一键切换下方全部可翻转样件（第 6 节锁定帧不随动）；选择写入 localStorage 刷新保持。
+    §1 主样件可真实操作：翻页/页码跳转/模拟越界、搜索（大小写不敏感）、封禁/解封/调配额、筛选排序、三态切换。
+    <b>样件内用户名/日期/用量数值均为虚构演示数据（铁律 5：线上度量只允许机器采集）</b>。</span>
+  </div>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">1</span>后台框架与概览统计卡（REQ-029.1/.4，可交互主样件）</h2>
+    <div class="sec-desc">
+      spec REQ-029 四项中的 ① <b>概览统计卡</b>（总用户数 / 今日请求 / 今日 token / 统一 key 每日用量进度）与 ④ <b>视觉重构</b>（信息层级/卡片/留白/状态徽标）；
+      主流程「进入后台 → <b>概览卡先入眼</b> → 搜索/翻页定位用户 → 治理操作（流程沿用）→ 用量翻页浏览」。本样件即整页骨架，
+      用户表搜索/分页（§2）与用量表分页（§3）均在此样件内可操作。统计口径定案见 §4.3；三态去向为定夺 ⑤（§8）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.1 管理后台总览（可交互）<span class="tag">顶栏零变化 + 概览卡区常驻 tabs 上方 + 双 tab + 治理操作沿用 —— 本稿主样件，§2/§3 均在此演示</span></div>
+      <div class="sim-row">
+        <b>试：</b>搜索框输入「spam」或「SPAM」（大小写不敏感 + 命中高亮）；翻页 / 点页码；<a class="lnk-reset" id="jumpOut" style="margin-top:0;">模拟越界（跳第 999 页）</a>看钳制；
+        行内「封禁」（确认模态）/「解封」（直接生效）/「调配额」（试输 1.5 看校验；选「按默认档位」保存 = 清空覆盖）。
+        <a class="lnk-reset" id="aReset" style="margin-top:0;">↺ 重置主样件</a>
+      </div>
+      <div class="sim-row">
+        <b>全站配额（卡 4 三态）：</b>
+        <label><input type="radio" name="siteState" value="normal" checked> 正常（100/2,000）</label>
+        <label><input type="radio" name="siteState" value="near"> ≥80%（1,600/2,000）</label>
+        <label><input type="radio" name="siteState" value="burst"> 已熔断（2,000/2,000）</label>
+        <span style="border-left:1px solid #E5E6EB;padding-left:16px;"><b>用户列表状态：</b>
+        <label><input type="radio" name="ulState" value="data" checked> 有数据（47 人）</label>
+        <label><input type="radio" name="ulState" value="solo"> 仅管理员一人</label>
+        <label><input type="radio" name="ulState" value="loading"> 加载中</label>
+        <label><input type="radio" name="ulState" value="error"> 拉取失败</label></span>
+      </div>
+      <div class="stage">
+        <div class="tk admin-frame" id="admFrame">
+          <div class="adm-top">
+            <div class="adm-brand">
+              <svg viewBox="0 0 128 128" width="22" height="22" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+              喵喵 <span class="adm-tag">管理后台</span>
+            </div>
+            <span class="adm-sp"></span>
+            <button class="btn-icon32" title="切换主题" aria-label="切换主题"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" fill="currentColor"/></svg></button>
+            <button class="btn-ghost" title="返回主界面">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              返回主界面
+            </button>
+          </div>
+          <div class="adm-body">
+            <!-- 概览统计卡区（tabs 上方常驻，两 tab 均可见） -->
+            <div class="stat-grid">
+              <div class="stat-card">
+                <div class="sc-label"><span class="sc-ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm0 2c-3.3 0-8 1.7-8 5v1h16v-1c0-3.3-4.7-5-8-5Z"/></svg></span>总用户数</div>
+                <div class="sc-value" id="ovUsers">47</div>
+                <div class="sc-sub">全部注册账号（含已封禁与管理员）</div>
+              </div>
+              <div class="stat-card">
+                <div class="sc-label"><span class="sc-ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4a1 1 0 0 0-1 1v3h18V5a1 1 0 0 0-1-1ZM3 20a1 1 0 0 0 1 1h5V10H3v10Zm8 1h8a1 1 0 0 0 1-1V10h-9v11Z"/></svg></span>今日请求</div>
+                <div class="sc-value" id="ovReq">86</div>
+                <div class="sc-sub">今日 · 全部密钥模式合计</div>
+              </div>
+              <div class="stat-card">
+                <div class="sc-label"><span class="sc-ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h16v2H4V4Zm0 5h10v2H4V9Zm0 5h16v2H4v-2Zm0 5h10v2H4v-2Z"/></svg></span>今日 token</div>
+                <div class="sc-value" id="ovTok">412,530</div>
+                <div class="sc-sub">今日 · 上游 usage 帧合计</div>
+              </div>
+              <div class="stat-card" id="cardUnified">
+                <div class="sc-label"><span class="sc-ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Z"/></svg></span>统一 key 每日用量</div>
+                <div class="sc-value"><span id="ovUUsed">100</span><span class="sc-total"> / <span id="ovUTotal">2,000</span> 次</span></div>
+                <div class="sc-prog"><div class="fill" id="ovFill" style="width:5%"></div></div>
+                <div class="sc-state" id="ovStateLine">剩余 1,900 次</div>
+              </div>
+            </div>
+            <!-- 页面级警示条：仅 near/burst 渲染（定夺⑤ 推荐落形；常态数值在卡 4，无重复条） -->
+            <div class="site-strip near" id="siteStrip" style="display:none;"></div>
+
+            <div class="adm-tabs" role="radiogroup" aria-label="后台分区">
+              <button class="on" id="tabUsersBtn" role="radio" aria-checked="true">用户列表</button>
+              <button id="tabUsageBtn" role="radio" aria-checked="false">用量列表</button>
+            </div>
+
+            <!-- 用户列表面板（§2） -->
+            <section id="panelUsers" style="margin-top:12px;">
+              <div class="adm-toolbar">
+                <div class="search-box">
+                  <span class="s-ico"><svg width="14" height="14" viewBox="0 0 24 24"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5Zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14Z"/></svg></span>
+                  <input class="search-input" id="uSearch" type="text" placeholder="搜索用户名（大小写不敏感）" spellcheck="false" autocomplete="off" aria-label="搜索用户名">
+                  <button class="search-clear" id="uSearchClear" aria-label="清除搜索" title="清除搜索"><svg width="12" height="12" viewBox="0 0 24 24"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.3 19.7 2.89 18.29 9.17 12 2.89 5.71 4.3 4.29l6.29 6.3 6.3-6.3 1.41 1.42Z"/></svg></button>
+                </div>
+                <span class="tb-count" id="uCount"></span>
+              </div>
+              <div id="uArea"></div>
+            </section>
+
+            <!-- 用量列表面板（§3） -->
+            <section id="panelUsage" style="margin-top:12px;display:none;">
+              <div class="adm-toolbar">
+                <span class="tb-label">用户</span>
+                <select id="zUser" aria-label="按用户过滤"></select>
+                <span class="tb-label">日期</span>
+                <input type="date" id="zFrom" value="2026-08-10" aria-label="起始日期">
+                <span class="tb-label">至</span>
+                <input type="date" id="zTo" value="2026-08-16" aria-label="结束日期">
+                <span class="tb-count" id="zCount"></span>
+              </div>
+              <div id="u2Area"></div>
+            </section>
+          </div>
+
+          <!-- 封禁确认模态（沿现状 ConfirmModal 口径零变化） -->
+          <div class="modal-mask" id="banMask" style="display:none;">
+            <div class="modal">
+              <h3>封禁该用户？</h3>
+              <div class="m-body">封禁后 <b id="banName">—</b> 将<b>无法登录与调用</b>，云端数据保留；解封后可恢复使用。</div>
+              <div class="m-actions"><button class="btn-cancel" id="banNo">取消</button><button class="btn-danger" id="banYes">确认封禁</button></div>
+            </div>
+          </div>
+          <!-- 调配额模态（沿现状：默认档/自定义 N + 正整数校验） -->
+          <div class="modal-mask" id="qMask" style="display:none;">
+            <div class="modal">
+              <h3>调整配额</h3>
+              <div class="m-body" id="qSub">—</div>
+              <label class="q-opt"><input type="radio" name="qmode" value="default" checked>
+                <span>按默认档位（随密钥模式）<span class="q-desc">统一 key = 免费档 30 次/日 · 自填 key = 500 次/日（部署配置默认值）</span></span>
+              </label>
+              <label class="q-opt" id="qOptCustom"><input type="radio" name="qmode" value="custom">
+                <span>自定义每日 <input type="text" class="q-num" id="qInput" placeholder="N"> 次（覆盖默认档位）</span>
+              </label>
+              <div class="hint-err" id="qErr">请输入正整数（≥1），不能用小数或留空</div>
+              <div class="m-note">调整自下一次请求生效；恢复默认档位即清除自定义覆盖。</div>
+              <div class="m-actions"><button class="btn-cancel" id="qNo">取消</button><button class="btn-primary" id="qYes">保存</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>结构（自上而下）</b>：顶栏 52px（品牌 + 「管理后台」徽标 <code>--c-primary-l</code>/<code>--c-primary</code> + 主题切换 + 「返回主界面」——<b>结构零变化</b>，iter-8#5 复验口径）/
+        内容列 <b>min(1080px, 100% - 48px)</b> 居中（原 960px 加宽承载四卡）/ <b>概览卡区</b>（4 卡 grid，gap 16px，<b>tabs 上方常驻</b>——两 tab 均可见，进入首屏先入眼）/
+        警示条（仅 near/burst）/ 分段 tab（用户列表 / 用量列表，<code>role=radiogroup</code> 零变化）/ 表格卡 + 分页。
+        页面底由现状 <code>--c-subtle-bg</code> 改 <code>--c-bg</code>（与主界面灰底基调一致，§5 映射）。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.2 统计卡规格（四卡逐列）与三态着色<span class="tag">数值卡不做趋势图（CHG-004 定案）；口径定案见 §4.3 + §8-④</span></div>
+      <table>
+        <tr><th style="width:120px">卡</th><th>内容与数据源（后端扩展）</th><th>规格（字号/色值标注）</th></tr>
+        <tr><td>① 总用户数</td><td><code>COUNT(users)</code>，含已封禁与管理员；仅管理员一人部署显示 1（正常，非空态）</td><td>label 13px <code>--c-text-2</code>；数值 <b>20px/600 <code>--c-text-1</code> tabular-nums</b>；副注 12px <code>--c-text-3</code></td></tr>
+        <tr><td>② 今日请求</td><td><code>SUM(requests WHERE day=今日)</code>——<b>全部密钥模式合计</b>（统一 + 自填）；被拦截请求不计数（先查后计，quota.py 口径）</td><td>同上</td></tr>
+        <tr><td>③ 今日 token</td><td><code>SUM(tokens WHERE day=今日)</code>——上游 usage 帧 total_tokens 合计（解析不到记 0，不估算）</td><td>同上</td></tr>
+        <tr><td>④ 统一 key 每日用量</td><td><code>SUM(requests WHERE day=今日 AND mode='unified')</code> / <code>settings.unified_daily_total</code>（默认 2,000，可配置）——与既有 overview 同源</td><td>数值同上 + 总量 14px <code>--c-text-3</code>；<b>进度条</b> 6px r-full：track <code>--c-hover-bg</code>，fill <code>--c-primary-solid</code>（常态）/ <code>--c-warning</code>（≥80%）/ <code>--c-danger-solid</code>（=100%）；状态行 12px（常态 <code>--c-text-3</code> / near <code>--c-warning</code> / burst <code>--c-danger</code>）</td></tr>
+      </table>
+      <div class="ann">
+        <b>三态语义（REQ-025 全站条三态的 REQ-029 载体，定夺⑤）</b>：着色阈值沿现状 computed——<code>used/total ≥ 80% → near</code>、<code>used ≥ total → burst</code>、总量 ≤0 视为 normal。
+        <b>文案零回退落点</b>：常态数值由卡 4 承载（「已用 100 / 2,000 次」，等价于原常态条「统一 key 每日总量 2,000 · 今日已用 100」——iter-8#9 复验口径）；
+        near/burst 时卡下方渲染页面级警示条（iter-8 site-strip 同视觉：<code>--c-warning-l</code>/<code>--c-danger-l</code> + 左缘 3px 语义色），文案逐字沿用——
+        near：「统一 key 每日总量 2,000 · 今日已用 1,600（已接近上限，请关注消耗）」；burst：「……—— <b>已暂停全站新对话请求，明日 00:00 自动恢复；自填 key 用户不受影响</b>」（iter-8#10/#11 复验口径，1.1 样件切三态可验）。
+        <b>不做趋势图</b>（CHG-004 定案「图表不做」）；数值为机器采集聚合，无记录即 0，不估算补齐（铁律 5，§4.3）。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">2</span>用户列表：搜索 + 分页 + 治理操作沿用（REQ-029.2，可交互）</h2>
+    <div class="sec-desc">
+      spec REQ-029.2：用户名搜索、分页（后端 limit/offset + 前端分页控件）。<b>六列字段与治理操作（封禁/解封/调配额）流程零变化</b>（REQ-025 零回退组 §7.2 条 23~32）；
+      API 口径（参数名/信封/越界/空页）定案见 §4.1 + §8-①②③。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.1 搜索与分页规格<span class="tag">1.1 样件内可玩：输「SPAM」/ 翻页 / 模拟越界 / 空态清除</span></div>
+      <table>
+        <tr><th style="width:130px">项</th><th>规格</th></tr>
+        <tr><td>搜索框</td><td>宽 260px 高 32px，<code>--c-surface</code> 底 + 1px <code>--c-border</code> + <code>--r-md</code>；左 icon 14px <code>--c-text-3</code>；focus 主色描边 + 3px <code>--c-focus-ring</code>；有词显清除钮 20px（沿主界面搜索框语法，iter-11 §1.1）</td></tr>
+        <tr><td>触发时机</td><td>输入<b>防抖 300ms</b> 触发请求；Enter 立即触发；清除钮 / 清空输入即重置。请求期间表格区显示加载态（不清 tab）</td></tr>
+        <tr><td>匹配规则</td><td><b>用户名子串匹配、大小写不敏感</b>（后端 LIKE：SQLite 对 ASCII 天然不敏感，中文无大小写——「SPAM」命中「spam-bot-2026」）；<code>%</code>/<code>_</code> 转义为字面量；trim 后空串 = 不筛选（等同无搜索）</td></tr>
+        <tr><td>命中呈现</td><td>命中片段主色高亮（mark：<code>--c-primary</code>/600，沿 REQ-016 高亮语法）；工具行右侧显示「找到 N 个用户」（无搜索时显示「共 N 个用户」于分页信息行）</td></tr>
+        <tr><td>搜索空态</td><td>空盒（dashed border + surface）：「未找到匹配「关键词」的用户」+ 副注「用户名搜索大小写不敏感」+「清除搜索」动作——<b>非错误态</b>（REQ-029 异常分支）</td></tr>
+        <tr><td>搜索 × 分页</td><td>搜索词变更（含清除）→ <code>offset 重置 0</code> 回第 1 页；搜索与分页可组合（先过滤后计数分页，total = 过滤后总数）</td></tr>
+        <tr><td>分页控件</td><td>表格下方一行：左「共 N 个用户 · M 页」（12px <code>--c-text-3</code> tabular-nums）+ 右「‹ 上一页 / 页码 / 下一页 ›」（28px r-sm 按钮，hover 主色描边，active scale .94；当前页 = <code>--c-primary-l</code> 底 + <code>--c-primary</code> 字 + 500，沿分段控件选中语法）；首页/末页对应按钮 <b>disabled</b>（opacity .45 + not-allowed）；页码 >7 页时窗口折叠「…」</td></tr>
+        <tr><td>单页隐藏</td><td><b>total ≤ 页大小（20）时分页控件不渲染</b>，仅保留「共 N 个用户」——小部署（当前现实：自部署用户个位数）零打扰，与 iter-8「行数增长由页面滚动承载」的既有精神衔接（1.1 切「仅管理员一人」可验）</td></tr>
+        <tr><td>越界钳制</td><td>offset ≥ total（翻页中他人删号/搜索收窄）→ <b>服务端钳制到最后一页</b>并返回真实 total（信封 offset 即生效值）；1.1「模拟越界」链接可验（§8-② 推荐落形）</td></tr>
+        <tr><td>翻页反馈</td><td>翻页后滚动至表格顶部（T2 落实；演示件无页面滚动不体现）；请求期间表格区加载态，保留搜索词与页码</td></tr>
+      </table>
+      <div class="ann"><b>治理操作沿用（零回退，§7.2 条 23~32 逐条）</b>：六列全字段；管理员本人行封禁禁用 + title；封禁 = 确认模态（danger 实底「确认封禁」）→ toast + 列表与统计卡重载；解封直接生效 + toast；
+      调配额模态双选项 + 正整数校验（空/小数/0 → 红描边 + 行内错误不入库）+ 保存 toast「自下一次请求生效」；<b>选「按默认档位」保存 = 清空覆盖恢复默认档</b>（quota_override → NULL）；
+      加载态 spinner + 「正在加载用户列表…」；失败 banner + 重试（不清 tab/搜索/页码）；超长用户名 ellipsis（max-width 150px）+ title 全名。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">3</span>用量列表：分页 + 筛选排序沿用（REQ-029.3，可交互）</h2>
+    <div class="sec-desc">
+      spec REQ-029.3：用量列表增强 = <b>分页</b>；<b>筛选沿用</b>（用户下拉 + 日期起止，默认最近 7 天）。四列与排序交互零变化（iter-8#23~#28 复验）；
+      排序实现由前端挪至后端（分页后客户端排序失效——§4.2 + §8-⑥），列头交互不变。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">3.1 用量面板规格<span class="tag">1.1 样件切「用量列表」tab 操作；状态切换见下方控制</span></div>
+      <div class="sim-row">
+        <b>用量状态：</b>
+        <label><input type="radio" name="uzState" value="data" checked> 有数据（7 天连续）</label>
+        <label><input type="radio" name="uzState" value="gap"> 含缺失时段标注（缺 08-12）</label>
+        <label><input type="radio" name="uzState" value="empty"> 空（无数据）</label>
+        <label><input type="radio" name="uzState" value="loading"> 加载中</label>
+        <label><input type="radio" name="uzState" value="error"> 拉取失败</label>
+        <span style="color:#8F959E;">（切 tab 后可点列头排序、改筛选、翻页）</span>
+      </div>
+      <table>
+        <tr><th style="width:130px">项</th><th>规格</th></tr>
+        <tr><td>四列（零变化）</td><td>日期 / 用户名 / 请求数 / token 数（数字列右对齐 tabular-nums；token 为每请求合计不拆输入/输出——iter-8#23/#43 口径）</td></tr>
+        <tr><td>筛选（零变化）</td><td>用户下拉（含「全部用户」）+ 日期起止（默认最近 7 天），控件 32px + focus 焦点环；<b>筛选变更 → offset 重置 0</b> 并刷新计数「共 N 条」（iter-8#24）</td></tr>
+        <tr><td>排序（交互零变化，实现后端化）</td><td>日期/请求数/token 数三列头点击升降切换（箭头 10px <code>--c-primary</code>），默认日期降序；<b>每次排序请求带 sort_key/sort_dir 且 offset 重置 0</b>（tie-break：day 同序按 username——保证翻页不重不漏，§4.2）（iter-8#25）</td></tr>
+        <tr><td>分页（新增）</td><td>与用户表同控件同口径（默认 20/页、越界钳制、单页隐藏；单位「条」）</td></tr>
+        <tr><td>缺失时段（零回退）</td><td>琥珀行「部分时段无统计数据：仅显示已有数据（不估算补齐）」——分页后由信封 <code>distinct_days</code>（窗口内去重天数）与窗口天数比对判定，<b>全窗口判定不受分页影响</b>（§4.2；iter-8#28）</td></tr>
+        <tr><td>空态 / 加载 / 失败</td><td>空态说明文案沿用（「暂无用量数据——新用户或新部署尚无对话记录时属正常现象」）；加载 spinner「正在加载用量数据…」；失败 banner + 重试（保留筛选与页码）（iter-8#26/#27）</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">4</span>分页 / 搜索 / 统计 API 口径（随稿定案——T1 实现依据）</h2>
+    <div class="sec-desc">
+      硬门槛：既有 <b>test_admin 19 用例零改动通过</b>（plans 风险清单明列；需改用例即触发兼容设计回稿）。兼容策略推荐 = <b>默认响应形状零变化</b>，
+      分页信封由参数触发（§8-①）。六端点功能口径零回退：ban/unban/quota 三端点<b>零改动</b>；users/usage 增可选参数；overview 增字段。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.1 GET /api/admin/users（搜索 + 分页）<span class="tag">定夺①②③ 载体</span></div>
+      <table>
+        <tr><th style="width:170px">项</th><th>口径（推荐，随基线定案）</th></tr>
+        <tr><td>参数</td><td><code>search</code>（用户名子串，大小写不敏感，<code>%</code>/<code>_</code> 转义字面量，trim 后空串 = 不筛选）· <code>limit</code>（默认 20；1~100，越界 422）· <code>offset</code>（默认 0；&lt;0 → 422）——<b>参数名与默认值即此定案</b></td></tr>
+        <tr><td>响应兼容策略</td><td><b>默认形状零变化</b>：不传 limit/offset/search 任一参数 → 返回纯列表（全量，<code>ORDER BY created_at, id</code> 不变）——现状消费方（AdminView 旧逻辑/19 用例）零感知；<b>传任一参数 → 分页信封</b></td></tr>
+        <tr><td>信封结构</td><td><code>{ "items": [ …10 字段同现状… ], "total": 过滤后总数, "limit": 生效值, "offset": 生效值（钳制后） }</code></td></tr>
+        <tr><td>越界语义</td><td><b>服务端钳制到最后一页</b>：total&gt;0 且 offset ≥ total → offset = <code>floor((total-1)/limit)*limit</code>，返回最后一页数据 + 真实 total；total=0 → <code>items: []</code> 空页（前端渲染空态，非错误）（§8-②）</td></tr>
+        <tr><td>排序</td><td>固定 <code>created_at, id</code>（现状；用户表不提供排序参数——零回退且无新增面）</td></tr>
+      </table>
+      <pre><code>GET /api/admin/users?search=spam&limit=20&offset=0
+→ 200 { "items": [ { "id":4, "username":"spam-bot-2026", "is_admin":false, "banned":true,
+                     "created_at":"…", "mode":"unified", "quota_override":null,
+                     "daily_limit":30, "used_today":0 } ],
+       "total": 1, "limit": 20, "offset": 0 }
+
+GET /api/admin/users                       ← 现状调用（无参数）：纯列表全量，形状零变化（19 用例零改动）</code></pre>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.2 GET /api/admin/usage（分页 + 排序后端化；筛选沿用）<span class="tag">定夺①②③⑥ 载体</span></div>
+      <table>
+        <tr><th style="width:170px">项</th><th>口径（推荐，随基线定案）</th></tr>
+        <tr><td>筛选参数（沿用）</td><td><code>user_id</code> / <code>date_from</code> / <code>date_to</code> 语义与现状零变化（仅这三参数出现 = 纯列表 + 现状默认序 <code>day DESC, username</code>——既有用量测试形态零改动）</td></tr>
+        <tr><td>新增参数</td><td><code>sort_key</code>（day|requests|tokens，默认 day；非法值 422）· <code>sort_dir</code>（asc|desc，默认 desc）· <code>limit</code>/<code>offset</code> 同 4.1——<b>排序必须迁后端</b>：分页后客户端排序仅作用于当页，跨页语义错误（§8-⑥）</td></tr>
+        <tr><td>信封结构</td><td><code>{ "items": […], "total": 过滤后行数, "limit": …, "offset": …, "distinct_days": 窗口内去重天数 }</code>——<b>distinct_days 专项</b>：缺失时段「不估算补齐」标注的数据源（分页后前端只见当页，全窗口判定必须由后端供数）</td></tr>
+        <tr><td>排序稳定性</td><td>tie-break 固定 <code>username</code> 升序（同 key 同日多用户不重不漏；现状 ORDER BY day DESC, username 同精神）</td></tr>
+        <tr><td>越界 / 空页</td><td>同 4.1（钳制 + 空页空态）</td></tr>
+      </table>
+      <pre><code>GET /api/admin/usage?user_id=2&date_from=2026-08-10&date_to=2026-08-16&sort_key=tokens&sort_dir=desc&limit=20&offset=0
+→ 200 { "items": [ { "day":"2026-08-15", "user_id":2, "username":"李雷", "requests":12, "tokens":9360 } ],
+       "total": 7, "limit": 20, "offset": 0, "distinct_days": 7 }
+
+GET /api/admin/usage?user_id=2             ← 既有三参数形态：纯列表 + 默认序（19 用例零改动）</code></pre>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.3 GET /api/admin/overview 扩展 + 统计口径（定夺④ 载体）</div>
+      <table>
+        <tr><th style="width:170px">指标</th><th>口径（推荐，随基线定案）</th></tr>
+        <tr><td>「今日」界定</td><td><b>服务器本地自然日</b>（<code>quota.today()</code>，即 <code>usage_daily.day</code> 先例——iter-8 T1 落地口径沿用，不引入时区换算）；流式跨零点的 token 归<b>请求发起日</b>（record_tokens 的 day 参数，quota.py 注释口径），与用量列表同源</td></tr>
+        <tr><td>总用户数</td><td><code>COUNT(users)</code>——含已封禁与管理员</td></tr>
+        <tr><td>今日请求</td><td><code>SUM(requests WHERE day=今日)</code>——<b>统一 + 自填全模式合计</b>；被拦截请求不计数（先查后计）</td></tr>
+        <tr><td>今日 token</td><td><code>SUM(tokens WHERE day=今日)</code>——上游 usage 帧 total_tokens；<b>解析不到记 0，不估算不编造</b></td></tr>
+        <tr><td>统一 key 用量</td><td>分子 <code>SUM(requests WHERE day=今日 AND mode='unified')</code>（= 既有 <code>site_unified_used</code>）；分母 <code>settings.unified_daily_total</code>（默认 2,000，可配置）</td></tr>
+        <tr><td>缺失时段</td><td><b>不估算补齐（铁律 5）</b>：统计卡只做当日聚合——无记录即如实显示 0（机器采集真值），不推断中断与补数；与用量列表「缺失标注」同源精神</td></tr>
+        <tr><td>呈现</td><td><b>数值卡，不做趋势图表</b>（CHG-004 定案「图表不做」；REQ-029 统计卡为数值卡）</td></tr>
+      </table>
+      <pre><code>GET /api/admin/overview
+→ 200 { "day": "2026-08-16", "unified_used": 100, "unified_daily_total": 2000,   ← 既有三字段零变化
+       "total_users": 47, "today_requests": 86, "today_tokens": 412530 }          ← 新增三字段（加法扩展，test_全站配额条数据 零改动通过）</code></pre>
+      <div class="ann"><b>T1 新增用例清单（pytest，plans T1 验收对应）</b>：分页（首页/中间页/末页/越界钳制返回末页与真实 total/limit=0 或 &gt;100 → 422/offset&lt;0 → 422）·
+      搜索（命中/大小写不敏感「SPAM」命中/空结果 total=0/含 % _ 字面量化/空串=不筛选/与分页组合 offset 重置）· 信封触发边界（无参数纯列表形状逐字段等价现状）·
+      排序（三键升降/tie-break 稳定/非法 sort_key 422）· distinct_days 正确性 · overview 聚合（跨零点归属请求日/无记录=0/含自填模式）· 既有 19 用例零改动复跑 · ruff clean。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">5</span>视觉重构与 REQ-025 零回退映射（含边界态静态帧）</h2>
+    <div class="sec-desc">
+      REQ-029.4 视觉重构 = <b>变的是层级与留白，不变的是功能与口径</b>。下表逐项映射「变 / 不变」；§7.2 零回退组（条 23~32/37~47）以 plans/iter-8-verify.md T2 清单编号（iter-8#）逐条复验。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">5.1 变 / 不变映射表<span class="tag">定夺⑦（视觉重构方向确认）载体</span></div>
+      <table>
+        <tr><th style="width:190px">项</th><th>处置</th><th>依据 / 复验编号</th></tr>
+        <tr><td>页面底色</td><td><b>变</b>：现状 <code>--c-subtle-bg</code>（#FAFBFC/#24272E）→ <b><code>--c-bg</code></b>（#F5F6F7/#131417）——与主界面灰底基调统一，卡片层级靠 surface 拉开</td><td>REQ-029.4；iter-9/11 基调</td></tr>
+        <tr><td>内容列</td><td><b>变</b>：960px → <b>1080px</b>（承载四卡；<code>min(1080px, 100% - 48px)</code> 居中）</td><td>REQ-029.1</td></tr>
+        <tr><td>概览卡区</td><td><b>新增</b>：4 卡 grid（auto-fit minmax(220px,1fr)，gap 16px），tabs 上方常驻</td><td>REQ-029.1</td></tr>
+        <tr><td>全站配额条</td><td><b>形态变、能力与文案不变</b>：常态数值并入卡 4；near/burst 页面级警示条（文案逐字沿用）——定夺⑤</td><td>iter-8#9/10/11</td></tr>
+        <tr><td>表格</td><td><b>变（留白）</b>：入卡（border + r-md + shadow-1 + <code>overflow-x:auto</code> 窄视口横滚保护）；td padding 10/14 → <b>12/16</b>；列/字段/徽标零变化</td><td>iter-8#6/#23</td></tr>
+        <tr><td>搜索框 / 分页控件</td><td><b>新增</b>：§2.1 规格（搜索框沿主界面语法，分页控件沿分段控件选中语法）</td><td>REQ-029.2/.3</td></tr>
+        <tr><td>顶栏 / 分段 tab</td><td><b>不变</b>：52px 顶栏（品牌 + 管理后台徽标 + 主题切换 + 返回主界面）与双 tab（radiogroup）结构零变化（后台独立于主界面，iter-11 去顶栏主题钮定夺不波及本页）</td><td>iter-8#5</td></tr>
+        <tr><td>治理操作</td><td><b>不变</b>：封禁确认模态 / 解封直接生效 / 调配额双选项与校验 / 管理员本人禁用 / toast 文案</td><td>iter-8#7/14~18</td></tr>
+        <tr><td>403 / 入口 / 封禁登录横幅</td><td><b>不变</b>（下方静态帧）；入口 = 侧栏账户「···」菜单「管理后台」（iter-11 迁移后形态，仅管理员渲染）；在线被封禁跳登录带横幅口径不受本次重构影响</td><td>iter-8#1~4/#29</td></tr>
+        <tr><td>加载 / 失败 / 空态 / 缺失标注</td><td><b>不变</b>：spinner 文案、banner + 重试（不清 tab/状态）、空态文案、琥珀缺失行</td><td>iter-8#19/20/26~28</td></tr>
+      </table>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">5.2 边界态静态帧：403 卡 / 入口可见性 / 被封禁登录横幅<span class="tag">零回退组证据帧；随「演示控制」亮暗翻转</span></div>
+      <div class="stage">
+        <div class="cols">
+          <div>
+            <div class="frame-cap">普通用户访问 /admin → 403 态（居中卡，不渲染任何后台数据、不发起任何后台请求；接口层 403 双保险）</div>
+            <div class="tk forbid-frame">
+              <div class="forbid-card">
+                <svg viewBox="0 0 24 24" width="36" height="36" style="color:var(--c-danger)"><path fill="none" stroke="currentColor" stroke-width="1.6" d="M12 3l7 2.6v5.6c0 4.4-3 8.3-7 9.8-4-1.5-7-5.4-7-9.8V5.6L12 3z"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M9.2 9.2l5.6 5.6M14.8 9.2l-5.6 5.6"/></svg>
+                <div class="f-title">无权访问（403）</div>
+                <div class="f-desc">管理后台仅对管理员开放，此页面不会展示任何后台数据。</div>
+                <button class="btn-primary">返回主界面</button>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="frame-cap">入口：侧栏账户「···」菜单「管理后台」——仅管理员渲染（普通用户 DOM 无节点）</div>
+            <div class="tk" style="border:1px solid var(--c-border);border-radius:var(--r-lg);background:var(--c-bg);padding:16px;">
+              <div style="width:264px;background:var(--c-bg);border:1px solid var(--c-border);border-radius:var(--r-lg);padding:12px;">
+                <div style="font-size:12px;color:var(--c-text-3);padding:4px 2px 12px;">侧栏底部账户区（iter-11 形态引用）</div>
+                <div class="acct">
+                  <span class="acct-avatar" title="猫南北">猫</span>
+                  <span class="acct-name" title="猫南北">猫南北</span>
+                  <button class="more-btn" style="opacity:1;" title="账户操作" aria-label="账户操作"><svg width="16" height="16" viewBox="0 0 14 14" fill="currentColor"><circle cx="3" cy="7" r="1.5"/><circle cx="7" cy="7" r="1.5"/><circle cx="11" cy="7" r="1.5"/></svg></button>
+                </div>
+                <div class="dd-menu" style="margin-top:8px;">
+                  <button class="mi">设置</button>
+                  <button class="mi">管理后台</button>
+                  <div class="dd-sep"></div>
+                  <button class="mi">登出</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="stage" style="margin-top:16px;">
+        <div class="cols">
+          <div>
+            <div class="frame-cap">被封禁用户登录 → 登录页 warning banner（iter-6 定稿文案，琥珀口径）；在线被封禁 → 下一次请求 403 → 跳登录页 + 同横幅（口径不受本次重构影响）</div>
+            <div class="tk" style="border:1px solid var(--c-border);border-radius:var(--r-lg);background:var(--c-bg);padding:24px;display:flex;justify-content:center;">
+              <div class="auth-card" style="width:340px;">
+                <div class="auth-title">登录</div>
+                <div class="auth-sub">登录后继续你的对话</div>
+                <div class="form-banner warn"><span class="b-ico">!</span><span>账号已被封禁，无法使用。如有疑问请联系管理员</span></div>
+                <div class="field"><label>用户名</label><input type="text" value="spam-bot-2026"></div>
+                <div class="field"><label>密码</label><input type="password" value="················"></div>
+                <div class="field" style="margin-bottom:0;"><button class="btn-primary" style="width:100%;">登录</button></div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="frame-cap">数据口径：token = 每请求合计（不拆输入/输出）；统计与 usage_daily 同源（REQ-025 抽样比对 3 天一致验收口径不变）</div>
+            <div class="tk" style="border:1px solid var(--c-border);border-radius:var(--r-lg);background:var(--c-bg);padding:24px;">
+              <table class="adm-table" style="background:transparent;">
+                <thead><tr><th>数据链路（全机器采集，铁律 5）</th></tr></thead>
+                <tbody>
+                  <tr><td>请求计数：<code>usage_daily.requests</code>（先查后计，被拦截不计数、不抵达上游）</td></tr>
+                  <tr><td>token 计数：上游 usage 帧 total_tokens（流结束补记；解析不到记 0）</td></tr>
+                  <tr><td>粒度：<code>(day, user_id, mode)</code>（迁移 v4）；覆盖：<code>users.quota_override</code>（迁移 v5）</td></tr>
+                  <tr><td>统计卡 / 用量列表 / 配额判定三者同源同表——抽样比对口径零变化</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann"><b>路由守卫（零变化）</b>：未登录访问 /admin → 登录页回跳（guard 既有）；普通用户 → 403 态 + 接口层 403（双保险）。安全边界始终在服务端。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">6</span>亮暗锁定对照（双帧并置，走查方法 = 找亮色残留）+ 适用性与令牌使用</h2>
+    <div class="sec-desc">同一 DOM，仅根节点令牌覆盖；暗色帧内任何肉眼发白块即为漏改裸色值。本节锁定帧不随「演示控制」切换。</div>
+
+    <div class="spec">
+      <div class="spec-title">6.1 概览卡区 + near 警示条（浅 ↔ 暗）</div>
+      <div class="cols">
+        <div>
+          <div class="frame-cap">浅色（surface #FFFFFF 卡 + 琥珀警示条 #FFF7E8）</div>
+          <div class="tk force-light admin-frame" id="lock1L"></div>
+        </div>
+        <div>
+          <div class="frame-cap">暗色（surface #1E2026 卡 + 琥珀 #38290F；进度条 warning #EDA23B）</div>
+          <div class="tk force-dark admin-frame" id="lock1D"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">6.2 用户表格卡 + 搜索 + 分页（浅 ↔ 暗）</div>
+      <div class="cols">
+        <div>
+          <div class="frame-cap">浅色（徽标/pill 全 var()；命中高亮 #3370FF）</div>
+          <div class="tk force-light admin-frame" id="lock2L"></div>
+        </div>
+        <div>
+          <div class="frame-cap">暗色（命中高亮 #5C8DFF；胶囊 danger-l #361B18）</div>
+          <div class="tk force-dark admin-frame" id="lock2D"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">6.3 适用性说明 + 令牌与组件使用（v1.4.4 口径）</div>
+      <table>
+        <tr><th style="width:190px">项</th><th>结论</th><th>依据</th></tr>
+        <tr><td>移动端 ≤480px</td><td><b>不适用</b>：管理后台维持桌面优先（CHG-006 暂缓池；iter-13 候选须走 CHG-007 变更）；<b>模态 max-width calc(100% - 32px) 不溢出视口</b>（沿 REQ-028 口径）+ 表格卡 <code>overflow-x:auto</code> 窄视口横滚保护</td><td>spec 兼容条款（仅登录/注册两页承诺 480px）；plans/iter-12「本迭代不做」</td></tr>
+        <tr><td>趋势图表</td><td><b>不做</b>：统计卡为数值卡（卡 4 进度条为计量条非趋势图）</td><td>CHG-004 定案；REQ-029 描述</td></tr>
+        <tr><td>样件数据</td><td>用户名（猫南北/李雷/spam-bot-2026 等 47 人）/ 日期 / 用量数值（86 请求、412,530 token 等）<b>全为虚构演示数据</b>；线上数值只由接口采集渲染（未取到保持真值，不编造）</td><td>铁律 5「度量数据只允许机器采集」</td></tr>
+        <tr><td>色值令牌</td><td>全部取自 tokens.md v1.3/v1.3.1（浅 + 暗 + 前景/实底拆分族 + on-dark 族），<b>本稿零新增令牌、零自造色值</b>（产品组件一律 <code>var()</code> 引用，含阴影/焦点环/遮罩/toast；文档外壳沿惯例用浅色原值）。<b>无需 design-system 令牌变更</b>（§8-⑧）</td><td>公司设计规范</td></tr>
+        <tr><td>组件沉淀建议</td><td>随基线建议在 components.md 登记三项<b>新形态</b>（纯既有令牌组合，不涉令牌批准，沿 iter-7/8/9/11 惯例）：① <b>统计数值卡</b>（label 13/value 20 tabular/sub 12 + 可选三态进度条）；② <b>分页控件</b>（信息行 + 28px 页码钮，≤1 页不渲染）；③ <b>后台搜索框</b>（32px surface + icon + 清除钮，同主界面搜索框语法——可合并登记为通用搜索框）</td><td>资产沉淀惯例</td></tr>
+        <tr><td>字号/间距/圆角/阴影/动效</td><td>全部在 tokens 既定值域（数值 20px、正文/控件 13px、辅助 12px、模态标题 15px；间距 4/6/8/12/16/20/24 栅格；r-sm/r-md/r-lg/r-full；shadow-1/2/3；过渡 .15s ease、按压 scale .98/.94）</td><td>tokens.md</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">7</span>T0 验收对照 + 走查清单（v1.4.4 硬要求，T1/T2 任务级门槛）</h2>
+    <div class="sec-desc">
+      7.1 对照 plans/iter-12.md T0/T1/T2 验收标准与 REQ-029 验收标准原文逐条落点；7.2 为本稿全部触点与状态组合的走查清单——
+      <b>T1/T2 实现时对照逐条自查留档（development.md），QA 审计取证</b>。「iter-8#」列 = plans/iter-8-verify.md T2 段 REQ-025 走查编号（<b>零回退复验组</b>，复验时逐条对照原清单期望）。
+      <b>本清单所有条目均须在浅色与暗色两个主题下逐条通过</b>。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">7.1 T0 验收 + REQ-029 验收 + T1/T2 前置对照（原文）</div>
+      <table>
+        <tr><th style="width:46%">验收标准（原文）</th><th>本稿落点</th><th>状态</th></tr>
+        <tr><td>〔plans T0〕CEO 批准基线（tag design-iter-12）</td><td>本稿提交 CEO 评审——批准后打 tag；§8 八项定夺随基线拍板</td><td>☐ 待批准</td></tr>
+        <tr><td>〔plans T0〕「今日」界定 / 缺失时段处理（不估算补齐，铁律 5）/ 分页参数与响应结构随稿定案</td><td>§4.3 今日口径 + 缺失不估算；§4.1/4.2 分页参数（search/limit/offset/sort_*）与信封结构；§8-①~④</td><td>☑ 已定案待批</td></tr>
+        <tr><td>〔plans T0 判定依据〕类比 design-iter-8（同规模单页原型，四项定夺一次基线）</td><td>本稿 §8 八项定夺（含 API 口径 + 统计口径 + 视觉方向）</td><td>☑ 同构</td></tr>
+        <tr><td>〔REQ-029〕既有 REQ-025 验收全部不回退（403 门禁/封禁/调配额/用量口径/抽样比对）</td><td>§7.2 条 23~32/37~47（零回退组，iter-8# 逐条映射）+ §5.1 映射表 + §5.2 证据帧</td><td>☑ 稿内覆盖</td></tr>
+        <tr><td>〔REQ-029〕用户列表与用量列表分页前后端用例覆盖；用户搜索过滤用例</td><td>§4.1/4.2 参数与信封 + §4.3 T1 新增用例清单（分页含越界/空页、搜索含命中/空态/大小写、排序、distinct_days）</td><td>☑ 规格落点</td></tr>
+        <tr><td>〔REQ-029〕design-iter-12 走查清单留档</td><td>7.2（<b>52 条</b>，含亮暗双主题要求与不适用注明）</td><td>☑ 已覆盖</td></tr>
+        <tr><td>〔plans T1〕pytest 新增用例全绿 + REQ-025 test_admin 19 用例零回退 + ruff clean</td><td>§4 兼容策略（默认形状零变化）+ 条 52；19 用例零改动通过为第一道门槛</td><td>☐ T1 交付</td></tr>
+        <tr><td>〔plans T2〕design-iter-12 走查清单留档（亮/暗双主题）；REQ-025 既有走查口径复验不回退；分页翻页/越界/空页、搜索空态走查；vitest 全绿 + 既有 AdminView.spec 15 用例回归</td><td>7.2 全清单（零回退组 + 新增组）；AdminView.spec 适配范围见 §8-⑤（三态载体迁移涉及 site-bar 断言适配——spec 适配≠口径回退，复验以本清单条目为准）</td><td>☐ T2 交付</td></tr>
+      </table>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">7.2 走查清单（design-iter-12，52 条；勾选框供 T1/T2 自查与 QA 取证）</div>
+      <table>
+        <tr><th style="width:26px">过</th><th style="width:36px">序号</th><th>需求</th><th>触点</th><th>状态组合</th><th>期望表现（= 验收口径；浅 = tokens 浅值 / 暗 = tokens 暗值）</th><th style="width:56px">样件</th><th style="width:52px">iter-8#</th></tr>
+        <tr><td><input type="checkbox"></td><td>1</td><td>REQ-029</td><td>页面框架</td><td>基调</td><td>页面底 <code>--c-bg</code>（#F5F6F7/#131417）+ 内容白卡 <code>--c-surface</code>（#FFFFFF/#1E2026）；内容列 min(1080px, 100%-48px) 居中</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>2</td><td>REQ-025</td><td>顶栏/tab</td><td>结构零变化</td><td>顶栏 52px（品牌 + 「管理后台」徽标 primary-l/primary + 主题切换 + 返回主界面 ghost）+ 双 tab（radiogroup、选中 primary-l/primary/500）——结构/文案零回退</td><td>1.1</td><td>#5</td></tr>
+        <tr><td><input type="checkbox"></td><td>3</td><td>REQ-029</td><td>概览卡区</td><td>位置</td><td>4 卡 grid（gap 16px）置于 tabs <b>上方常驻</b>，两 tab 均可见；进入后台首屏概览先入眼（主流程）</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>4</td><td>REQ-029</td><td>卡 1</td><td>总用户数</td><td>label 13 text-2 / 数值 20px·600 text-1 tabular-nums / 副 12 text-3；= COUNT(users)（含封禁与管理员）；仅管理员一人显示 1（非空态）</td><td>1.1/1.2</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>5</td><td>REQ-029</td><td>卡 2</td><td>今日请求</td><td>= SUM(requests WHERE day=今日) <b>全模式合计</b>；今日 = 服务器本地自然日（quota.today 先例）；被拦截请求不计数</td><td>1.1/4.3</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>6</td><td>REQ-029</td><td>卡 3</td><td>今日 token</td><td>= SUM(tokens WHERE day=今日)；上游 usage 帧合计、解析不到记 0（不估算）；跨零点流式 token 归请求日</td><td>1.1/4.3</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>7</td><td>REQ-029</td><td>卡 4</td><td>进度条三态</td><td>「已用 X / 2,000 次」+ 6px 进度条：常态 fill <code>--c-primary-solid</code>（#3370FF）/ ≥80% <code>--c-warning</code>（#B45309/#EDA23B）/ =100% <code>--c-danger-solid</code>（#D93025）；阈值 = used/total≥0.8 与 used≥total（现状 computed 口径）</td><td>1.1/1.2</td><td>#9</td></tr>
+        <tr><td><input type="checkbox"></td><td>8</td><td>REQ-029</td><td>警示条</td><td>near/burst</td><td>仅 near/burst 渲染页面级警示条（surface + 左缘 3px 语义色 + r-md）；<b>常态不渲染</b>（数值在卡 4，无重复信息）——定夺⑤落形</td><td>1.1</td><td>#9/10/11</td></tr>
+        <tr><td><input type="checkbox"></td><td>9</td><td>REQ-025</td><td>警示条</td><td>文案零回退</td><td>near：「统一 key 每日总量 2,000 · 今日已用 1,600（已接近上限，请关注消耗）」；burst：「……—— <b>已暂停全站新对话请求，明日 00:00 自动恢复；自填 key 用户不受影响</b>」——逐字对照现状 AdminView 文案</td><td>1.1</td><td>#10/11</td></tr>
+        <tr><td><input type="checkbox"></td><td>10</td><td>REQ-029</td><td>统计数据源</td><td>/overview 扩展</td><td>total_users/today_requests/today_tokens 加法扩展；既有 day/unified_used/unified_daily_total 三字段零变化（test_全站配额条数据 零改动）</td><td>4.3</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>11</td><td>铁律5</td><td>统计缺失</td><td>无记录</td><td>无记录即如实聚合显示 0（机器真值），不估算不补齐；<b>无趋势图</b>（CHG-004 定案）</td><td>4.3</td><td>#43</td></tr>
+        <tr><td><input type="checkbox"></td><td>12</td><td>REQ-029</td><td>搜索框</td><td>形态</td><td>260×32px surface + border + r-md + 左 icon；focus 主色描边 + 3px <code>--c-focus-ring</code>（rgba(51,112,255,.12)/rgba(92,141,255,.25)）；有词显清除钮 20px</td><td>1.1/2.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>13</td><td>REQ-029</td><td>搜索匹配</td><td>大小写</td><td>子串匹配大小写不敏感：「SPAM」命中「spam-bot-2026」（SQLite LIKE ASCII 天然；中文无大小写）；% / _ 字面量化；trim 空串 = 不筛选</td><td>1.1（试 SPAM）</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>14</td><td>REQ-029</td><td>搜索触发</td><td>防抖/立即/清除</td><td>输入防抖 300ms、Enter 立即、清除钮/清空即重置；请求期间表格加载态（不清 tab）；工具行「找到 N 个用户」</td><td>1.1/2.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>15</td><td>REQ-029</td><td>搜索×分页</td><td>offset 重置</td><td>搜索词变更（含清除）→ offset 重置 0 回第 1 页；total = 过滤后总数（先过滤后分页）</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>16</td><td>REQ-029</td><td>搜索命中</td><td>高亮</td><td>命中片段主色高亮（mark：<code>--c-primary</code>/600，浅 #3370FF / 暗 #5C8DFF）；未命中部分正常呈现；ellipsis 规则不破</td><td>1.1/6.2</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>17</td><td>REQ-029</td><td>搜索空态</td><td>无结果</td><td>空盒：「未找到匹配「关键词」的用户」+「用户名搜索大小写不敏感」+「清除搜索」动作——<b>非错误态</b>（异常分支原文）</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>18</td><td>REQ-029</td><td>分页控件</td><td>形态与禁用</td><td>左「共 N 个用户 · M 页」12px text-3 tabular + 右「‹ 上一页/页码/下一页 ›」28px r-sm（hover 主色描边、active scale .94；当前页 primary-l/primary/500）；首页/末页 disabled（opacity .45 + not-allowed）；页数 &gt;7 折叠「…」</td><td>1.1/2.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>19</td><td>REQ-029</td><td>分页</td><td>单页隐藏</td><td>total ≤ 20 时分页控件不渲染，仅「共 N 个用户」——小部署零打扰（「仅管理员一人」可验）</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>20</td><td>REQ-029</td><td>分页</td><td>越界钳制</td><td>offset ≥ total → 服务端钳制到最后一页 + 返回真实 total（信封 offset = 生效值；翻页中删号/搜索收窄不落空页）——「模拟越界」链接可验；§8-②</td><td>1.1/4.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>21</td><td>REQ-029</td><td>分页</td><td>空页/参数非法</td><td>total=0 → items [] + 前端空态（非错误）；limit=0/&gt;100、offset&lt;0、sort_key 非法 → 422</td><td>4.1/4.2</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>22</td><td>REQ-029</td><td>分页</td><td>翻页反馈</td><td>翻页后滚动至表格顶部（T2 落实）；请求期间表格加载态、保留搜索词与页码</td><td>2.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>23</td><td>REQ-025</td><td>用户表</td><td>六列全字段</td><td>用户名/注册时间/状态/密钥模式/配额/操作 全字段渲染（AdminView.spec「六列全字段」用例回归适配）</td><td>1.1</td><td>#6</td></tr>
+        <tr><td><input type="checkbox"></td><td>24</td><td>REQ-025</td><td>用户表</td><td>管理员本人行</td><td>「管理员」徽标（primary-l/primary）+ 封禁按钮 disabled（opacity .45 + title「管理员本人不可封禁」）；后端同拒绝（400）</td><td>1.1</td><td>#7</td></tr>
+        <tr><td><input type="checkbox"></td><td>25</td><td>REQ-025</td><td>用户表</td><td>状态胶囊</td><td>正常 = subtle-bg 底 + <code>--c-success</code> 字（#1A9E5C/#4CC38A）+ border；已封禁 = <code>--c-danger-l</code>（#FDECEA/#361B18）+ <code>--c-danger</code>（#D93025/#FF8073）</td><td>1.1/6.2</td><td>#8</td></tr>
+        <tr><td><input type="checkbox"></td><td>26</td><td>REQ-025</td><td>用户表</td><td>档位徽标</td><td>免费档/自填档 = subtle-bg/text-2 + border；<b>自定义 N</b> = primary-l/primary 可区分</td><td>1.1</td><td>#12</td></tr>
+        <tr><td><input type="checkbox"></td><td>27</td><td>REQ-025</td><td>用户表</td><td>今日用量</td><td>「今日 x/N」12px text-3 tabular-nums；x=N → 「今日已用尽」<code>--c-danger</code> 500；封禁行计数冻结显「—」</td><td>1.1</td><td>#13</td></tr>
+        <tr><td><input type="checkbox"></td><td>28</td><td>REQ-025</td><td>封禁</td><td>确认模态</td><td>「封禁该用户？」+ 后果与可逆文案（无法登录与调用、云端数据保留、解封可恢复）+ danger 实底「确认封禁」（白字 4.8:1）→ 生效 + toast「已封禁 x」+ 列表与统计卡重载</td><td>1.1（可交互）</td><td>#14</td></tr>
+        <tr><td><input type="checkbox"></td><td>29</td><td>REQ-025</td><td>封禁</td><td>自封禁阻止</td><td>UI 禁用 + 后端 400「不允许封禁管理员」双侧拒绝</td><td>1.1</td><td>#15</td></tr>
+        <tr><td><input type="checkbox"></td><td>30</td><td>REQ-025</td><td>解封</td><td>直接生效</td><td>无确认弹窗（可逆）→ toast「已解封 x」+ 重载；被封禁行按钮换「解封」</td><td>1.1（可交互）</td><td>#16</td></tr>
+        <tr><td><input type="checkbox"></td><td>31</td><td>REQ-025</td><td>调配额</td><td>校验</td><td>双选项（按默认档位（随密钥模式 30/500）/ 自定义 N）；空/小数/0 → 选项红描边 + 行内错误「请输入正整数（≥1）…」不入库；Esc/取消不改动</td><td>1.1（可交互）</td><td>#17</td></tr>
+        <tr><td><input type="checkbox"></td><td>32</td><td>REQ-025</td><td>调配额</td><td>生效与清空</td><td>保存后徽标翻「自定义 N」+ toast「配额已保存，自下一次请求生效」；<b>选「按默认档位」保存 = 清空覆盖（quota_override→NULL）恢复默认档</b>；实际可用量按 N 生效（REQ-024 联动验收）</td><td>1.1（可交互）</td><td>#18</td></tr>
+        <tr><td><input type="checkbox"></td><td>33</td><td>REQ-025</td><td>用户表</td><td>加载态</td><td>spinner（primary-l 边 + primary 顶）+「正在加载用户列表…」</td><td>1.1</td><td>#19</td></tr>
+        <tr><td><input type="checkbox"></td><td>34</td><td>REQ-025</td><td>用户表</td><td>失败态</td><td>danger-l banner + 「重试」；重试成功恢复且<b>不清 tab/搜索词/页码</b>（REQ-007 重试语义）</td><td>1.1</td><td>#20</td></tr>
+        <tr><td><input type="checkbox"></td><td>35</td><td>REQ-025</td><td>用户表</td><td>单管理员</td><td>仅管理员一人：单行正常呈现无空态；分页控件隐藏（共 1 个用户）</td><td>1.1</td><td>#21</td></tr>
+        <tr><td><input type="checkbox"></td><td>36</td><td>REQ-025</td><td>用户表</td><td>超长用户名</td><td>ellipsis（max-width 150px）+ title 全名；搜索高亮不破省略规则</td><td>1.1/6.2</td><td>#22</td></tr>
+        <tr><td><input type="checkbox"></td><td>37</td><td>REQ-025</td><td>用量表</td><td>四列</td><td>日期/用户名/请求数/token 数；数字列右对齐 tabular-nums；token 为每请求合计（不拆输入/输出）</td><td>1.1</td><td>#23</td></tr>
+        <tr><td><input type="checkbox"></td><td>38</td><td>REQ-025</td><td>用量筛选</td><td>沿用</td><td>用户下拉（含「全部用户」）+ 日期起止（默认最近 7 天）；32px 控件 + focus 焦点环；「共 N 条」计数</td><td>1.1</td><td>#24</td></tr>
+        <tr><td><input type="checkbox"></td><td>39</td><td>REQ-025</td><td>用量排序</td><td>交互零变化</td><td>三列头点击升降切换 + 箭头指示；默认日期降序；<b>实现迁后端 sort_key/sort_dir</b>（每次排序 offset 重置 0；tie-break username）——§8-⑥</td><td>1.1/4.2</td><td>#25</td></tr>
+        <tr><td><input type="checkbox"></td><td>40</td><td>REQ-025</td><td>用量表</td><td>空态</td><td>「暂无用量数据——新用户或新部署尚无对话记录时属正常现象」</td><td>1.1</td><td>#26</td></tr>
+        <tr><td><input type="checkbox"></td><td>41</td><td>REQ-025</td><td>用量表</td><td>加载/失败</td><td>加载 spinner「正在加载用量数据…」；失败 banner + 重试（保留筛选与页码）</td><td>1.1</td><td>#27</td></tr>
+        <tr><td><input type="checkbox"></td><td>42</td><td>REQ-025</td><td>用量表</td><td>缺失时段</td><td>琥珀行「部分时段无统计数据：仅显示已有数据（不估算补齐）」（warning-l/warning）；分页下由信封 <code>distinct_days</code> 全窗口判定（不因分页丢失）</td><td>1.1（含缺失态）</td><td>#28</td></tr>
+        <tr><td><input type="checkbox"></td><td>43</td><td>REQ-029</td><td>用量分页</td><td>翻页/越界/空页</td><td>与用户表同控件同口径（20/页、钳制、单页隐藏）；<b>筛选/排序变更 → offset 重置 0</b></td><td>1.1/3.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>44</td><td>REQ-025</td><td>403</td><td>门禁</td><td>普通用户 /admin → 居中 403 卡（danger 盾牌 + surface/border/r-lg/shadow-1 + 返回主界面实底钮），零后台数据渲染、不发起任何后台请求；接口层 403 双保险</td><td>5.2</td><td>#4</td></tr>
+        <tr><td><input type="checkbox"></td><td>45</td><td>REQ-025</td><td>入口</td><td>可见性</td><td>入口 = 侧栏账户「···」菜单「管理后台」（iter-11 迁移后形态），仅 <code>is_admin</code> 渲染（普通用户 DOM 无节点）；未登录 /admin → 登录页回跳</td><td>5.2</td><td>#1/2/3</td></tr>
+        <tr><td><input type="checkbox"></td><td>46</td><td>REQ-025</td><td>封禁登录</td><td>横幅</td><td>登录被拒 → warning banner「账号已被封禁，无法使用。如有疑问请联系管理员」（iter-6 定稿文案琥珀口径）；在线被封禁 → 下次请求 403 → 跳登录 + 同横幅——<b>口径不受本次重构影响</b></td><td>5.2</td><td>#29</td></tr>
+        <tr><td><input type="checkbox"></td><td>47</td><td>REQ-025</td><td>数据口径</td><td>同源</td><td>统计卡/用量列表/配额判定三者同源 usage_daily（(day,user_id,mode) 粒度）；与后端调用日志计数一致（抽样比对 3 天一致——验收原文）；普通用户任何界面/接口获取不到他人用量</td><td>4.3/5.2</td><td>#43</td></tr>
+        <tr><td><input type="checkbox"></td><td>48</td><td>全局</td><td>亮暗双主题</td><td>全条目</td><td>全部条目浅/暗各过一遍；§6 锁定双帧暗色无亮色残留（.adm-table 显式 transparent——iter-8 R1 教训预防）；正文对比度 ≥4.5:1（tokens v1.3 计算值）</td><td>6.1/6.2</td><td>#42</td></tr>
+        <tr><td><input type="checkbox"></td><td>49</td><td>铁律5</td><td>样件数据</td><td>全局</td><td>47 用户名/日期/86 请求/412,530 token 等全为虚构演示数据；线上数值只由接口采集渲染，不手填不编造</td><td>6.3</td><td>#43</td></tr>
+        <tr><td><input type="checkbox"></td><td>50</td><td>适用性</td><td>不适用项</td><td>注明</td><td>移动端不做（模态 max-width 不溢出 + 表格横滚保护沿 REQ-028 精神）；趋势图表不做（CHG-004）；用户表不提供列排序（现状即无，非回退）</td><td>6.3</td><td>#44</td></tr>
+        <tr><td><input type="checkbox"></td><td>51</td><td>REQ-025</td><td>六端点</td><td>零回退汇总</td><td>users/usage 增可选参数 + overview 加法扩展 + ban/unban/quota 零改动——六端点功能口径零回退（CHG-006 影响评估原文）</td><td>4</td><td>全</td></tr>
+        <tr><td><input type="checkbox"></td><td>52</td><td>plans-T1</td><td>兼容门槛</td><td>19 用例</td><td><b>test_admin 19 用例零改动通过</b>（默认形状零变化验证）；需改用例即触发兼容设计回稿（plans 风险清单原文）</td><td>4/8-①</td><td>—</td></tr>
+      </table>
+      <div class="ann">共 <b>52</b> 条（概览与统计 1~11 / 搜索 12~17 / 分页 18~22 / 用户治理零回退 23~36 / 用量零回退+分页 37~43 / 403·入口·封禁登录 44~46 / 口径与全局 47~52）。
+      零回退组（iter-8# 非「—」）复验时对照 plans/iter-8-verify.md T2 段原清单期望逐条取证；行为类（pytest/vitest 用例）由 T1/T2 自动化或手工走查留档。
+      条 8/9/20/39 含定夺关联（§8-②⑤⑥），定案后按定案口径走查。<b>所有条目须在浅色与暗色双主题下各过一遍</b>。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">8</span>CEO 待定夺项（8 项 —— 待基线拍板）</h2>
+    <div class="sec-desc">
+      沿 iter-1~11 固化模式：设计师给推荐方案与理由 → CEO 拍板 → 固化为决策记录，T1/T2 按定案实现。<b>本稿全部可交互样件已按「推荐」落形</b>（定夺若改选，改稿走评审修订，不默认套用）。
+    </div>
+
+    <div class="spec" style="border-color:#B45309;background:#FFF7E8;">
+      <div class="spec-title" style="color:#1F2329;">定夺区块（待 CEO 拍板 · 推荐方案速览）</div>
+      <div class="ann" style="color:#646A73;">
+        <b>① 分页响应兼容策略</b>——推荐：<b>默认纯列表形状零变化；传任一 limit/offset/search 参数时返回分页信封</b>；<br>
+        <b>② 越界/空页语义</b>——推荐：<b>服务端钳制到最后一页</b>（total=0 → 空页空态；参数非法 422）；<br>
+        <b>③ 分页默认页大小</b>——推荐：<b>统一 20/页</b>（1~100 可调），不做页大小切换控件，单页时控件隐藏；<br>
+        <b>④ 统计卡口径</b>——推荐：<b>今日 = 服务器本地自然日（沿用）；今日请求/token = 全模式合计；无记录 = 0 不估算；数值卡不做图</b>；<br>
+        <b>⑤ 全站配额条三态去向</b>——推荐：<b>常态数值并入卡 4 + near/burst 页面级警示条（文案逐字沿用），常态条退役</b>；<br>
+        <b>⑥ 用量排序迁移后端</b>——推荐：<b>sort_key/sort_dir 参数化</b>（分页后客户端排序跨页语义错误，必须迁）；<br>
+        <b>⑦ 视觉重构方向</b>——推荐：<b>灰底卡片化 + 四卡概览 + 表格入卡留白加深 + 徽标规格统一</b>（延续 iter-9/11 基调）；<br>
+        <b>⑧ 新令牌提案</b>——评估结论：<b>无提案</b>（零新增令牌；仅 components.md 资产沉淀三项，不涉令牌值）。
+      </div>
+    </div>
+
+    <table>
+      <tr><th style="width:40px">编号</th><th>问题</th><th>选项与推荐（样件已按推荐落形）</th><th>理由 / 备选（未采纳留档）</th></tr>
+      <tr>
+        <td>①</td>
+        <td>分页响应结构兼容策略（plans 风险清单：「动响应结构时易破坏既有消费方」，19 用例零改动是硬门槛）</td>
+        <td><b>推荐：默认形状零变化 + 参数触发信封</b>——不传 limit/offset/search 任一参数 → 纯列表全量（现状形状/排序逐字段等价）；传任一参数 → <code>{items, total, limit, offset(, distinct_days)}</code>；前端新版恒传参数</td>
+        <td>唯一同时满足「19 用例零改动 + 前端拿得到 total」的方案；AdminView 旧逻辑/既有测试零感知，回归面最小。<br>备选 A（未采纳）：恒信封——test_用户列表/用量聚合等用例必须改，违反零改动门槛即触发回稿；备选 B（未采纳）：total 独立计数端点——两次请求非原子（翻页中 total 漂移）+ 多一次往返，收益为零（同一端点加法扩展即可）</td>
+      </tr>
+      <tr>
+        <td>②</td>
+        <td>越界 / 空页语义（REQ-029 异常分支原文「分页越界/空页处理」）</td>
+        <td><b>推荐：服务端钳制到最后一页</b>——total&gt;0 且 offset ≥ total → 返回最后一页数据 + 真实 total（信封 offset 即生效值）；total=0 → items [] 空页（前端空态非错误）；limit∉[1,100] / offset&lt;0 / sort_key 非法 → 422</td>
+        <td>钳制后用户永不落空页（翻页中封禁删号/搜索收窄自动回收），前端零二次请求；语义对 pytest 可直接断言（plans T1「含越界/空页」用例清单）。<br>备选（未采纳）：越界返回空页——服务端最简，但用户看到空表 + 分页器仍指末页，体验割裂且前端需兜底二次请求</td>
+      </tr>
+      <tr>
+        <td>③</td>
+        <td>分页默认页大小与控件形态</td>
+        <td><b>推荐：统一 20/页</b>（users/usage 两端点一致；limit 可传 1~100）；<b>不做页大小切换控件</b>；<b>total ≤ 页大小时分页控件整体不渲染</b>（仅保留「共 N」信息）</td>
+        <td>当前自部署用户个位数——20/页在既有数据规模下等价「无分页」（零打扰），公开注册增长后自然生效；页大小切换是低频管理偏好，控件成本大于收益（iter-8「最小可行口径」精神延续）。<br>备选（未采纳）：50/页（滚动负担大）/ 带页大小切换（控件与状态面翻倍，YAGNI）</td>
+      </tr>
+      <tr>
+        <td>④</td>
+        <td>统计卡口径确认（plans 风险清单：「今日自然日界定、统一 key 分母、缺失时段易出理解分歧——T0 定死口径随基线批准」）</td>
+        <td><b>推荐按 §4.3 全表定案</b>：今日 = <b>服务器本地自然日</b>（quota.today/usage_daily.day 先例，不引入时区换算）；今日请求/token = <b>全模式合计</b>；统一 key 分母 = <b>配置值 unified_daily_total（默认 2,000）</b>；缺失 = <b>不估算补齐</b>（无记录即 0，铁律 5）；<b>数值卡不做趋势图</b>（CHG-004）</td>
+        <td>全部沿用既有落地先例（iter-8 T1 usage_daily + record_tokens 跨零点归属请求日），零新口径零新表迁移（plans T1「复用既有 usage_daily，无新表迁移」）；统计卡/用量列表/配额判定三者同源，REQ-025 抽样比对验收口径零变化。<br>备选（未采纳）：按用户本地时区界定今日——需时区上报与换算，与 usage_daily.day 粒度冲突，自部署单机场景无收益</td>
+      </tr>
+      <tr>
+        <td>⑤</td>
+        <td>全站配额条三态去向（REQ-025 既有界面能力，REQ-029 卡 4 与其信息重叠）</td>
+        <td><b>推荐：三态并入卡 4 + 条件警示条</b>——常态：数值 + 三态着色进度条在卡 4（无页面级条，消除双载体重复）；near/burst：卡下渲染页面级警示条（iter-8 site-strip 同视觉）承载<b>逐字沿用</b>的完整文案</td>
+        <td>能力与文案零丢失（三态着色 + 完整告警文案均在），仅消除常态下「卡 4 与全站条同数字并排」的堆砌（CEO CHG-006 痛点「管理后台堆砌无体验」）；熔断为全站级关键状态，页面级条比卡内文案更醒目，故 near/burst 保留条形态。<b>实现影响登记</b>：AdminView.spec 既有三态用例（.site-bar 断言）需适配为新载体断言（near/burst 条仍在 + 常态数值入卡）——spec 适配 ≠ 口径回退，复验以 §7.2 条 7/8/9 为准。<br>备选（未采纳）：双载体并存（零 spec 适配，但同数字两处并排，视觉冗余正是本次重构要解决的）</td>
+      </tr>
+      <tr>
+        <td>⑥</td>
+        <td>用量排序实现迁移后端（分页引出的必然项）</td>
+        <td><b>推荐：sort_key(day|requests|tokens) + sort_dir(asc|desc) 参数化</b>，默认 day desc（现状默认序）；tie-break username 升序保翻页不重不漏；前端列头交互（点击升降 + 箭头）零变化，每次排序 offset 重置 0</td>
+        <td>分页后客户端只持有当页数据，「当页内排序」跨页语义错误——排序必须与过滤同层在服务端完成；既有三参数形态（user_id/date_*）不传排序参数时保持现状默认序，19 用例零改动。<br>备选（未采纳）：仅当页排序（语义错误，不同页数据顺序矛盾）；全量拉取客户端排（回退 REQ-029 初衷——CHG-006 审计④「全量拉取无分页」正是功能缺陷级痛点）</td>
+      </tr>
+      <tr>
+        <td>⑦</td>
+        <td>视觉重构方向确认（REQ-029.4「参考现代管理后台」，由本稿承载）</td>
+        <td><b>推荐按 §5.1 映射表定案</b>：页面灰底 <code>--c-bg</code> + 白卡 surface（与主界面 iter-9/11 基调统一）；内容列 1080px；四卡概览区；表格入卡（border + r-md + shadow-1 + 横滚保护）+ 留白加深（td 12/16）；徽标规格统一（20px 胶囊，色组合沿 iter-8 定夺①不变）；顶栏/tab/模态/403 结构零变化</td>
+        <td>「变层级与留白，不变功能与口径」——零回退面最小化的同时解决堆砌观感；全部既有令牌组合，亮暗双主题一次到位（§6 锁定帧）。<br>备选（未采纳）：更激进的侧栏式后台框架（左侧导航 + 多页面）——超 REQ-029 范围（单页双 tab 未被授权移除），如做须走变更</td>
+      </tr>
+      <tr>
+        <td>⑧</td>
+        <td>新令牌提案（若评估需要）</td>
+        <td><b>无提案</b>——本稿零新增令牌、零自造色值；统计卡/分页控件/搜索框全部为既有令牌组合</td>
+        <td>tokens v1.3/v1.3.1 值域充足：卡片 = surface/border/shadow-1；进度条三态 = primary-solid/warning/danger-solid + hover-bg 轨道；警示条 = warning-l/danger-l 族。仅建议随基线在 <b>components.md</b> 登记三项新形态（§6.3，资产沉淀不涉令牌批准，沿惯例）</td>
+      </tr>
+    </table>
+    <div class="ann" style="margin-top:16px;">
+      <b>基线声明</b>：本稿为 iter-12 T0 交付物，经 CEO 评审批准后打 tag <code>design-iter-12</code> 并基线；§8 八项定夺的 CEO 决定将回填本节（同 iter-8/11 模式）。
+      基线后任何改动须先登记变更（design.md 变更记录），不接受「顺手改」。设计稿基线批准权限归 CEO，本稿不自行打 tag、不提交 git。
+    </div>
+  </section>
+
+  <script>
+  (function () {
+    'use strict';
+    var $ = function (s) { return document.querySelector(s); };
+    var $$ = function (s) { return Array.prototype.slice.call(document.querySelectorAll(s)); };
+    function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+    function fmt(n) { return Number(n).toLocaleString('zh-Hans-CN'); }
+    function toast(msg, ok) {
+      var h = $('#toastHost'), d = document.createElement('div');
+      d.className = 'toast';
+      d.innerHTML = (ok ? '<span class="t-ok">✓</span>' : '') + esc(msg);
+      h.appendChild(d);
+      setTimeout(function () { d.style.opacity = '0'; setTimeout(function () { d.remove(); }, 350); }, 2400);
+    }
+
+    /* ================= 主题（演示控制；锁定帧 force-* 不随动） ================= */
+    var TK_KEY = 'mm-demo-theme';
+    function applyTheme(dark) {
+      $$('.tk').forEach(function (t) {
+        if (t.classList.contains('force-light') || t.classList.contains('force-dark')) return;
+        t.classList.toggle('dark', dark);
+      });
+      $('#btnLight').classList.toggle('on', !dark);
+      $('#btnDark').classList.toggle('on', dark);
+    }
+    $('#btnLight').addEventListener('click', function () { applyTheme(false); try { localStorage.setItem(TK_KEY, 'light'); } catch (e) {} });
+    $('#btnDark').addEventListener('click', function () { applyTheme(true); try { localStorage.setItem(TK_KEY, 'dark'); } catch (e) {} });
+
+    /* ================= 演示数据（全虚构，铁律 5） ================= */
+    var ADMIN = { id: 1, username: '猫南北', is_admin: true, banned: false, created_at: '2026-08-01 09:12', mode: 'unified', quota_override: null, daily_limit: 30, used_today: 3 };
+    var USERS = [ADMIN];
+    (function mkUsers() {
+      var names = ['李雷', '韩梅梅', 'spam-bot-2026', 'test-042', 'wupeng-demo',
+        '这是一个特别长的用户名共三十二个字符用来验证省略规则', 'xiaoming', 'nekochan', 'maria.g', 'dev-01',
+        'takahashi', '狸花猫', '布偶猫', '橘子汽水', '深夜程序员', '产品经理小王', '测试账号甲', '测试账号乙', 'glados', 'chell'];
+      var id = 2;
+      names.forEach(function (n, i) {
+        var mode = (i % 3 === 0) ? 'self' : 'unified';
+        var ov = null; if (i === 0) ov = 200; if (i === 16) ov = 5;
+        var used = 0;
+        if (i === 16) used = 5; else if (i === 6) used = 30; else if (i !== 2) used = (i * 3) % 29;
+        USERS.push({
+          id: id++, username: n, is_admin: false, banned: (i === 2),
+          created_at: '2026-08-0' + (1 + (i % 9)) + ' ' + String(8 + (i % 10)).padStart(2, '0') + ':' + String((i * 7) % 60).padStart(2, '0'),
+          mode: mode, quota_override: ov, daily_limit: ov != null ? ov : (mode === 'self' ? 500 : 30), used_today: used
+        });
+      });
+      while (USERS.length < 47) {
+        var k = USERS.length - 1;
+        var mode2 = (k % 4 === 0) ? 'self' : 'unified';
+        USERS.push({
+          id: id, username: 'user-' + String(k).padStart(2, '0'), is_admin: false, banned: false,
+          created_at: '2026-08-1' + (k % 9) + ' ' + String(10 + (k % 8)).padStart(2, '0') + ':2' + (k % 9),
+          mode: mode2, quota_override: null, daily_limit: mode2 === 'self' ? 500 : 30, used_today: (k * 2) % 27
+        });
+        id++;
+      }
+    })();
+    var U_DAYS = ['2026-08-16', '2026-08-15', '2026-08-14', '2026-08-13', '2026-08-12', '2026-08-11', '2026-08-10'];
+    var U_IDS = [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 13, 15];
+    function nameOf(uid) { for (var i = 0; i < USERS.length; i++) { if (USERS[i].id === uid) return USERS[i].username; } return 'user-' + uid; }
+    function mkUsage(days) {
+      var rows = [];
+      days.forEach(function (d, di) {
+        U_IDS.forEach(function (uid, ui) {
+          if ((di + ui) % 7 === 6) return; /* 自然缺行：并非每天每用户都有记录 */
+          var r = ((di * 7 + ui * 13) % 29) + 1;
+          rows.push({ day: d, user_id: uid, username: nameOf(uid), requests: r, tokens: r * (480 + ((ui * 137) % 400)) });
+        });
+      });
+      return rows;
+    }
+    var USAGE_FULL = mkUsage(U_DAYS);
+    var USAGE_GAP = mkUsage(U_DAYS.filter(function (d) { return d !== '2026-08-12'; }));
+
+    /* ================= 概览统计卡 + 警示条（三态，定夺⑤ 落形） ================= */
+    function renderSite() {
+      var st = document.querySelector('input[name=siteState]:checked').value;
+      var total = 2000, used = { normal: 100, near: 1600, burst: 2000 }[st];
+      $('#ovUsers').textContent = fmt(us.mode === 'solo' ? 1 : USERS.length);
+      $('#ovReq').textContent = fmt(86);
+      $('#ovTok').textContent = fmt(412530);
+      $('#ovUUsed').textContent = fmt(used);
+      $('#ovUTotal').textContent = fmt(total);
+      var pct = Math.min(100, Math.round(used / total * 100));
+      $('#ovFill').style.width = pct + '%';
+      var c4 = $('#cardUnified');
+      c4.className = 'stat-card' + (st === 'normal' ? '' : ' ' + st);
+      var line = $('#ovStateLine');
+      if (st === 'normal') { line.className = 'sc-state'; line.textContent = '剩余 ' + fmt(total - used) + ' 次'; }
+      if (st === 'near') { line.className = 'sc-state warn'; line.textContent = '已用 ' + pct + '% · 已接近上限，请关注消耗'; }
+      if (st === 'burst') { line.className = 'sc-state danger'; line.textContent = '已熔断 · 明日 00:00 自动恢复'; }
+      var strip = $('#siteStrip');
+      if (st === 'normal') { strip.style.display = 'none'; }
+      else {
+        strip.style.display = 'flex';
+        strip.className = 'site-strip ' + st;
+        strip.innerHTML = '<span class="ss-label">统一 key 每日总量 ' + fmt(total) + ' · 今日已用 ' + fmt(used) + '</span>' +
+          (st === 'near'
+            ? '<span class="ss-note">（已接近上限，请关注消耗）</span>'
+            : '<span class="ss-note">—— <b>已暂停全站新对话请求，明日 00:00 自动恢复；自填 key 用户不受影响</b></span>');
+      }
+    }
+
+    /* ================= 用户列表面板（搜索 + 分页 + 治理） ================= */
+    var us = { q: '', offset: 0, limit: 20, mode: 'data' };
+    function userById(id) { for (var i = 0; i < USERS.length; i++) { if (USERS[i].id === id) return USERS[i]; } return null; }
+    function filteredUsers() {
+      if (us.mode === 'solo') return [ADMIN];
+      var q = us.q.trim().toLowerCase();
+      if (!q) return USERS.slice();
+      return USERS.filter(function (u) { return u.username.toLowerCase().indexOf(q) >= 0; });
+    }
+    function hlName(u) {
+      var q = us.q.trim();
+      if (!q) return esc(u.username);
+      var i = u.username.toLowerCase().indexOf(q.toLowerCase());
+      if (i < 0) return esc(u.username);
+      return esc(u.username.slice(0, i)) + '<mark class="hl">' + esc(u.username.substr(i, q.length)) + '</mark>' + esc(u.username.slice(i + q.length));
+    }
+    function tierLabel(u) { return u.quota_override != null ? ('自定义 ' + u.quota_override) : (u.mode === 'self' ? '自填档' : '免费档'); }
+    function userRow(u) {
+      var quota = '<span class="pill ' + (u.quota_override != null ? 'pill-cut' : 'pill-def') + '">' + tierLabel(u) + '</span>';
+      quota += u.banned
+        ? '<span class="q-used">—</span>'
+        : '<span class="q-used' + (u.used_today >= u.daily_limit ? ' q-full' : '') + '">' + (u.used_today >= u.daily_limit ? '今日已用尽' : ('今日 ' + u.used_today + '/' + u.daily_limit)) + '</span>';
+      var acts = (u.banned
+        ? '<button class="btn-row act-unban" data-act="unban" data-id="' + u.id + '">解封</button>'
+        : '<button class="btn-row act-ban" data-act="ban" data-id="' + u.id + '"' + (u.is_admin ? ' disabled title="管理员本人不可封禁"' : '') + '>封禁</button>')
+        + '<button class="btn-row act-quota" data-act="quota" data-id="' + u.id + '">调配额</button>';
+      return '<tr>' +
+        '<td><span class="uname" title="' + esc(u.username) + '">' + hlName(u) + '</span>' + (u.is_admin ? '<span class="pill pill-admin">管理员</span>' : '') + '</td>' +
+        '<td class="cell-time">' + u.created_at + '</td>' +
+        '<td><span class="pill ' + (u.banned ? 'pill-ban' : 'pill-ok') + '">' + (u.banned ? '已封禁' : '正常') + '</span></td>' +
+        '<td>' + (u.mode === 'self' ? '自填 key' : '统一 key') + '</td>' +
+        '<td>' + quota + '</td>' +
+        '<td class="acts">' + acts + '</td></tr>';
+    }
+    function pgBtn(label, pageIdx, active, disabled) {
+      return '<button class="pg-btn' + (active ? ' on' : '') + '" data-page="' + pageIdx + '"' + (disabled ? ' disabled' : '') + ' aria-label="第 ' + (pageIdx + 1) + ' 页">' + label + '</button>';
+    }
+    function pagerHTML(total, offset, limit, unit, ns) {
+      var head = '<div class="pager"><span class="pg-info">共 ' + fmt(total) + ' ' + unit;
+      if (total <= limit) return head + '</span></div>';
+      var pages = Math.ceil(total / limit), page = Math.floor(offset / limit) + 1, nums = [], i;
+      for (i = 1; i <= pages; i++) { if (i === 1 || i === pages || Math.abs(i - page) <= 1) nums.push(i); }
+      var h = head + ' · ' + pages + ' 页</span><div class="pg-ctl" data-ns="' + ns + '">' + pgBtn('‹ 上一页', page - 2, false, page === 1);
+      var prev = 0;
+      nums.forEach(function (n) {
+        if (n - prev > 1) h += '<span class="pg-ellipsis">…</span>';
+        h += pgBtn(String(n), n - 1, n === page, false);
+        prev = n;
+      });
+      h += pgBtn('下一页 ›', page, false, page === pages);
+      return h + '</div></div>';
+    }
+    function renderUsers() {
+      var area = $('#uArea');
+      $('#uCount').textContent = '';
+      if (us.mode === 'loading') { area.innerHTML = '<div class="adm-state"><span class="spin-p"></span>正在加载用户列表…</div>'; return; }
+      if (us.mode === 'error') {
+        area.innerHTML = '<div class="err-banner"><span>用户列表加载失败（演示）</span><button class="btn-ghost btn-sm" data-act="retry-u">重试</button></div>';
+        return;
+      }
+      var list = filteredUsers(), total = list.length;
+      if (us.q.trim()) $('#uCount').textContent = '找到 ' + fmt(total) + ' 个用户';
+      if (total === 0) {
+        area.innerHTML = '<div class="empty-box">' +
+          '<span class="e-ico"><svg width="28" height="28" viewBox="0 0 24 24"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5Zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14Z"/></svg></span>' +
+          '<div>未找到匹配「' + esc(us.q.trim()) + '」的用户</div>' +
+          '<div class="e-hint">用户名搜索大小写不敏感</div>' +
+          '<button class="btn-ghost btn-sm" data-act="clearq" style="margin-top:10px;">清除搜索</button></div>';
+        return;
+      }
+      var before = us.offset;
+      var last = Math.floor((total - 1) / us.limit) * us.limit;
+      us.offset = Math.min(us.offset, last);
+      if (before !== us.offset) toast('offset 越界，服务端已钳制到最后一页（第 ' + (Math.floor(us.offset / us.limit) + 1) + ' 页）');
+      var rows = list.slice(us.offset, us.offset + us.limit).map(userRow).join('');
+      area.innerHTML = '<div class="tbl-card"><table class="adm-table"><thead><tr>' +
+        '<th>用户名</th><th>注册时间</th><th>状态</th><th>密钥模式</th><th>配额</th><th>操作</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table></div>' + pagerHTML(total, us.offset, us.limit, '个用户', 'u');
+    }
+
+    /* 搜索（防抖 300ms + Enter 立即 + 清除） */
+    var sIn = $('#uSearch'), sClear = $('#uSearchClear'), deb = null;
+    sIn.addEventListener('input', function () {
+      sClear.classList.toggle('show', !!sIn.value);
+      clearTimeout(deb);
+      deb = setTimeout(function () { us.q = sIn.value; us.offset = 0; renderUsers(); }, 300);
+    });
+    sIn.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { clearTimeout(deb); us.q = sIn.value; us.offset = 0; renderUsers(); }
+    });
+    sClear.addEventListener('click', function () {
+      sIn.value = ''; sClear.classList.remove('show'); us.q = ''; us.offset = 0; renderUsers();
+    });
+
+    /* 封禁 / 解封 / 调配额 */
+    var banT = null, qT = null;
+    $('#uArea').addEventListener('click', function (e) {
+      var b = e.target.closest('button');
+      if (!b) return;
+      if (b.dataset.page !== undefined && b.dataset.page !== null && b.closest('.pg-ctl')) {
+        us.offset = Number(b.dataset.page) * us.limit; renderUsers(); return;
+      }
+      var act = b.getAttribute('data-act');
+      if (act === 'retry-u') { us.mode = 'data'; checkRadio('ulState', 'data'); renderUsers(); renderSite(); return; }
+      if (act === 'clearq') { sIn.value = ''; sClear.classList.remove('show'); us.q = ''; us.offset = 0; renderUsers(); return; }
+      var u = userById(Number(b.getAttribute('data-id')));
+      if (!u) return;
+      if (act === 'ban') { banT = u; $('#banName').textContent = u.username; $('#banMask').style.display = 'flex'; }
+      if (act === 'unban') { u.banned = false; toast('已解封 ' + u.username, true); renderUsers(); }
+      if (act === 'quota') {
+        qT = u;
+        $('#qSub').innerHTML = '用户 <b>' + esc(u.username) + '</b> · 当前：' + (u.mode === 'self' ? '自填 key' : '统一 key') + ' 模式' +
+          (u.quota_override != null ? (' · 已覆盖为 ' + u.quota_override + ' 次/日') : ('（默认 ' + u.daily_limit + ' 次/日）'));
+        var custom = u.quota_override != null;
+        $$('input[name=qmode]').forEach(function (r) { r.checked = (r.value === 'custom') === custom; });
+        $('#qInput').value = custom ? String(u.quota_override) : '';
+        $('#qErr').classList.remove('show');
+        $('#qOptCustom').classList.remove('invalid');
+        $('#qMask').style.display = 'flex';
+      }
+    });
+    $('#banYes').addEventListener('click', function () {
+      if (!banT) return;
+      banT.banned = true; toast('已封禁 ' + banT.username, true);
+      $('#banMask').style.display = 'none'; banT = null; renderUsers();
+    });
+    $('#banNo').addEventListener('click', function () { $('#banMask').style.display = 'none'; banT = null; });
+    $('#qNo').addEventListener('click', function () { $('#qMask').style.display = 'none'; qT = null; });
+    $('#qYes').addEventListener('click', function () {
+      if (!qT) return;
+      var mode = document.querySelector('input[name=qmode]:checked').value, value = null;
+      if (mode === 'custom') {
+        var raw = $('#qInput').value.trim();
+        if (!/^\d+$/.test(raw) || Number(raw) < 1) {
+          $('#qErr').classList.add('show'); $('#qOptCustom').classList.add('invalid'); return;
+        }
+        value = Number(raw);
+      }
+      qT.quota_override = value;
+      qT.daily_limit = value != null ? value : (qT.mode === 'self' ? 500 : 30);
+      toast('配额已保存，自下一次请求生效', true);
+      $('#qMask').style.display = 'none'; qT = null; renderUsers();
+    });
+
+    /* ================= 用量列表面板（筛选沿用 + 排序 + 分页 + 缺失标注） ================= */
+    var uz = { offset: 0, limit: 20, mode: 'data', user: '', from: '2026-08-10', to: '2026-08-16', sortKey: 'day', sortDir: 'desc' };
+    (function initZUser() {
+      var sel = $('#zUser'), h = '<option value="">全部用户</option>';
+      U_IDS.forEach(function (uid) { h += '<option value="' + uid + '">' + esc(nameOf(uid)) + '</option>'; });
+      sel.innerHTML = h;
+    })();
+    function usageRows() {
+      var ds = uz.mode === 'gap' ? USAGE_GAP : USAGE_FULL;
+      var rows = ds.filter(function (r) {
+        return (!uz.user || r.user_id === Number(uz.user)) && (!uz.from || r.day >= uz.from) && (!uz.to || r.day <= uz.to);
+      });
+      var dir = uz.sortDir === 'asc' ? 1 : -1, k = uz.sortKey;
+      rows.sort(function (a, b) {
+        var va = a[k], vb = b[k];
+        if (va < vb) return -1 * dir;
+        if (va > vb) return 1 * dir;
+        return a.username < b.username ? -1 : (a.username > b.username ? 1 : 0); /* tie-break：username 升序（翻页不重不漏） */
+      });
+      return rows;
+    }
+    function gapNote(rows) {
+      if (!uz.from || !uz.to || uz.from > uz.to) return '';
+      var days = Math.round((Date.parse(uz.to) - Date.parse(uz.from)) / 86400000) + 1;
+      if (days > 366) return '';
+      var set = {}; rows.forEach(function (r) { set[r.day] = 1; });
+      var n = Object.keys(set).length;
+      return (n > 0 && n < days) ? '<div class="gap-note">部分时段无统计数据：仅显示已有数据（不估算补齐）</div>' : '';
+    }
+    function renderUsage() {
+      var area = $('#u2Area');
+      $('#zCount').textContent = '';
+      if (uz.mode === 'loading') { area.innerHTML = '<div class="adm-state"><span class="spin-p"></span>正在加载用量数据…</div>'; return; }
+      if (uz.mode === 'error') {
+        area.innerHTML = '<div class="err-banner"><span>用量数据加载失败（演示）</span><button class="btn-ghost btn-sm" data-act="retry-z">重试</button></div>';
+        return;
+      }
+      var rows = usageRows(), total = rows.length;
+      $('#zCount').textContent = '共 ' + fmt(total) + ' 条';
+      if (total === 0) {
+        area.innerHTML = '<div class="empty-box"><div>暂无用量数据</div><div class="e-hint">新用户或新部署尚无对话记录时属正常现象</div></div>';
+        return;
+      }
+      var before = uz.offset;
+      var last = Math.floor((total - 1) / uz.limit) * uz.limit;
+      uz.offset = Math.min(uz.offset, last);
+      if (before !== uz.offset) toast('offset 越界，服务端已钳制到最后一页');
+      function th(key, label, num) {
+        var on = uz.sortKey === key;
+        return '<th class="sortable' + (num ? ' num' : '') + '" data-sk="' + key + '">' + label +
+          (on ? '<span class="sort-ind">' + (uz.sortDir === 'asc' ? '↑' : '↓') + '</span>' : '') + '</th>';
+      }
+      var body = rows.slice(uz.offset, uz.offset + uz.limit).map(function (r) {
+        return '<tr><td class="mono cell-time">' + r.day + '</td><td>' + esc(r.username) + '</td>' +
+          '<td class="mono num">' + fmt(r.requests) + '</td><td class="mono num">' + fmt(r.tokens) + '</td></tr>';
+      }).join('');
+      area.innerHTML = gapNote(rows) +
+        '<div class="tbl-card"><table class="adm-table"><thead><tr>' +
+        th('day', '日期') + '<th>用户名</th>' + th('requests', '请求数', true) + th('tokens', 'token 数', true) +
+        '</tr></thead><tbody>' + body + '</tbody></table></div>' + pagerHTML(total, uz.offset, uz.limit, '条', 'z');
+    }
+    $('#zUser').addEventListener('change', function () { uz.user = this.value; uz.offset = 0; renderUsage(); });
+    $('#zFrom').addEventListener('change', function () { uz.from = this.value; uz.offset = 0; renderUsage(); });
+    $('#zTo').addEventListener('change', function () { uz.to = this.value; uz.offset = 0; renderUsage(); });
+    $('#u2Area').addEventListener('click', function (e) {
+      var b = e.target.closest('button');
+      if (b && b.dataset.page !== undefined && b.closest('.pg-ctl')) { uz.offset = Number(b.dataset.page) * uz.limit; renderUsage(); return; }
+      if (b && b.getAttribute('data-act') === 'retry-z') { uz.mode = 'data'; checkRadio('uzState', 'data'); renderUsage(); return; }
+      var thEl = e.target.closest('th.sortable');
+      if (thEl) {
+        var k = thEl.getAttribute('data-sk');
+        if (uz.sortKey === k) { uz.sortDir = uz.sortDir === 'asc' ? 'desc' : 'asc'; }
+        else { uz.sortKey = k; uz.sortDir = 'desc'; }
+        uz.offset = 0; renderUsage();
+      }
+    });
+
+    /* ================= tab / 状态控制 / 重置 / 越界演示 ================= */
+    var tabU = $('#tabUsersBtn'), tabZ = $('#tabUsageBtn');
+    tabU.addEventListener('click', function () {
+      tabU.classList.add('on'); tabZ.classList.remove('on');
+      tabU.setAttribute('aria-checked', 'true'); tabZ.setAttribute('aria-checked', 'false');
+      $('#panelUsers').style.display = ''; $('#panelUsage').style.display = 'none';
+    });
+    tabZ.addEventListener('click', function () {
+      tabZ.classList.add('on'); tabU.classList.remove('on');
+      tabZ.setAttribute('aria-checked', 'true'); tabU.setAttribute('aria-checked', 'false');
+      $('#panelUsage').style.display = ''; $('#panelUsers').style.display = 'none';
+    });
+    function checkRadio(name, val) {
+      var r = document.querySelector('input[name=' + name + '][value="' + val + '"]');
+      if (r) r.checked = true;
+    }
+    $$('input[name=siteState]').forEach(function (r) { r.addEventListener('change', renderSite); });
+    $$('input[name=ulState]').forEach(function (r) {
+      r.addEventListener('change', function () { us.mode = this.value; us.offset = 0; renderUsers(); renderSite(); });
+    });
+    $$('input[name=uzState]').forEach(function (r) {
+      r.addEventListener('change', function () { uz.mode = this.value; uz.offset = 0; renderUsage(); });
+    });
+    $('#jumpOut').addEventListener('click', function (e) { e.preventDefault(); us.offset = 999 * 20; renderUsers(); });
+    $('#aReset').addEventListener('click', function (e) {
+      e.preventDefault();
+      us = { q: '', offset: 0, limit: 20, mode: 'data' };
+      uz = { offset: 0, limit: 20, mode: 'data', user: '', from: '2026-08-10', to: '2026-08-16', sortKey: 'day', sortDir: 'desc' };
+      sIn.value = ''; sClear.classList.remove('show');
+      $('#zUser').value = ''; $('#zFrom').value = uz.from; $('#zTo').value = uz.to;
+      checkRadio('siteState', 'normal'); checkRadio('ulState', 'data'); checkRadio('uzState', 'data');
+      renderSite(); renderUsers(); renderUsage();
+    });
+
+    /* ================= §6 锁定帧（同一 DOM 双令牌；暗帧找亮色残留） ================= */
+    function lockCards() {
+      return '<div style="padding:16px;">' +
+        '<div class="stat-grid">' +
+        '<div class="stat-card"><div class="sc-label">总用户数</div><div class="sc-value">47</div><div class="sc-sub">全部注册账号（含已封禁与管理员）</div></div>' +
+        '<div class="stat-card"><div class="sc-label">今日请求</div><div class="sc-value">86</div><div class="sc-sub">今日 · 全部密钥模式合计</div></div>' +
+        '<div class="stat-card"><div class="sc-label">今日 token</div><div class="sc-value">412,530</div><div class="sc-sub">今日 · 上游 usage 帧合计</div></div>' +
+        '<div class="stat-card near"><div class="sc-label">统一 key 每日用量</div><div class="sc-value">1,600<span class="sc-total"> / 2,000 次</span></div>' +
+        '<div class="sc-prog"><div class="fill" style="width:80%"></div></div><div class="sc-state warn">已用 80% · 已接近上限，请关注消耗</div></div>' +
+        '</div>' +
+        '<div class="site-strip near"><span class="ss-label">统一 key 每日总量 2,000 · 今日已用 1,600</span><span class="ss-note">（已接近上限，请关注消耗）</span></div>' +
+        '</div>';
+    }
+    function lockTable() {
+      return '<div style="padding:16px;">' +
+        '<div class="adm-toolbar"><div class="search-box"><span class="s-ico"><svg width="14" height="14" viewBox="0 0 24 24"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5Zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14Z"/></svg></span>' +
+        '<input class="search-input" type="text" placeholder="搜索用户名（大小写不敏感）" aria-label="搜索用户名"></div></div>' +
+        '<div class="tbl-card"><table class="adm-table"><thead><tr><th>用户名</th><th>注册时间</th><th>状态</th><th>密钥模式</th><th>配额</th><th>操作</th></tr></thead><tbody>' +
+        '<tr><td><span class="uname" title="猫南北">猫南北</span><span class="pill pill-admin">管理员</span></td><td class="cell-time">2026-08-01 09:12</td><td><span class="pill pill-ok">正常</span></td><td>统一 key</td><td><span class="pill pill-def">免费档</span><span class="q-used">今日 3/30</span></td><td class="acts"><button class="btn-row act-ban" disabled title="管理员本人不可封禁">封禁</button><button class="btn-row act-quota">调配额</button></td></tr>' +
+        '<tr><td><span class="uname" title="李雷">李雷</span></td><td class="cell-time">2026-08-01 08:07</td><td><span class="pill pill-ok">正常</span></td><td>自填 key</td><td><span class="pill pill-cut">自定义 200</span><span class="q-used">今日 12/200</span></td><td class="acts"><button class="btn-row act-ban">封禁</button><button class="btn-row act-quota">调配额</button></td></tr>' +
+        '<tr><td><span class="uname" title="spam-bot-2026">spam-bot-2026</span></td><td class="cell-time">2026-08-03 10:21</td><td><span class="pill pill-ban">已封禁</span></td><td>统一 key</td><td><span class="pill pill-def">免费档</span><span class="q-used">—</span></td><td class="acts"><button class="btn-row act-unban">解封</button><button class="btn-row act-quota">调配额</button></td></tr>' +
+        '<tr><td><span class="uname" title="这是一个特别长的用户名共三十二个字符用来验证省略规则">这是一个特别长的用户名共三十二个字符用来验证省略规则</span></td><td class="cell-time">2026-08-06 13:48</td><td><span class="pill pill-ok">正常</span></td><td>统一 key</td><td><span class="pill pill-def">免费档</span><span class="q-used q-full">今日已用尽</span></td><td class="acts"><button class="btn-row act-ban">封禁</button><button class="btn-row act-quota">调配额</button></td></tr>' +
+        '</tbody></table></div>' +
+        '<div class="pager"><span class="pg-info">共 47 个用户 · 3 页</span><div class="pg-ctl"><button class="pg-btn" aria-label="第 1 页">‹ 上一页</button><button class="pg-btn" aria-label="第 1 页">1</button><button class="pg-btn on" aria-label="第 2 页">2</button><button class="pg-btn" aria-label="第 3 页">3</button><button class="pg-btn" aria-label="第 3 页">下一页 ›</button></div></div>' +
+        '</div>';
+    }
+    $('#lock1L').innerHTML = lockCards(); $('#lock1D').innerHTML = lockCards();
+    $('#lock2L').innerHTML = lockTable(); $('#lock2D').innerHTML = lockTable();
+
+    /* ================= 初始化 ================= */
+    var saved = null;
+    try { saved = localStorage.getItem(TK_KEY); } catch (e) {}
+    applyTheme(saved === 'dark');
+    renderSite(); renderUsers(); renderUsage();
+  })();
+  </script>
+
+
+
+
+</div>
+</body>
+</html>
