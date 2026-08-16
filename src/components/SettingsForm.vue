@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useSettingsStore, type ProfileInput } from '../stores/settings'
 import { useToastStore } from '../stores/toast'
 import { useTheme } from '../composables/useTheme'
@@ -16,14 +16,107 @@ const toast = useToastStore()
 const sessions = useSessionsStore()
 const auth = useAuthStore()
 
-/** 「前往高级设置」入口（走查 15）：经错误气泡进入设置页时滚动定位到高级设置区 */
-const props = defineProps<{ locateAdv?: boolean }>()
+/**
+ * REQ-028（design-iter-11 §4，定夺⑤ R1 拆分）：设置弹窗化——720px 模态 = 左导航 168px 五分区
+ * （外观/密钥模式/高级设置/对话设置/账号，role=tablist 方向键可切）+ 右分区面板（一次只显示一个，v-show 切分区不丢表单状态）；
+ * 关闭三方式（Esc/遮罩/关闭钮）+ 未保存条件拦截（定夺⑥：提示词有改动或改密字段非空才拦）；
+ * 「前往高级设置」（错误气泡 locateAdv / 模式卡跨分区链接）= 分区直达 + 标题高亮。
+ * 表单字段与保存逻辑沿整页版零改动（「只改容器不改逻辑」）。
+ */
+const props = defineProps<{ open: boolean; locateAdv?: boolean }>()
+const emit = defineEmits<{ close: [] }>()
+
+const TABS = [
+  { key: 'appearance', label: '外观' },
+  { key: 'mode', label: '密钥模式' },
+  { key: 'adv', label: '高级设置' },
+  { key: 'chat', label: '对话设置' },
+  { key: 'account', label: '账号' },
+] as const
+type PaneKey = (typeof TABS)[number]['key']
+const pane = ref<PaneKey>('appearance')
+const advSection = ref<HTMLElement | null>(null) // 「前往高级设置」分区直达 + 高亮目标
+const closeBtn = ref<HTMLButtonElement | null>(null)
+let flashTimer: ReturnType<typeof setTimeout> | undefined
+let openerEl: HTMLElement | null = null
+
+function flashAdv() {
+  advSection.value?.classList.remove('flash')
+  void nextTick(() => advSection.value?.classList.add('flash'))
+  clearTimeout(flashTimer)
+  flashTimer = setTimeout(() => advSection.value?.classList.remove('flash'), 1600)
+}
+
+function showPane(key: PaneKey, focusNav = false) {
+  pane.value = key
+  if (focusNav) {
+    void nextTick(() => {
+      const btn = document.querySelector(`.sm-nav [data-pane="${key}"]`) as HTMLButtonElement | null
+      btn?.focus()
+    })
+  }
+}
+
+function onNavKey(e: KeyboardEvent, idx: number) {
+  let j = -1
+  if (e.key === 'ArrowDown' || e.key === 'ArrowRight') j = (idx + 1) % TABS.length
+  else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') j = (idx - 1 + TABS.length) % TABS.length
+  else return
+  e.preventDefault()
+  showPane(TABS[j].key, true)
+}
+
+watch(
+  () => props.open,
+  (v) => {
+    if (v) {
+      openerEl = (document.activeElement as HTMLElement) ?? null
+      if (props.locateAdv) showPane('adv')
+      void nextTick(() => closeBtn.value?.focus())
+    } else {
+      // 关闭后焦点回触发入口（账户「···」或错误气泡按钮，§4.2）
+      openerEl?.focus?.()
+      openerEl = null
+    }
+  },
+  { immediate: true }, // App 常驻挂载组件、同帧置 open+locateAdv：挂载即开也要直达
+)
+// 错误气泡场景：open 与 locateAdv 同帧设置时 watch(open) 已处理；单独翻转 locateAdv 亦直达
 watch(
   () => props.locateAdv,
   (v) => {
-    if (v) advSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    if (v && props.open) showPane('adv')
   },
 )
+watch(pane, (k) => {
+  if (k === 'adv' && props.locateAdv) flashAdv()
+})
+
+/** 未保存判定（定夺⑥）：显式保存字段——提示词 textarea 值 ≠ 已保存值，或改密三字段任一非空 */
+function isDirty() {
+  return promptText.value !== settings.systemPrompt || !!(oldPwd.value || newPwd.value || confirmPwd.value)
+}
+
+const dirtyConfirm = ref(false)
+
+function attemptClose() {
+  if (!props.open) return
+  if (isDirty()) dirtyConfirm.value = true
+  else close()
+}
+function close() {
+  dirtyConfirm.value = false
+  // 焦点回触发入口须在 emit（→ App v-if 卸载本组件）之前同步执行
+  openerEl?.focus?.({ preventScroll: true })
+  emit('close')
+}
+
+/** 弹窗层 Esc：内层模态（档案编辑/注销/删除确认/未保存确认）各自处理时让行 */
+function onModalKey(e: KeyboardEvent) {
+  if (e.key !== 'Escape') return
+  if (editing.value || deleteOpen.value || pendingDelete.value || dirtyConfirm.value) return
+  attemptClose()
+}
 
 // REQ-018 待澄清 7：生成中切换档案/回退 → 「待生效」胶囊，全部生成结束自动转正
 watch(
@@ -51,7 +144,6 @@ const editingId = ref<string | null>(null) // null = 添加（id 由服务端生
 const form = reactive<ProfileInput>({ name: '', baseUrl: '', model: '', apiKey: '' })
 const errors = ref<Partial<Record<keyof ProfileInput, string>>>({})
 const pendingDelete = ref<{ id: string; name: string } | null>(null)
-const advSection = ref<HTMLElement | null>(null) // 错误气泡「前往高级设置」定位目标
 
 const isEdit = computed(() => !!editingId.value && settings.profiles.some((p) => p.id === editingId.value))
 
@@ -131,8 +223,10 @@ async function fallback() {
   }
 }
 
+/** 模式卡「在高级设置中添加自有密钥」跨分区跳转（§4.3：分区直达 + 高亮） */
 function gotoAdv() {
-  advSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  showPane('adv')
+  flashAdv()
 }
 
 /** iter-10 T1①：boot 失败后的重试入口——boot 可重入，成功即恢复档案列表（无需刷新页面） */
@@ -266,50 +360,79 @@ async function confirmDeleteAccount(password: string) {
 </script>
 
 <template>
-  <div class="settings">
-    <header class="settings-header">
-      <h2>设置</h2>
-      <p class="hint">对话默认使用服务端统一密钥（零配置）；可在高级设置添加自有供应商密钥，密钥仅存服务端。</p>
-    </header>
+  <!-- REQ-028：设置弹窗（720px 左右分栏，z-100；挂在 .app 根下避开 .main overflow 裁剪） -->
+  <div v-if="open" class="settings-mask" @click.self="attemptClose" @keydown="onModalKey">
+    <div class="settings-modal" role="dialog" aria-modal="true" aria-label="设置">
+      <header class="sm-head">
+        <div class="sm-title">设置</div>
+        <button ref="closeBtn" type="button" class="icon-btn sm-close" title="关闭设置" aria-label="关闭设置" @click="attemptClose">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          </svg>
+        </button>
+      </header>
 
-    <!-- REQ-017 外观 · 主题切换（segmented，与顶栏入口同步） -->
-    <div class="section-label">外观</div>
-    <div class="theme-seg" role="radiogroup" aria-label="主题">
-      <button
-        type="button"
-        class="seg-btn"
-        :class="{ on: theme === 'light' }"
-        role="radio"
-        :aria-checked="theme === 'light'"
-        @click="setTheme('light')"
-      >
-        浅色
-      </button>
-      <button
-        type="button"
-        class="seg-btn"
-        :class="{ on: theme === 'dark' }"
-        role="radio"
-        :aria-checked="theme === 'dark'"
-        @click="setTheme('dark')"
-      >
-        深色
-      </button>
-    </div>
+      <div class="sm-body">
+        <nav class="sm-nav" role="tablist" aria-label="设置分区">
+          <button
+            v-for="(t, i) in TABS"
+            :key="t.key"
+            type="button"
+            role="tab"
+            :data-pane="t.key"
+            :aria-selected="pane === t.key"
+            :class="{ on: pane === t.key }"
+            @click="showPane(t.key)"
+            @keydown="onNavKey($event, i)"
+          >
+            {{ t.label }}
+          </button>
+        </nav>
 
-    <!-- REQ-014 v3 密钥模式卡（design-iter-7 §1）：统一 key 态 ↔ 自填态 -->
-    <div class="section-label">密钥模式</div>
-    <KeyModeCard
-      :mode="settings.keyMode"
-      :active-profile-name="settings.activeProfile?.name"
-      :quota="quota"
-      @fallback="fallback"
-      @goto-adv="gotoAdv"
-    />
+        <!-- 分区一：外观（REQ-017 唯一入口，与全局同状态同存储） -->
+        <div v-show="pane === 'appearance'" class="sm-pane" role="tabpanel">
+          <div class="section-label pane-label">外观</div>
+          <div class="theme-seg" role="radiogroup" aria-label="主题">
+            <button
+              type="button"
+              class="seg-btn"
+              :class="{ on: theme === 'light' }"
+              role="radio"
+              :aria-checked="theme === 'light'"
+              @click="setTheme('light')"
+            >
+              浅色
+            </button>
+            <button
+              type="button"
+              class="seg-btn"
+              :class="{ on: theme === 'dark' }"
+              role="radio"
+              :aria-checked="theme === 'dark'"
+              @click="setTheme('dark')"
+            >
+              深色
+            </button>
+          </div>
+        </div>
 
-    <!-- REQ-018 高级设置 · 自填供应商密钥（档案存服务端，design-iter-7 §2） -->
-    <div ref="advSection" class="section-label">高级设置 · 自填供应商密钥</div>
-    <div class="form">
+        <!-- 分区二：密钥模式（REQ-014 v3 模式卡，design-iter-7 §1） -->
+        <div v-show="pane === 'mode'" class="sm-pane" role="tabpanel">
+          <div class="section-label pane-label">密钥模式</div>
+          <p class="mode-note">对话默认使用服务端统一密钥（零配置）；可在「高级设置」添加自有供应商密钥，密钥仅存服务端。</p>
+          <KeyModeCard
+            :mode="settings.keyMode"
+            :active-profile-name="settings.activeProfile?.name"
+            :quota="quota"
+            @fallback="fallback"
+            @goto-adv="gotoAdv"
+          />
+        </div>
+
+        <!-- 分区三：高级设置 · 自填供应商密钥（REQ-018，design-iter-7 §2；locateAdvanced 直达目标） -->
+        <div v-show="pane === 'adv'" class="sm-pane" role="tabpanel">
+          <div ref="advSection" class="section-label pane-label">高级设置 · 自填供应商密钥</div>
+          <div class="form">
       <p class="adv-intro">
         填写自有 Base URL / 模型名 / API Key，解锁更高配额。<b>密钥仅存服务端</b>（受保护存储），登录后任意设备可见；浏览器本地不存储任何密钥。
       </p>
@@ -367,10 +490,13 @@ async function confirmDeleteAccount(password: string) {
         </button>
       </div>
       <p class="adv-hint">「设为当前」即切换为<b>自填模式</b>，下一次请求生效；<b>当前生效的档案不可删除</b>，请先切换到其他档案或回退统一密钥。</p>
+          </div>
+        </div>
 
-      <!-- REQ-008 对话设置 · 系统提示词（design-iter-2 触点一） -->
-      <div class="section-label">对话设置</div>
-      <label class="field" for="system-prompt">
+        <!-- 分区四：对话设置 · 系统提示词（REQ-008，design-iter-2 触点一） -->
+        <div v-show="pane === 'chat'" class="sm-pane" role="tabpanel">
+          <div class="section-label pane-label">对话设置</div>
+          <label class="field" for="system-prompt">
         <span class="field-label">系统提示词<span class="optional">可选</span></span>
         <textarea
           id="system-prompt"
@@ -390,10 +516,11 @@ async function confirmDeleteAccount(password: string) {
           已保存
         </span>
       </div>
-    </div>
+        </div>
 
-    <!-- REQ-021 账号管理（design-iter-9 §2~3）：设置页「账号」区块，置页尾 -->
-    <div class="section-label">账号</div>
+        <!-- 分区五：账号（REQ-021，design-iter-9 §2~3）：改密 + 注销危险区 -->
+        <div v-show="pane === 'account'" class="sm-pane" role="tabpanel">
+          <div class="section-label pane-label">账号</div>
 
     <!-- 修改密码 -->
     <div class="pwd-form">
@@ -482,9 +609,12 @@ async function confirmDeleteAccount(password: string) {
       </div>
       <div class="dz-desc">将删除账号与<b>全部云端数据</b>（会话、供应商档案、密钥等），此操作<b>不可恢复</b>。</div>
       <div class="dz-actions"><button class="btn btn-danger dz-btn" type="button" @click="openDelete">注销账号</button></div>
-    </div>
+        </div>
+      </div>
+      </div>
 
-    <DeleteAccountModal
+      <!-- 内层模态（§4.4 层叠：注销/档案编辑 z-110、未保存确认 z-120） -->
+      <DeleteAccountModal
       :open="deleteOpen"
       :username="auth.user?.username ?? ''"
       :generating="sessions.isAnyGenerating"
@@ -543,29 +673,161 @@ async function confirmDeleteAccount(password: string) {
       @confirm="confirmDelete"
       @cancel="pendingDelete = null"
     />
+
+    <!-- 定夺⑥：未保存条件拦截确认（最上层 z-120） -->
+    <div v-if="dirtyConfirm" class="modal-mask dirty-mask" @click.self="dirtyConfirm = false">
+      <div class="modal" role="alertdialog" aria-label="未保存的修改确认">
+        <h3 class="modal-title">有未保存的修改</h3>
+        <p class="modal-intro">关闭后将丢失未保存的修改（系统提示词 / 密码输入）。确定要关闭设置吗？</p>
+        <div class="actions">
+          <button type="button" class="btn" @click="dirtyConfirm = false">取消</button>
+          <button type="button" class="btn btn-danger" @click="close">直接关闭</button>
+        </div>
+      </div>
+    </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.settings {
-  width: 560px;
-  max-width: 100%;
-  margin: 32px auto;
-  padding: 0 24px;
+/* ---- REQ-028 设置弹窗（design-iter-11 §4.2：720px × ≤80vh 左右分栏，z-100）---- */
+.settings-mask {
+  position: fixed;
+  inset: 0;
+  background: var(--c-mask);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  animation: smask-in 0.15s ease;
 }
-.settings-header h2 {
-  margin: 0 0 8px;
-  font-size: 20px;
+@keyframes smask-in {
+  from {
+    opacity: 0;
+  }
+}
+.settings-modal {
+  position: relative;
+  width: 720px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 64px);
+  display: flex;
+  flex-direction: column;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+  animation: smodal-in 0.15s ease;
+}
+@keyframes smodal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+.sm-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px 14px 24px;
+  border-bottom: 1px solid var(--c-border);
+}
+.sm-title {
+  font-size: 17px;
+  font-weight: 600;
   color: var(--c-text-1);
 }
-.hint {
-  margin: 0 0 24px;
-  font-size: 13px;
-  line-height: 1.6;
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: none;
   color: var(--c-text-3);
-  background: var(--c-primary-l);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.icon-btn:hover {
+  background: var(--c-hover-bg);
+  color: var(--c-text-1);
+}
+.icon-btn:focus-visible {
+  box-shadow: 0 0 0 3px var(--c-focus-ring);
+  outline: none;
+}
+.sm-close {
+  margin-left: auto;
+}
+/* 左导航 168px（定夺⑤ R1 拆分）：subtle 底 + 右缘分隔；选中 primary-l 主色 */
+.sm-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+.sm-nav {
+  flex: none;
+  width: 168px;
+  border-right: 1px solid var(--c-border);
+  background: var(--c-subtle-bg);
+  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+.sm-nav button {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 12px;
+  border: none;
   border-radius: 8px;
-  padding: 10px 12px;
+  background: none;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--c-text-2);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.sm-nav button:hover {
+  background: var(--c-hover-bg);
+  color: var(--c-text-1);
+}
+.sm-nav button:focus-visible {
+  box-shadow: 0 0 0 3px var(--c-focus-ring);
+  outline: none;
+}
+.sm-nav button.on {
+  background: var(--c-primary-l);
+  color: var(--c-primary);
+  font-weight: 500;
+}
+/* 分区面板：一次只显示一个（v-show），各自独立滚动 */
+.sm-pane {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 16px 24px 24px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--c-scrollbar) transparent;
+}
+.pane-label {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+.mode-note {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--c-text-3);
 }
 .form {
   display: flex;
@@ -628,7 +890,7 @@ async function confirmDeleteAccount(password: string) {
   font-size: 12px;
   color: var(--c-text-3);
 }
-/* REQ-008 对话设置分组（design-iter-2：分组线 + 标签） */
+/* REQ-008 对话设置分组（design-iter-2：分组线 + 标签）；「前往高级设置」分区直达高亮（§4.3） */
 .section-label {
   margin-top: 4px;
   padding-top: 20px;
@@ -636,7 +898,11 @@ async function confirmDeleteAccount(password: string) {
   font-size: 14px;
   font-weight: 600;
   color: var(--c-text-1);
-  scroll-margin-top: 16px; /* 「前往高级设置」定位后不贴顶 */
+}
+.section-label.flash {
+  background: var(--c-primary-l);
+  border-radius: 6px;
+  transition: background 1.2s ease;
 }
 .optional {
   font-size: 12px;
@@ -862,7 +1128,11 @@ async function confirmDeleteAccount(password: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 100;
+  z-index: 110; /* §4.4：内层模态高于设置弹窗（100） */
+}
+/* 定夺⑥ 未保存确认：最上层（< ConfirmModal/DeleteAccount 150 < toast 200） */
+.dirty-mask {
+  z-index: 120;
 }
 .modal {
   width: 440px;

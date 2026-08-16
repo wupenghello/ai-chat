@@ -21,7 +21,8 @@ const toast = useToastStore()
 const auth = useAuthStore()
 const migration = useMigrationStore()
 
-const view = ref<'chat' | 'settings'>('chat')
+const settingsOpen = ref(false)
+const locateAdv = ref(false)
 
 /** REQ-020 登出（design-iter-6 §4.2）：直接登出无确认；跳转由 Root 的登录态监听完成 */
 async function logout() {
@@ -41,11 +42,9 @@ onMounted(() => {
   void migration.detect()
 })
 
-const locateAdv = ref(false) // 错误气泡「前往高级设置」入口：打开设置页并定位高级设置区（走查 15）
-
 function openSettings(locateAdvanced = false) {
   locateAdv.value = locateAdvanced
-  view.value = 'settings'
+  settingsOpen.value = true
 }
 
 async function send(text: string) {
@@ -71,42 +70,42 @@ function editMessage(id: string, text: string) {
 
 <template>
   <div class="app">
-    <TheSidebar @open-settings="openSettings" @chat="view = 'chat'" @logout="logout" @export="exportBySession" />
+    <TheSidebar @open-settings="openSettings" @logout="logout" @export="exportBySession" />
 
     <main class="main">
       <!-- iter-8 T3（design-iter-8 §2.1/定夺 ②）：主界面顶部全局提示条区（无旧数据零渲染） -->
       <MigrationBanners />
-      <SettingsForm v-if="view === 'settings'" :locate-adv="locateAdv" />
-
-      <template v-else>
-        <!-- REQ-027 走查 34/35（design-iter-11 §3.4 定夺⑦）：顶栏整体移除——
-             无标题栏/无模型副标题（去误导）/无主题钮（REQ-017 收敛至设置外观区）/无导出钮（迁列表菜单） -->
-        <div class="chat">
-          <EmptyState
-            v-if="!sessions.active || sessions.active.messages.length === 0"
-            :variant="sessions.sessions.length === 0 ? 'no-session' : 'empty-session'"
-            @suggest="send"
-          />
-          <MessageList
-            v-else
-            :messages="sessions.active.messages"
-            @retry="(id) => sessions.retry(id)"
-            @go-settings="openSettings(true)"
-            @edit="editMessage"
-            @toggle-version="(forkId) => sessions.toggleVersion(forkId)"
-          />
-          <div class="composer-row">
-            <div class="composer-col">
-              <ComposerBox
-                :generating="sessions.isGenerating(sessions.activeId)"
-                @send="send"
-                @stop="sessions.stopGeneration()"
-              />
-            </div>
+      <!-- REQ-027 走查 34/35（design-iter-11 §3.4 定夺⑦）：顶栏整体移除——
+           无标题栏/无模型副标题（去误导）/无主题钮（REQ-017 收敛至设置外观区）/无导出钮（迁列表菜单） -->
+      <div class="chat">
+        <EmptyState
+          v-if="!sessions.active || sessions.active.messages.length === 0"
+          :variant="sessions.sessions.length === 0 ? 'no-session' : 'empty-session'"
+          @suggest="send"
+        />
+        <MessageList
+          v-else
+          :messages="sessions.active.messages"
+          @retry="(id) => sessions.retry(id)"
+          @go-settings="openSettings(true)"
+          @edit="editMessage"
+          @toggle-version="(forkId) => sessions.toggleVersion(forkId)"
+        />
+        <div class="composer-row">
+          <div class="composer-col">
+            <ComposerBox
+              :generating="sessions.isGenerating(sessions.activeId)"
+              @send="send"
+              @stop="sessions.stopGeneration()"
+            />
           </div>
         </div>
-      </template>
+      </div>
     </main>
+
+    <!-- REQ-028：设置弹窗（叠加于聊天现场之上，关闭即回对话现场）。
+         v-if 卸载重建：每次打开都是干净表单态——「直接关闭将丢弃」的承诺由卸载兑现（常驻挂载会残留草稿） -->
+    <SettingsForm v-if="settingsOpen" :open="settingsOpen" :locate-adv="locateAdv" @close="settingsOpen = false" />
 
     <AppToast @navigate="(to) => to === 'settings' && openSettings()" />
   </div>

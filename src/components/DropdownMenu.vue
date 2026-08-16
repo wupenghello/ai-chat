@@ -45,7 +45,9 @@ function focusIndex(i: number) {
   const btns = menuEl.value?.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]')
   if (!btns) return
   const target = [...btns].find((b) => b.dataset.idx === String(i))
-  target?.focus()
+  // preventScroll：聚焦不应引发祖先容器滚动——否则「滚动即关」监听会立刻自吞菜单
+  //（T3 走查实测：侧栏会话多时账户菜单开即被 focus 滚动关掉）
+  target?.focus({ preventScroll: true })
 }
 
 async function openMenu() {
@@ -68,7 +70,7 @@ function doClose(refocus = false) {
   if (!open.value) return
   open.value = false
   if (closeCurrent === doClose) closeCurrent = null
-  if (refocus) triggerEl.value?.focus()
+  if (refocus) triggerEl.value?.focus({ preventScroll: true })
 }
 
 function toggle() {

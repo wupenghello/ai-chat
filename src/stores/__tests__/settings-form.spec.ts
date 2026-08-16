@@ -49,7 +49,8 @@ async function mountForm() {
   const settings = useSettingsStore()
   settings.profilesLoaded = true
   useAuthStore().user = { id: 1, username: '猫南北' }
-  return mount(SettingsForm)
+  // REQ-028（iter-11 T3）：设置弹窗化——组件以 open 驱动渲染（v-show 分区保持 DOM 兼容既有断言）
+  return mount(SettingsForm, { props: { open: true } })
 }
 
 describe('SettingsForm（REQ-014 v3 / design-iter-7 §1~2）', () => {
@@ -80,7 +81,7 @@ describe('SettingsForm（REQ-014 v3 / design-iter-7 §1~2）', () => {
     settings.bootFailed = true
     settings.profilesLoaded = false
     useAuthStore().user = { id: 1, username: '猫南北' }
-    const w = await mount(SettingsForm)
+    const w = await mount(SettingsForm, { props: { open: true } })
     expect(w.text()).toContain('档案加载失败')
     expect(w.text()).not.toContain('暂无档案') // 失败态优先于空列表占位
 
@@ -279,5 +280,86 @@ describe('REQ-021 账号管理 · 注销（design-iter-9 §3）', () => {
     expect(spy).toHaveBeenCalled()
     expect(mocked.deleteAccount).toHaveBeenCalledWith('mm2026')
     spy.mockRestore()
+  })
+})
+
+describe('SettingsForm 设置弹窗化（REQ-028，iter-11 T3，design-iter-11 §4 走查 37~40）', () => {
+  it('弹窗结构：role=dialog + 左导航五分区，默认落「外观」分区（v-show 单显示）', async () => {
+    const w = await mountForm()
+    expect(w.find('.settings-modal[role="dialog"]').exists()).toBe(true)
+    const navLabels = w.findAll('.sm-nav [role="tab"]').map((b) => b.text())
+    expect(navLabels).toEqual(['外观', '密钥模式', '高级设置', '对话设置', '账号'])
+    const visible = w.findAll('.sm-pane').filter((p) => (p.element as HTMLElement).style.display !== 'none')
+    expect(visible.length).toBe(1)
+    expect(visible[0].text()).toContain('外观')
+  })
+
+  it('分区切换：点「账号」显示账号分区、其余隐藏；切分区不丢表单状态（v-show 不销毁）', async () => {
+    const w = await mountForm()
+    // 先在对话设置输入草稿
+    await w.findAll('.sm-nav [role="tab"]')[3].trigger('click')
+    await w.find('.prompt-ta').setValue('草稿内容')
+    // 切去账号再切回，草稿仍在（分区隐藏不销毁）
+    await w.findAll('.sm-nav [role="tab"]')[4].trigger('click')
+    let visible = w.findAll('.sm-pane').filter((p) => (p.element as HTMLElement).style.display !== 'none')
+    expect(visible[0].text()).toContain('注销账号')
+    await w.findAll('.sm-nav [role="tab"]')[3].trigger('click')
+    expect((w.find('.prompt-ta').element as HTMLTextAreaElement).value).toBe('草稿内容')
+  })
+
+  it('方向键切分区：导航钮 ArrowDown 循环（走查 37）', async () => {
+    const w = await mountForm()
+    const first = w.findAll('.sm-nav [role="tab"]')[0]
+    await first.trigger('keydown', { key: 'ArrowDown' })
+    let visible = w.findAll('.sm-pane').filter((p) => (p.element as HTMLElement).style.display !== 'none')
+    expect(visible[0].text()).toContain('密钥模式')
+  })
+
+  it('locateAdv 直达：open+locateAdv 挂载即落「高级设置」分区（错误气泡场景，走查 §4.3）', async () => {
+    const settings = useSettingsStore()
+    settings.profilesLoaded = true
+    useAuthStore().user = { id: 1, username: '猫南北' }
+    const w = mount(SettingsForm, { props: { open: true, locateAdv: true } })
+    const visible = w.findAll('.sm-pane').filter((p) => (p.element as HTMLElement).style.display !== 'none')
+    expect(visible.length).toBe(1)
+    expect(visible[0].text()).toContain('高级设置 · 自填供应商密钥')
+  })
+
+  it('未保存拦截（定夺⑥）：提示词有改动时关闭弹「有未保存的修改」；直接关闭 emit close，取消则保持', async () => {
+    const w = await mountForm()
+    await w.findAll('.sm-nav [role="tab"]')[3].trigger('click')
+    await w.find('.prompt-ta').setValue('未保存草稿')
+    await w.find('button[aria-label="关闭设置"]').trigger('click')
+    expect(w.find('.dirty-mask').exists()).toBe(true)
+    expect(w.text()).toContain('有未保存的修改')
+    // 取消：确认层关、弹窗仍在
+    await w.findAll('.dirty-mask .btn')[0].trigger('click')
+    expect(w.find('.dirty-mask').exists()).toBe(false)
+    expect(w.find('.settings-modal').exists()).toBe(true)
+    // 再关 → 直接关闭 → emit close
+    await w.find('button[aria-label="关闭设置"]').trigger('click')
+    await w.findAll('.dirty-mask .btn')[1].trigger('click')
+    expect(w.emitted('close')).toBeTruthy()
+  })
+
+  it('改密字段非空亦拦截；保存提示词后干净关闭不拦', async () => {
+    const w = await mountForm()
+    await w.findAll('.sm-nav [role="tab"]')[4].trigger('click')
+    await w.find('input[autocomplete="current-password"]').setValue('oldpass1')
+    await w.find('button[aria-label="关闭设置"]').trigger('click')
+    expect(w.find('.dirty-mask').exists()).toBe(true)
+    await w.findAll('.dirty-mask .btn')[0].trigger('click')
+    // 清空改密字段 → 干净 → 直接 emit close
+    await w.find('input[autocomplete="current-password"]').setValue('')
+    await w.find('button[aria-label="关闭设置"]').trigger('click')
+    expect(w.find('.dirty-mask').exists()).toBe(false)
+    expect(w.emitted('close')).toBeTruthy()
+  })
+
+  it('Esc 关闭（走查 40）：干净状态直接 emit close；脏状态走未保存确认', async () => {
+    const w = await mountForm()
+    await w.find('.settings-mask').trigger('keydown', { key: 'Escape' })
+    expect(w.emitted('close')).toBeTruthy()
+    expect(w.find('.dirty-mask').exists()).toBe(false)
   })
 })
