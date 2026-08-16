@@ -371,7 +371,7 @@ mark.hl { background: transparent; color: var(--c-primary); font-weight: 600; }
     文档结构沿 <b>design-iter-11</b> 范本；改版对象前身 = <b>design-iter-8</b>（REQ-025 初版，视觉语言沿用）；
     字段核对自 <b>src/views/AdminView.vue / src/api/backend.ts 现状</b>；后端口径核对自 <b>backend/app/routers/admin.py / quota.py / config.py / db.py 迁移 v4·v5</b>
   </div>
-  <div class="badge">状态：设计稿 iter-12 —— <b>待 CEO 评审基线</b>（批准后打 tag design-iter-12；§8 八项定夺随基线拍板，样件已按推荐落形）</div>
+  <div class="badge">状态：设计稿 iter-12 —— <b>已基线</b>（2026-08-17 CEO 批准「批准，全部按推荐定案」，tag design-iter-12；§8 八项定夺全定案，详见头部注释）</div>
   <div style="font-size:12px;color:#3370FF;background:#F0F4FF;border:1px solid #E5E6EB;border-radius:8px;padding:8px 12px;margin:-12px 0 28px;line-height:1.7;">
     <b>视觉基调（CEO 已定，不得偏离）：</b>延续 iter-9/11——页面灰底 <code>--c-bg</code>（浅 #F5F6F7 / 暗 #131417）+ 内容白卡 <code>--c-surface</code>（浅 #FFFFFF / 暗 #1E2026）；
     主色飞书蓝 <b>#3370FF</b>（暗色前景 #5C8DFF）；参考现代管理后台（信息层级/卡片/留白/状态徽标）。REQ-025 六端点全部界面能力零回退（§5 映射表 + §7.2 复验组）。
@@ -824,14 +824,14 @@ GET /api/admin/usage?user_id=2             ← 既有三参数形态：纯列表
       <div class="spec-title">7.1 T0 验收 + REQ-029 验收 + T1/T2 前置对照（原文）</div>
       <table>
         <tr><th style="width:46%">验收标准（原文）</th><th>本稿落点</th><th>状态</th></tr>
-        <tr><td>〔plans T0〕CEO 批准基线（tag design-iter-12）</td><td>本稿提交 CEO 评审——批准后打 tag；§8 八项定夺随基线拍板</td><td>☐ 待批准</td></tr>
+        <tr><td>〔plans T0〕CEO 批准基线（tag design-iter-12）</td><td>本稿提交 CEO 评审——批准后打 tag；§8 八项定夺随基线拍板</td><td>☑ 已基线（2026-08-17 CEO 批准，8 项定夺全按推荐定案）</td></tr>
         <tr><td>〔plans T0〕「今日」界定 / 缺失时段处理（不估算补齐，铁律 5）/ 分页参数与响应结构随稿定案</td><td>§4.3 今日口径 + 缺失不估算；§4.1/4.2 分页参数（search/limit/offset/sort_*）与信封结构；§8-①~④</td><td>☑ 已定案待批</td></tr>
         <tr><td>〔plans T0 判定依据〕类比 design-iter-8（同规模单页原型，四项定夺一次基线）</td><td>本稿 §8 八项定夺（含 API 口径 + 统计口径 + 视觉方向）</td><td>☑ 同构</td></tr>
         <tr><td>〔REQ-029〕既有 REQ-025 验收全部不回退（403 门禁/封禁/调配额/用量口径/抽样比对）</td><td>§7.2 条 23~32/37~47（零回退组，iter-8# 逐条映射）+ §5.1 映射表 + §5.2 证据帧</td><td>☑ 稿内覆盖</td></tr>
         <tr><td>〔REQ-029〕用户列表与用量列表分页前后端用例覆盖；用户搜索过滤用例</td><td>§4.1/4.2 参数与信封 + §4.3 T1 新增用例清单（分页含越界/空页、搜索含命中/空态/大小写、排序、distinct_days）</td><td>☑ 规格落点</td></tr>
         <tr><td>〔REQ-029〕design-iter-12 走查清单留档</td><td>7.2（<b>52 条</b>，含亮暗双主题要求与不适用注明）</td><td>☑ 已覆盖</td></tr>
         <tr><td>〔plans T1〕pytest 新增用例全绿 + REQ-025 test_admin 19 用例零回退 + ruff clean</td><td>§4 兼容策略（默认形状零变化）+ 条 52；19 用例零改动通过为第一道门槛</td><td>☐ T1 交付</td></tr>
-        <tr><td>〔plans T2〕design-iter-12 走查清单留档（亮/暗双主题）；REQ-025 既有走查口径复验不回退；分页翻页/越界/空页、搜索空态走查；vitest 全绿 + 既有 AdminView.spec 15 用例回归</td><td>7.2 全清单（零回退组 + 新增组）；AdminView.spec 适配范围见 §8-⑤（三态载体迁移涉及 site-bar 断言适配——spec 适配≠口径回退，复验以本清单条目为准）</td><td>☐ T2 交付</td></tr>
+        <tr><td>〔plans T2〕design-iter-12 走查清单留档（亮/暗双主题）；REQ-025 既有走查口径复验不回退；分页翻页/越界/空页、搜索空态走查；vitest 全绿 + 既有 AdminView.spec 15 用例回归</td><td>7.2 全清单（零回退组 + 新增组）；AdminView.spec 适配范围见 §8-⑤（三态载体迁移涉及 site-bar 断言适配——spec 适配≠口径回退，复验以本清单条目为准）</td><td>☑ T2 已交付（2026-08-17：49/49 真实 Chrome 留档 plans/iter-12-verify.md；QA 审计有条件通过 2 NCR 已整改/登记）</td></tr>
       </table>
     </div>
 
@@ -900,7 +900,7 @@ GET /api/admin/usage?user_id=2             ← 既有三参数形态：纯列表
 
   <!-- ============================================================ -->
   <section>
-    <h2><span class="no">8</span>CEO 待定夺项（8 项 —— 待基线拍板）</h2>
+    <h2><span class="no">8</span>CEO 定夺项（8 项 —— 已随基线全部定案，2026-08-17）</h2>
     <div class="sec-desc">
       沿 iter-1~11 固化模式：设计师给推荐方案与理由 → CEO 拍板 → 固化为决策记录，T1/T2 按定案实现。<b>本稿全部可交互样件已按「推荐」落形</b>（定夺若改选，改稿走评审修订，不默认套用）。
     </div>
