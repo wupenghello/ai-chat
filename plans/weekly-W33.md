@@ -103,7 +103,7 @@ git 提交 5 个（63b6b4d 计划 / 50ef5d1 T0 设计 / 3fad772 T1 / ad8fe6a T2 
 
 测试结果（迭代末汇总，整改后终值）：**前端 141/141 通过**（17 文件，+pending-sync 10 用例/settings 系服务端源重写）、**后端 pytest 69/69**（+test_profiles 16 + test_proxy 16 改写）、ruff clean、跳过 0；走查 26 条：23 过 + 3 占位（iter-8 基线自标注）；生产构建（vue-tsc + vite）通过；密钥安全四处检索（git 全量历史/工作区/docker 日志/dist）0 命中；db 文件 0600。
 
-### iter-8（08-16 起，开发中）
+### iter-8（08-16，已关闭 G4 过）
 
 - 计划已批准（ca77880，Σ10 = M×2+L×2）：REQ-024 配额（T1）+ REQ-025 管理后台（T0/T2）+ 存量迁移（T3）；REQ-021 与全链路 Compose/v0.5.0 发布挪 iter-9；配额初值定案 30/500/2000（CHG-004「后续待定」销账）
 - **T1 REQ-024 用量配额与滥用防护（完成）**：backend/app/quota.py + 迁移 v4（usage_daily 粒度 (day,user_id,mode)——档位联动、同日切模式不重复给量；register_log 注册限频）；注册限频每 IP 每日 3；每用户按日配额（免费档 30/自填档 500，文案分模式）；统一 key 全站熔断 2000/日（503 次日恢复）；「配额不足不抵达上游」pytest seen 取证 + ai-chat.quota 日志留痕；stream_options.include_usage → token 落库（供 REQ-025 用量列表）；GET /api/quota 口径端点（KeyModeCard「每日 — 次」参数化，T2 前端接入）；浏览器提示经 §3.1 定稿零 UI 改动接入
@@ -111,16 +111,26 @@ git 提交 5 个（63b6b4d 计划 / 50ef5d1 T0 设计 / 3fad772 T1 / ad8fe6a T2 
 - **T3 存量迁移收口（完成）**：stores/migration.ts（登录后检测旧 IndexedDB 会话 + 旧 localStorage 档案字段；会话导入跳过云端已有 id 新增不覆盖、PUT 幂等可取消、失败重试去重续传；档案 POST 新增、重试按名称+地址+模型去重、完成清除本地旧字段保留 systemPrompt——REQ-014 全量口径 store 级销账；会话完成设 30 天清除键，到期 maybePurge 整库删）+ MigrationBanners.vue（参数化单组件 ×2，双条堆叠独立状态机，文案设计稿定稿逐字）+ App 挂载检测；LWW 两设备并发用例补验（pytest，iter-6 挂账）；走查 30~41 留档（iter-8-verify.md T3 段）
 - T0 design-iter-8 设计稿（完成，已基线）：设计师员工产出（e6a8772 草案）→ CEO 评审批准（2026-08-16，四项定夺全按推荐定案）→ tag design-iter-8（3277086 落徽标）。覆盖：管理后台（用户列表/封禁/调配额/用量列表/403 门禁/全站配额条）、存量会话迁移入口全状态机、存量档案上云提示条；§7.2 走查清单 44 条（T2/T3 实现对照自查）；全令牌产出零新增
 
-测试结果（任务级）：**后端 pytest 105/105**（+test_admin 19 +两设备 LWW 1）、**前端 vitest 185/185**（+AdminView 17/TheSidebar 2/守卫 2/client 1/LoginView 1/KeyModeCard 2/migration 13/MigrationBanners 8——原 141）；ruff clean、生产构建、guard:style 全过；走查清单 44 条全量留档见 plans/iter-8-verify.md（浏览器观感项待复核：预览端口被并行会话占用）。
+测试结果（任务级）：**后端 pytest 105/105**（+test_admin 19 +两设备 LWW 1）、**前端 vitest 185/185**（+AdminView 17/TheSidebar 2/守卫 2/client 1/LoginView 1/KeyModeCard 2/migration 13/MigrationBanners 8——原 141）；ruff clean、生产构建、guard:style 全过；走查清单 44 条全量留档见 plans/iter-8-verify.md（浏览器观感项已闭账 puppeteer 30/30）。
+
+### iter-9（08-16，开发完成 T0~T3，待 QA 审计 + 复盘 + v0.5.0 发布）
+
+- 计划已批准（0a93326，Σ8 = M×4）：REQ-021 账号管理（T0 设计/T1 后端/T2 前端）+ T3 全链路 Compose/自部署文档/技术债收口；v0.5.0 发布走 iter-9 末
+- T0 design-iter-9 设计稿（已基线）：账号管理原型 + 视觉基调变更（正文白底 + 侧栏灰底，CEO 拍板参考 DeepSeek 管理页）；4 项定夺全按推荐定案；§7.2 走查 23 条
+- T1 REQ-021 后端改密/注销（完成）：change-password（旧密码验证→更新哈希→其他设备 token 失效）+ delete-account（密码二次确认→DELETE users 级联清全数据）；密码复杂度 CEO 定夺升级「8~128 且含字母+数字」（CHG-005）
+- T2 REQ-021 前端账号管理 UI（完成）：SettingsForm 账号区 + DeleteAccountModal 强确认 + 视觉基调反转（侧栏灰 --c-bg / 正文白 --c-surface）
+- T3 全链路 Compose + 自部署文档 + 技术债收口（完成）：frontend nginx 托管 dist/ + 反代 /api（实跑 healthy）；docs/deploy.md；.env.example 补配额四变量（QA 观察项 3 销账）；直连死代码删除（QA 观察项 5 销账）；跨零点 token 归属修复（Code Review 观察项①销账）
+
+测试终态：**前端 vitest 201/201**（23 文件）+ **后端 pytest 118/118** + ruff clean + 生产构建 + guard:style 全过。
 
 ## 进行中与阻塞
 
 | 任务 | 状态 | 阻塞原因 / 需要的决策 |
 |------|------|---------------------|
-| iter-8 T0~T3 | 全部完成 | 走查浏览器观感项待复核（预览端口被并行会话占用，见 iter-8-verify.md 待复核清单） |
-| iter-8 QA 审计 + Code Review | 完成 | 审计有条件符合 5 NCR（retros/qa-audit-iter-8.md）——001/002/004/005 整改完毕、003 随复盘；Code Review CEO 已过目（2026-08-16） |
-| iter-8 复盘 + G4 关闭 | 进行中 | 复盘四问（待 CEO）→ plans/iter-8.md 实际结果回填 |
-| v0.5.0 发布 | 不适用本迭代 | 计划定案挪 iter-9 与全链路 Compose 同批（缺 REQ-021） |
+| iter-8 T0~T3 | 全部完成 | 已关闭（G4 过，浏览器观感 puppeteer 30/30 闭账，见 retros/iter-8.md） |
+| iter-8 QA 审计 + Code Review | 完成 | 审计 5 NCR 全整改；Code Review CEO 已过目（2026-08-16） |
+| iter-8 复盘 + G4 关闭 | 已关闭 | G4 过，复盘落制度 v1.4.6（提交防漏核对），见 retros/iter-8.md |
+| iter-9 T0~T3 | 全部完成 | 待 QA 审计 + 复盘 + v0.5.0 发布（见上方 iter-9 章节） |
 
 （iter-7 已关闭 G4 过，6+3 NCR 全部复查关闭；v0.4.0 已发布。）
 
