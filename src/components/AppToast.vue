@@ -9,7 +9,7 @@ const emit = defineEmits<{ navigate: [to: 'settings'] }>()
   <div class="toast-wrap" aria-live="polite">
     <TransitionGroup name="toast">
       <div v-for="t in toast.items" :key="t.id" class="toast">
-        <span class="toast-msg">{{ t.message }}</span>
+        <span class="toast-msg" :class="t.variant">{{ t.message }}</span>
         <button v-if="t.action" class="toast-action" @click="emit('navigate', t.action.to); toast.dismiss(t.id)">
           {{ t.action.label }}
         </button>
@@ -47,6 +47,11 @@ const emit = defineEmits<{ navigate: [to: 'settings'] }>()
 }
 .toast-msg {
   line-height: 1.5;
+}
+/* REQ-021：成功绿 toast（success-on-dark #4CC38A，深底白字对比度达标） */
+.toast-msg.success {
+  color: var(--c-success-on-dark);
+  font-weight: 600;
 }
 .toast-action {
   border: none;

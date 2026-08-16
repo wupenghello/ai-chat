@@ -45,7 +45,13 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  return { user, checked, boot, invalidate, login, register, logout }
+  /** REQ-021 注销账号成功：清除本地登录凭据（后端已级联删除账号与 token，无需再调 logout）；
+   *  user→null 由 Root 登录态监听完成跳 /login */
+  function clearSession() {
+    user.value = null
+  }
+
+  return { user, checked, boot, invalidate, login, register, logout, clearSession }
 })
 
 /** 供应用入口注册 401 跳转（store 不 import router，避免视图组件循环依赖） */

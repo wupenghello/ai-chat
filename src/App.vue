@@ -254,6 +254,8 @@ body {
   min-width: 0;
   height: 100%;
   overflow-y: auto;
+  /* REQ-021 基调反转（CEO 2026-08-16）：正文白底 --c-surface（侧栏灰底见 TheSidebar） */
+  background: var(--c-surface);
 }
 .chat {
   height: 100%;

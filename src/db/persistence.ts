@@ -156,3 +156,10 @@ if (typeof window !== 'undefined') {
 export function _stopPolling(): void {
   clearInterval(pollTimer)
 }
+
+/** REQ-021 注销账号：清除本地暂存同步队列——防止已删账号的未同步更改
+ *  在下一账号登录后重放泄漏进他人账号（会话 PUT 按当前登录用户归属） */
+export function clearPendingOps(): void {
+  storeQueue([])
+  unsyncWarned = false
+}

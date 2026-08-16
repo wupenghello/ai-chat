@@ -198,6 +198,26 @@ describe('停止生成（REQ-010，iter-2 T2）', () => {
   })
 })
 
+describe('REQ-021 注销前终止全部生成', () => {
+  it('abortAllGenerations：终止所有生成中会话并标注 stopped（注销异常分支）', () => {
+    const sessions = useSessionsStore()
+    const a = { abort: vi.fn() } as unknown as AbortController
+    const b = { abort: vi.fn() } as unknown as AbortController
+    sessions.controllers['s1'] = a
+    sessions.controllers['s2'] = b
+    sessions.abortAllGenerations()
+    expect(a.abort).toHaveBeenCalledTimes(1)
+    expect(b.abort).toHaveBeenCalledTimes(1)
+    expect(sessions.stopRequested['s1']).toBe(true)
+    expect(sessions.stopRequested['s2']).toBe(true)
+  })
+
+  it('无生成中会话：abortAllGenerations 为 no-op，不报错', () => {
+    const sessions = useSessionsStore()
+    expect(() => sessions.abortAllGenerations()).not.toThrow()
+  })
+})
+
 describe('会话管理（REQ-003/004/005）', () => {
   it('删除当前会话后自动切到最近的会话', async () => {
     const sessions = useSessionsStore()

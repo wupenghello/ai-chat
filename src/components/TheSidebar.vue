@@ -147,7 +147,8 @@ const filtered = computed<Array<{ session: Session; hit: SearchHit | null }>>(()
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--c-surface);
+  /* REQ-021 基调反转（CEO 2026-08-16）：侧栏灰底 --c-bg（参考 DeepSeek 管理页） */
+  background: var(--c-bg);
   border-right: 1px solid var(--c-border);
   padding: 16px 12px;
   gap: 12px;

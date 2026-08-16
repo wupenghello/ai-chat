@@ -4,13 +4,17 @@ import { useSettingsStore, type ProfileInput } from '../stores/settings'
 import { useToastStore } from '../stores/toast'
 import { useTheme } from '../composables/useTheme'
 import { useSessionsStore } from '../stores/sessions'
-import { backend, type QuotaStatus } from '../api/backend'
+import { useAuthStore } from '../stores/auth'
+import { ApiBackendError, backend, type QuotaStatus } from '../api/backend'
+import { clearPendingOps } from '../db/persistence'
 import ConfirmModal from './ConfirmModal.vue'
 import KeyModeCard from './KeyModeCard.vue'
+import DeleteAccountModal from './DeleteAccountModal.vue'
 
 const settings = useSettingsStore()
 const toast = useToastStore()
 const sessions = useSessionsStore()
+const auth = useAuthStore()
 
 /** 「前往高级设置」入口（走查 15）：经错误气泡进入设置页时滚动定位到高级设置区 */
 const props = defineProps<{ locateAdv?: boolean }>()
@@ -149,6 +153,102 @@ function clearPrompt() {
   settings.saveSystemPrompt('') // 按留空即时保存，不弹确认（可复填，非不可逆）
   toast.push('已清除，后续对话将不使用系统提示词')
 }
+
+// ---- REQ-021 账号管理（design-iter-9 §2~3）----
+// 修改密码：3 字段 + 行内校验 + 旧密码错误 + 成功反馈（当前设备保持登录，定夺①）
+const oldPwd = ref('')
+const newPwd = ref('')
+const confirmPwd = ref('')
+const showOld = ref(false)
+const showNew = ref(false)
+const showConfirm = ref(false)
+const pwdErrors = ref<{ old?: string; next?: string; confirm?: string }>({})
+const pwdSuccess = ref(false)
+const pwdSubmitting = ref(false)
+
+function validateChangePassword(): boolean {
+  const errs: { old?: string; next?: string; confirm?: string } = {}
+  if (!oldPwd.value.trim()) errs.old = '必填：请输入旧密码'
+  if (!newPwd.value) errs.next = '必填：请输入新密码'
+  if (!confirmPwd.value) errs.confirm = '必填：请再次输入新密码'
+  if (errs.old || errs.next || errs.confirm) {
+    pwdErrors.value = errs
+    return false
+  }
+  // 后端同口径：8~128 位且含字母+数字（CEO 定夺「升级为含字母+数字」，register 与改密统一）
+  if (newPwd.value.length < 8) errs.next = '新密码至少 8 位'
+  else if (newPwd.value.length > 128) errs.next = '新密码最多 128 位'
+  else if (!/[a-zA-Z]/.test(newPwd.value) || !/\d/.test(newPwd.value)) errs.next = '新密码需包含字母与数字'
+  else if (newPwd.value === oldPwd.value) errs.next = '新密码不能与旧密码相同'
+  if (confirmPwd.value !== newPwd.value) errs.confirm = '两次输入的密码不一致'
+  pwdErrors.value = errs
+  return Object.keys(errs).length === 0
+}
+
+async function submitChangePassword() {
+  pwdErrors.value = {}
+  pwdSuccess.value = false
+  if (!validateChangePassword()) return
+  pwdSubmitting.value = true
+  try {
+    await backend.changePassword(oldPwd.value.trim(), newPwd.value)
+    oldPwd.value = ''
+    newPwd.value = ''
+    confirmPwd.value = ''
+    pwdSuccess.value = true
+    toast.push('✓ 密码已更新，其他设备已退出登录', undefined, undefined, 'success')
+  } catch (e) {
+    if (e instanceof ApiBackendError) {
+      if (e.status === 400) {
+        if (e.message.includes('旧密码')) pwdErrors.value = { ...pwdErrors.value, old: e.message }
+        else if (e.message.includes('相同')) pwdErrors.value = { ...pwdErrors.value, next: e.message }
+        else toast.push(e.message)
+      } else if (e.status === 422) {
+        pwdErrors.value = { ...pwdErrors.value, next: e.message }
+      } else {
+        toast.push(e.message || '更新失败，请重试')
+      }
+    } else {
+      toast.push('更新失败，请重试')
+    }
+  } finally {
+    pwdSubmitting.value = false
+  }
+}
+
+// 注销账号：危险区 + 密码二次确认强模态 + 生成中终止 + 成功后清本地/跳登录
+const deleteOpen = ref(false)
+const deleteSubmitting = ref(false)
+const deleteError = ref<string | null>(null)
+
+function openDelete() {
+  deleteError.value = null
+  deleteOpen.value = true
+}
+function cancelDelete() {
+  deleteOpen.value = false
+  deleteError.value = null
+}
+async function confirmDeleteAccount(password: string) {
+  // REQ-021 异常分支：生成中注销前自动终止生成（取消走 cancelDelete，不打断）
+  if (sessions.isAnyGenerating) sessions.abortAllGenerations()
+  deleteSubmitting.value = true
+  deleteError.value = null
+  try {
+    await backend.deleteAccount(password)
+    // 成功：清除本地凭据与暂存队列（防跨账号泄漏）→ 跳登录（Root 监听 user→null 完成）+ 成功绿 toast
+    clearPendingOps()
+    toast.push('✓ 账号已删除，再见', undefined, undefined, 'success')
+    deleteOpen.value = false
+    auth.clearSession()
+  } catch (e) {
+    const err = e as ApiBackendError
+    if (err?.status === 400) deleteError.value = err.message // 「密码不正确，账号与数据未发生任何变更」
+    else deleteError.value = err?.message || '注销失败，请重试'
+  } finally {
+    deleteSubmitting.value = false
+  }
+}
 </script>
 
 <template>
@@ -270,6 +370,108 @@ function clearPrompt() {
         </span>
       </div>
     </div>
+
+    <!-- REQ-021 账号管理（design-iter-9 §2~3）：设置页「账号」区块，置页尾 -->
+    <div class="section-label">账号</div>
+
+    <!-- 修改密码 -->
+    <div class="pwd-form">
+      <label class="field">
+        <span class="field-label">旧密码<span class="req">*</span></span>
+        <span class="field-input-wrap">
+          <input
+            v-model="oldPwd"
+            class="input pw-input"
+            :class="{ invalid: pwdErrors.old }"
+            :type="showOld ? 'text' : 'password'"
+            autocomplete="current-password"
+            placeholder="输入当前登录密码"
+          />
+          <button class="eye-btn" type="button" :title="showOld ? '隐藏密码' : '显示密码'" :aria-label="showOld ? '隐藏密码' : '显示密码'" @click="showOld = !showOld">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <path v-if="showOld" fill="currentColor" d="M12 5c5 0 9 4.5 9 7s-4 7-9 7-9-4.5-9-7 4-7 9-7Zm0 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0-2a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z" />
+              <path v-else fill="currentColor" d="M2.2 4.3 4.3 2.2l17.5 17.5-2.1 2.1-3.1-3.1A10 10 0 0 1 12 19c-5 0-9-4.5-9-7 0-1.2.8-2.7 2.2-4.1L2.2 4.3ZM12 7.1 16.9 12a4.9 4.9 0 0 0-6.9-6.9L7.6 3.7A10.6 10.6 0 0 1 12 3c5 0 9 4.5 9 7 0 .9-.5 2-1.4 3.2L12 5.6v1.5Z" />
+            </svg>
+          </button>
+        </span>
+        <span v-if="pwdErrors.old" class="field-error">{{ pwdErrors.old }}</span>
+      </label>
+
+      <label class="field">
+        <span class="field-label">新密码<span class="req">*</span></span>
+        <span class="field-input-wrap">
+          <input
+            v-model="newPwd"
+            class="input pw-input"
+            :class="{ invalid: pwdErrors.next }"
+            :type="showNew ? 'text' : 'password'"
+            autocomplete="new-password"
+            placeholder="至少 8 位，最多 128 位"
+          />
+          <button class="eye-btn" type="button" :title="showNew ? '隐藏密码' : '显示密码'" :aria-label="showNew ? '隐藏密码' : '显示密码'" @click="showNew = !showNew">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <path v-if="showNew" fill="currentColor" d="M12 5c5 0 9 4.5 9 7s-4 7-9 7-9-4.5-9-7 4-7 9-7Zm0 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0-2a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z" />
+              <path v-else fill="currentColor" d="M2.2 4.3 4.3 2.2l17.5 17.5-2.1 2.1-3.1-3.1A10 10 0 0 1 12 19c-5 0-9-4.5-9-7 0-1.2.8-2.7 2.2-4.1L2.2 4.3ZM12 7.1 16.9 12a4.9 4.9 0 0 0-6.9-6.9L7.6 3.7A10.6 10.6 0 0 1 12 3c5 0 9 4.5 9 7 0 .9-.5 2-1.4 3.2L12 5.6v1.5Z" />
+            </svg>
+          </button>
+        </span>
+        <span v-if="pwdErrors.next" class="field-error">{{ pwdErrors.next }}</span>
+        <span v-else class="field-hint">至少 8 位，需包含字母与数字；不得与旧密码相同</span>
+      </label>
+
+      <label class="field">
+        <span class="field-label">确认新密码<span class="req">*</span></span>
+        <span class="field-input-wrap">
+          <input
+            v-model="confirmPwd"
+            class="input pw-input"
+            :class="{ invalid: pwdErrors.confirm }"
+            :type="showConfirm ? 'text' : 'password'"
+            autocomplete="new-password"
+            placeholder="再次输入新密码"
+          />
+          <button class="eye-btn" type="button" :title="showConfirm ? '隐藏密码' : '显示密码'" :aria-label="showConfirm ? '隐藏密码' : '显示密码'" @click="showConfirm = !showConfirm">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <path v-if="showConfirm" fill="currentColor" d="M12 5c5 0 9 4.5 9 7s-4 7-9 7-9-4.5-9-7 4-7 9-7Zm0 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0-2a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z" />
+              <path v-else fill="currentColor" d="M2.2 4.3 4.3 2.2l17.5 17.5-2.1 2.1-3.1-3.1A10 10 0 0 1 12 19c-5 0-9-4.5-9-7 0-1.2.8-2.7 2.2-4.1L2.2 4.3ZM12 7.1 16.9 12a4.9 4.9 0 0 0-6.9-6.9L7.6 3.7A10.6 10.6 0 0 1 12 3c5 0 9 4.5 9 7 0 .9-.5 2-1.4 3.2L12 5.6v1.5Z" />
+            </svg>
+          </button>
+        </span>
+        <span v-if="pwdErrors.confirm" class="field-error">{{ pwdErrors.confirm }}</span>
+      </label>
+
+      <div v-if="pwdSuccess" class="ok-banner">
+        <span class="ob-ico">✓</span>
+        <span><span class="ob-title">密码已更新。</span>除当前设备外的其他设备已退出登录，需重新登录后再使用。</span>
+      </div>
+
+      <button class="btn btn-primary pwd-submit" type="button" :disabled="pwdSubmitting" @click="submitChangePassword">
+        {{ pwdSubmitting ? '更新中…' : '更新密码' }}
+      </button>
+    </div>
+
+    <!-- 注销危险区 -->
+    <div class="danger-zone">
+      <div class="dz-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" style="flex:none;">
+          <path fill="none" stroke="currentColor" stroke-width="1.6" d="M12 3l7 2.6v5.6c0 4.4-3 8.3-7 9.8-4-1.5-7-5.4-7-9.8V5.6L12 3z" />
+          <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M9.2 9.2l5.6 5.6M14.8 9.2l-5.6 5.6" />
+        </svg>
+        注销账号
+      </div>
+      <div class="dz-desc">将删除账号与<b>全部云端数据</b>（会话、供应商档案、密钥等），此操作<b>不可恢复</b>。</div>
+      <div class="dz-actions"><button class="btn btn-danger dz-btn" type="button" @click="openDelete">注销账号</button></div>
+    </div>
+
+    <DeleteAccountModal
+      :open="deleteOpen"
+      :username="auth.user?.username ?? ''"
+      :generating="sessions.isAnyGenerating"
+      :submitting="deleteSubmitting"
+      :error="deleteError"
+      @confirm="confirmDeleteAccount"
+      @cancel="cancelDelete"
+    />
 
     <!-- REQ-018 档案添加/编辑模态（design-iter-7 §2.2：编辑时密钥不回显，留空=沿用） -->
     <div v-if="editing" class="modal-mask" @click.self="editing = false">
@@ -659,5 +861,103 @@ function clearPrompt() {
   font-size: 13px;
   line-height: 1.6;
   color: var(--c-text-3);
+}
+
+/* ---- REQ-021 账号管理（design-iter-9 §2~3）---- */
+.pwd-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 420px;
+}
+.field-input-wrap {
+  position: relative;
+  display: block;
+}
+.pw-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding-right: 44px; /* 行尾眼睛按钮留白 */
+}
+.eye-btn {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: var(--c-text-3);
+  cursor: pointer;
+  border-radius: 0 6px 6px 0;
+}
+.eye-btn:hover {
+  color: var(--c-text-1);
+  background: var(--c-hover-bg);
+}
+.pwd-submit {
+  width: 100%;
+}
+/* 成功横幅（subtle-bg 底 + success 描边/标题，design-iter-9 §2.2） */
+.ok-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.7;
+  background: var(--c-subtle-bg);
+  border: 1px solid var(--c-success);
+  color: var(--c-text-2);
+}
+.ok-banner .ob-ico {
+  flex: none;
+  color: var(--c-success);
+  font-weight: 600;
+}
+.ok-banner .ob-title {
+  color: var(--c-success);
+  font-weight: 600;
+}
+/* 注销危险区（danger-l 底 + danger 描边/文字 + 危险实底按钮，design-iter-9 §3.1） */
+.danger-zone {
+  max-width: 420px;
+  border: 1px solid var(--c-danger);
+  border-radius: 8px;
+  background: var(--c-danger-l);
+  padding: 14px 16px;
+  margin-top: 20px;
+}
+.dz-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-danger);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dz-desc {
+  font-size: 12px;
+  color: var(--c-danger);
+  opacity: 0.92;
+  line-height: 1.7;
+  margin-top: 4px;
+}
+.dz-actions {
+  margin-top: 12px;
+}
+.btn-danger {
+  border-color: var(--c-danger-solid);
+  background: var(--c-danger-solid);
+  color: #fff;
+  font-weight: 600;
+}
+.btn-danger:hover {
+  background: var(--c-danger-solid-h);
+  border-color: var(--c-danger-solid-h);
 }
 </style>

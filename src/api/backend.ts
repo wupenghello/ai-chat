@@ -161,6 +161,11 @@ export const backend = {
     request<AuthUser>('POST', '/api/auth/login', { username, password }),
   logout: () => request<{ detail: string }>('POST', '/api/auth/logout'),
   me: () => request<AuthUser>('GET', '/api/auth/me'),
+  // REQ-021（iter-9 T1 后端）：改密（验证旧密码，更新后其他设备 token 失效）+ 注销（密码二次确认，级联删除）
+  changePassword: (old_password: string, new_password: string) =>
+    request<{ detail: string }>('POST', '/api/auth/change-password', { old_password, new_password }),
+  deleteAccount: (password: string) =>
+    request<{ detail: string }>('POST', '/api/auth/delete-account', { password }),
   // REQ-018（iter-7 T2）：档案 CRUD + 模式切换（设为当前/回退统一密钥）
   listProfiles: () => request<ServerProfile[]>('GET', '/api/profiles'),
   createProfile: (p: ProfilePayload) => request<ServerProfile>('POST', '/api/profiles', p),

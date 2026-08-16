@@ -85,4 +85,13 @@ describe('login / logout / 失效', () => {
     auth.invalidate()
     expect(auth.user).toBeNull()
   })
+
+  it('clearSession：注销账号成功清除本地凭据（不调后端 logout）', async () => {
+    backendMock.me.mockResolvedValue(USER)
+    const auth = useAuthStore()
+    await auth.boot()
+    auth.clearSession()
+    expect(auth.user).toBeNull()
+    expect(backendMock.logout).not.toHaveBeenCalled()
+  })
 })

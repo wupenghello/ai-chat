@@ -103,6 +103,14 @@ export const useSessionsStore = defineStore('sessions', {
       this.controllers[id].abort()
     },
 
+    /** REQ-021 注销前：终止全部生成中会话（用户主动注销，标注 stopped；不改动其余状态） */
+    abortAllGenerations() {
+      for (const id of Object.keys(this.controllers)) {
+        this.stopRequested[id] = true
+        this.controllers[id].abort()
+      }
+    },
+
     createSession(): string {
       if (this.activeId) this.abortSession(this.activeId) // REQ-003：生成中新建 = 中断并标注
       const s: Session = {

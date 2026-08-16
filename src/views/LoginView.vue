@@ -139,6 +139,9 @@
         </button>
       </p>
     </div>
+
+    <!-- REQ-021 注销成功：深底成功绿 toast「✓ 账号已删除，再见」落在登录页 -->
+    <AppToast />
   </div>
 </template>
 
@@ -146,6 +149,7 @@
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import BrandMark from '../components/BrandMark.vue'
+import AppToast from '../components/AppToast.vue'
 import { useTheme } from '../composables/useTheme'
 import { useAuthStore } from '../stores/auth'
 import { ApiBackendError, takeBannedFlag } from '../api/backend'
