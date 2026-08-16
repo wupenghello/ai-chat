@@ -1,4 +1,4 @@
-import { notifyUnauthorized } from './backend'
+import { markBanned, notifyUnauthorized } from './backend'
 
 /** OpenAI 兼容对话消息（system/user/assistant） */
 export interface ChatMessage {
@@ -200,6 +200,11 @@ export async function streamChatViaProxy(
       if (body.detail) msg = body.detail
       if (body.code === 'upstream_auth') kind = 'auth'
       else if (body.code === 'upstream_rate_limited' || res.status === 429) kind = 'rateLimit'
+      // REQ-025（design-iter-8 §1.5 走查 29）：在线被封禁——跳登录（横幅由 LoginView 补显）
+      if (res.status === 403 && body.detail === '账号已被封禁') {
+        markBanned()
+        notifyUnauthorized()
+      }
     } catch {
       /* 保持兜底文案 */
     }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useSessionsStore, type Session } from '../stores/sessions'
 import { useSettingsStore } from '../stores/settings'
 import { useAuthStore } from '../stores/auth'
@@ -11,6 +12,7 @@ import ConfirmModal from './ConfirmModal.vue'
 const sessions = useSessionsStore()
 const settings = useSettingsStore()
 const auth = useAuthStore()
+const router = useRouter()
 const emit = defineEmits<{ openSettings: []; chat: []; logout: [] }>()
 
 const pendingDelete = ref<Session | null>(null)
@@ -104,6 +106,19 @@ const filtered = computed<Array<{ session: Session; hit: SearchHit | null }>>(()
         设置
       </button>
       <span class="profile-tag" :title="settings.activeProfile ? `自填模式 · ${settings.activeProfile.name}` : '统一密钥模式（零配置）'">{{ settings.activeProfile?.name ?? '统一密钥' }}</span>
+      <!-- design-iter-8 §1.1：盾牌入口仅管理员渲染（普通用户 DOM 无此节点；服务端接口 403 为安全边界） -->
+      <button
+        v-if="auth.user?.is_admin"
+        class="logout-btn"
+        type="button"
+        title="管理后台（仅管理员可见）"
+        aria-label="管理后台"
+        @click="router.push('/admin')"
+      >
+        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+          <path fill="currentColor" d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5l8-3z" />
+        </svg>
+      </button>
       <button class="logout-btn" type="button" title="登出" aria-label="登出" @click="emit('logout')">
         <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
           <path

@@ -1,9 +1,12 @@
 <script setup lang="ts">
 /** REQ-014 v3 密钥模式卡（design-iter-7 §1.1/§1.2）：统一 key 零配置态 ↔ 自填态。
-    模式判定：存在当前生效档案 = 自填（activeProfileName 传入）；无 = 统一 key。 */
+    模式判定：存在当前生效档案 = 自填（activeProfileName 传入）；无 = 统一 key。
+    quota（iter-8 T2，GET /api/quota）：免费额度行参数化——design-iter-7 走查 2 兑现；
+    未取到时保持占位破折号（不编造数值，铁律 5 同源精神）。 */
 defineProps<{
   mode: 'unified' | 'custom'
   activeProfileName?: string
+  quota?: { daily_limit: number; used_today: number } | null
 }>()
 
 const emit = defineEmits<{ fallback: []; gotoAdv: [] }>()
@@ -24,8 +27,11 @@ const emit = defineEmits<{ fallback: []; gotoAdv: [] }>()
     </div>
     <p class="mode-desc"><b>零配置</b>：无需填写任何密钥，免费额度内即可对话。请求经服务端代理转发。</p>
     <div class="quota-row">
-      <span>免费额度：每日 — 次对话 · 今日已用 —</span>
-      <span class="tag-occ">占位 · 数值由管理员配置（REQ-024，iter-8）</span>
+      <span v-if="quota">免费额度：每日 {{ quota.daily_limit }} 次对话 · 今日已用 {{ quota.used_today }}</span>
+      <template v-else>
+        <span>免费额度：每日 — 次对话 · 今日已用 —</span>
+        <span class="tag-occ">占位 · 数值由管理员配置（REQ-024，iter-8）</span>
+      </template>
     </div>
     <div class="mode-actions">
       <button type="button" class="link-adv" @click="emit('gotoAdv')">

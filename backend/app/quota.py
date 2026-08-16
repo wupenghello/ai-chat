@@ -39,7 +39,13 @@ def today() -> str:
     return datetime.now().strftime("%Y-%m-%d")
 
 
-def limit_for(settings: Settings, mode: str) -> int:
+def limit_for(conn: sqlite3.Connection, user_id: int, mode: str, settings: Settings) -> int:
+    """有效日限：管理员按用户覆盖优先（REQ-025，双模式统一）；否则按密钥模式默认档。"""
+    row = conn.execute(
+        "SELECT quota_override FROM users WHERE id = ?", (user_id,)
+    ).fetchone()
+    if row is not None and row["quota_override"] is not None:
+        return int(row["quota_override"])
     return settings.quota_self_daily if mode == MODE_SELF else settings.quota_free_daily
 
 
@@ -88,7 +94,7 @@ def check_and_consume(
     通过 → 计数并返回 None；不通过 → (status, code, detail)，不计数、不转发上游。
     """
     day = today()
-    limit = limit_for(settings, mode)
+    limit = limit_for(conn, user_id, mode, settings)
     if limit > 0 and user_used(conn, user_id, day) >= limit:
         detail = QUOTA_EXHAUSTED_SELF if mode == MODE_SELF else QUOTA_EXHAUSTED_UNIFIED
         return (429, "quota_exhausted", detail)

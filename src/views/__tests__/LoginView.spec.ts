@@ -92,6 +92,14 @@ describe('登录模式', () => {
     expect(banner(wrapper).classes()).toContain('warning')
   })
 
+  it('在线被封禁跳转到达（sessionStorage 标记）→ 封禁横幅且读取即清除（design-iter-8 走查 29）', async () => {
+    sessionStorage.setItem('ai-chat-banned', '1')
+    const { wrapper } = await mountView()
+    expect(banner(wrapper).text()).toBe('账号已被封禁，无法使用。如有疑问请联系管理员')
+    expect(banner(wrapper).classes()).toContain('warning')
+    expect(sessionStorage.getItem('ai-chat-banned')).toBeNull()
+  })
+
   it('封禁：403 琥珀提示', async () => {
     backendMock.login.mockRejectedValue(new ApiBackendError(403, '账号已被封禁'))
     const { wrapper } = await mountView()

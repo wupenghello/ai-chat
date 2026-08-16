@@ -13,7 +13,7 @@ from fastapi import FastAPI
 
 from app.config import Settings
 from app.db import connect, db_version, init_db
-from app.routers import auth, profiles, proxy, sessions
+from app.routers import admin, auth, profiles, proxy, sessions
 
 # 可观测（非功能条款）：quota/转发结果日志默认可见（uvicorn 只配置自家 logger，
 # root 无 handler 时 INFO 会被吞掉；basicConfig 幂等，已有 handler 时不重复加）
@@ -46,6 +46,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(sessions.router)
     app.include_router(profiles.router)
     app.include_router(proxy.router)
+    app.include_router(admin.router)
 
     @app.get("/api/health", tags=["dev"])
     def health() -> dict[str, object]:

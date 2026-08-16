@@ -17,7 +17,8 @@ class TestRegister:
         """注册成功直接登录：返回用户 + 签发 Cookie + /me 可用（主流程 3）。"""
         resp = register(client, "猫南北")
         assert resp.status_code == 201
-        assert resp.json() == {"id": 1, "username": "猫南北"}
+        # 首个注册用户自动成为管理员（REQ-025，iter-8 T2）
+        assert resp.json() == {"id": 1, "username": "猫南北", "is_admin": True}
         assert client.get("/api/auth/me").status_code == 200
         assert client.get("/api/auth/me").json()["username"] == "猫南北"
 

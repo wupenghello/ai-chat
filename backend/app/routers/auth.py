@@ -54,6 +54,7 @@ class Credentials(BaseModel):
 class UserOut(BaseModel):
     id: int
     username: str
+    is_admin: bool = False
 
 
 def _now() -> datetime:
@@ -89,7 +90,7 @@ def get_current_user(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "未登录")
     row = conn.execute(
         """
-        SELECT u.id, u.username, u.banned, s.expires_at
+        SELECT u.id, u.username, u.banned, u.is_admin, s.expires_at
         FROM auth_sessions s JOIN users u ON u.id = s.user_id
         WHERE s.token_hash = ?
         """,
@@ -99,7 +100,7 @@ def get_current_user(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "登录已过期，请重新登录")
     if row["banned"]:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "账号已被封禁")
-    return UserOut(id=row["id"], username=row["username"])
+    return UserOut(id=row["id"], username=row["username"], is_admin=bool(row["is_admin"]))
 
 
 CurrentUser = Annotated[UserOut, Depends(get_current_user)]
@@ -123,13 +124,21 @@ def register(
     ).fetchone()
     if exists:
         raise HTTPException(status.HTTP_409_CONFLICT, "用户名已存在")
-    # REQ-020 主流程：注册成功直接登录（签发会话）
+    # REQ-020 主流程：注册成功直接登录（签发会话）；首个注册用户自动成为管理员（REQ-025）
     with conn:
         cursor = conn.execute(
             "INSERT INTO users (username, username_key, password_hash) VALUES (?, ?, ?)",
             (body.username, username_key, hash_password(body.password)),
         )
-    user = UserOut(id=cursor.lastrowid, username=body.username)
+        conn.execute(
+            "UPDATE users SET is_admin = 1 WHERE id = ? "
+            "AND NOT EXISTS (SELECT 1 FROM users WHERE is_admin = 1)",
+            (cursor.lastrowid,),
+        )
+        row = conn.execute(
+            "SELECT id, username, is_admin FROM users WHERE id = ?", (cursor.lastrowid,)
+        ).fetchone()
+    user = UserOut(id=row["id"], username=row["username"], is_admin=bool(row["is_admin"]))
     _issue_session(response, conn, user.id, settings)
     return user
 
@@ -142,7 +151,7 @@ def login(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> UserOut:
     row = conn.execute(
-        "SELECT id, username, password_hash, banned FROM users WHERE username_key = ?",
+        "SELECT id, username, password_hash, banned, is_admin FROM users WHERE username_key = ?",
         (body.username.lower(),),
     ).fetchone()
     # 统一错误文案：用户名不存在与密码错误不可区分
@@ -150,7 +159,7 @@ def login(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "用户名或密码错误")
     if row["banned"]:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "账号已被封禁")
-    user = UserOut(id=row["id"], username=row["username"])
+    user = UserOut(id=row["id"], username=row["username"], is_admin=bool(row["is_admin"]))
     _issue_session(response, conn, user.id, settings)
     return user
 

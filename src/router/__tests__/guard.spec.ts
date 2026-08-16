@@ -62,6 +62,13 @@ describe('未登录门禁（REQ-006：只看得到登录页）', () => {
     expect(to.name).toBe('login')
     expect(to.query.redirect).toBeUndefined()
   })
+
+  it('未登录访问 /admin → 跳 /login 且 redirect 回跳（design-iter-8 §1.1 走查 3）', async () => {
+    backendMock.me.mockRejectedValue(new Error('401'))
+    const to = await drive(makeRouter(), '/admin')
+    expect(to.name).toBe('login')
+    expect(to.query.redirect).toBe('/admin')
+  })
 })
 
 describe('已登录', () => {
@@ -75,6 +82,12 @@ describe('已登录', () => {
     backendMock.me.mockResolvedValue({ id: 1, username: '猫南北' })
     const to = await drive(makeRouter(), '/login')
     expect(to.name).toBe('chat')
+  })
+
+  it('已登录访问 /admin → 路由层放行（403 态由组件渲染，非管理员双保险在接口层）', async () => {
+    backendMock.me.mockResolvedValue({ id: 2, username: 'bob' })
+    const to = await drive(makeRouter(), '/admin')
+    expect(to.name).toBe('admin')
   })
 })
 

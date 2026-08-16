@@ -154,7 +154,7 @@ def read_quota(
     mode = quota.MODE_SELF if profile is not None else quota.MODE_UNIFIED
     return {
         "mode": mode,
-        "daily_limit": quota.limit_for(settings, mode),
+        "daily_limit": quota.limit_for(conn, user.id, mode, settings),
         "used_today": quota.user_used(conn, user.id),
         "reset_at": "明日 00:00",
     }

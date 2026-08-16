@@ -3,6 +3,7 @@ import { ApiError, buildContext, streamChat, streamChatViaProxy, type ChatMessag
 
 vi.mock('../../api/backend', () => ({
   notifyUnauthorized: vi.fn(),
+  markBanned: vi.fn(),
 }))
 
 import { notifyUnauthorized } from '../../api/backend'
@@ -113,6 +114,18 @@ describe('streamChatViaProxy（REQ-023 统一 key 模式：走后端代理，零
       message: '登录已过期，请重新登录',
     })
     expect(mockedNotifyUnauthorized).toHaveBeenCalledTimes(1)
+  })
+
+  it('403 账号已被封禁（在线被封禁，design-iter-8 走查 29）→ 标记 + 跳登录钩子', async () => {
+    mockedNotifyUnauthorized.mockClear()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"detail":"账号已被封禁"}', { status: 403 })))
+    await expect(streamChatViaProxy([], { onDelta: () => {} })).rejects.toMatchObject({
+      status: 403,
+      message: '账号已被封禁',
+    })
+    expect(mockedNotifyUnauthorized).toHaveBeenCalledTimes(1)
+    const { markBanned } = await import('../../api/backend')
+    expect(vi.mocked(markBanned)).toHaveBeenCalledTimes(1)
   })
 
   it('上游 401 经代理（502 upstream_auth）→ auth + 后端定稿文案', async () => {

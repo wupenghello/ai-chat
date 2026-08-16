@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useSettingsStore, type ProfileInput } from '../stores/settings'
 import { useToastStore } from '../stores/toast'
 import { useTheme } from '../composables/useTheme'
 import { useSessionsStore } from '../stores/sessions'
+import { backend, type QuotaStatus } from '../api/backend'
 import ConfirmModal from './ConfirmModal.vue'
 import KeyModeCard from './KeyModeCard.vue'
 
@@ -29,6 +30,16 @@ watch(
 )
 // REQ-017：设置页「外观」入口（与顶栏主题按钮同状态同存储）
 const { theme, setTheme } = useTheme()
+
+// iter-8 T2（REQ-024/014）：免费额度行参数化（GET /api/quota）——取不到保持占位，不编造数值
+const quota = ref<QuotaStatus | null>(null)
+onMounted(async () => {
+  try {
+    quota.value = await backend.getQuota()
+  } catch {
+    /* 后端不可达：KeyModeCard 维持占位态 */
+  }
+})
 
 // ---- REQ-018 供应商档案（iter-7 T2：存服务端）+ REQ-014 v3 模式卡 ----
 const editing = ref(false)
@@ -177,6 +188,7 @@ function clearPrompt() {
     <KeyModeCard
       :mode="settings.keyMode"
       :active-profile-name="settings.activeProfile?.name"
+      :quota="quota"
       @fallback="fallback"
       @goto-adv="gotoAdv"
     />

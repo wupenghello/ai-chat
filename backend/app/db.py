@@ -12,7 +12,7 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 MIGRATIONS: dict[int, str] = {
     1: """
@@ -83,6 +83,15 @@ MIGRATIONS: dict[int, str] = {
         count INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (day, ip)
     );
+    """,
+    # iter-8 T2（REQ-025）：管理后台——用户级配额覆盖（NULL=默认档随密钥模式联动，
+    # 正整数=固定日限双模式统一，设计定夺①「自定义 N」）；存量库最早注册用户补标记管理员
+    # （新库首管理员由 register 引导，此 UPDATE 对空表无操作）
+    5: """
+    ALTER TABLE users ADD COLUMN quota_override INTEGER;
+    UPDATE users SET is_admin = 1
+    WHERE NOT EXISTS (SELECT 1 FROM users WHERE is_admin = 1)
+      AND id = (SELECT MIN(id) FROM users);
     """,
 }
 
