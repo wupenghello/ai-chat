@@ -34,5 +34,6 @@ HttpOnly Cookie 依赖同源——这正是选 Vite proxy 而非直连后端端�
 
 ## Docker
 
-仓库根：`docker compose up --build -d` 起后端容器（数据卷 ./data，健康检查 /api/health）。
+仓库根：`docker compose up --build -d` 一键起全链路（前端 nginx 托管 + backend + SQLite 数据卷 ./data）。
+完整自部署步骤、环境变量（统一 key 三变量 + 配额四变量）与数据卷说明见 `../docs/deploy.md`。
 上 HTTPS 后设 `AI_CHAT_COOKIE_SECURE=1`。

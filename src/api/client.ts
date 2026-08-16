@@ -19,13 +19,6 @@ export class ApiError extends Error {
   }
 }
 
-/** REQ-014：供应商配置（来自 settings store） */
-export interface ApiClientConfig {
-  baseUrl: string
-  model: string
-  apiKey: string
-}
-
 /** REQ-002：上下文组装——系统提示词（如有）+ 最近 N 轮（1 轮 = 1 问 + 1 答） */
 export function buildContext(messages: ChatMessage[], maxRounds = 20): ChatMessage[] {
   const system = messages.filter((m) => m.role === 'system')
@@ -41,13 +34,6 @@ export function buildContext(messages: ChatMessage[], maxRounds = 20): ChatMessa
   const firstUser = kept.findIndex((m) => m.role === 'user')
   const aligned = firstUser > 0 ? kept.slice(firstUser) : kept
   return [...system, ...aligned]
-}
-
-function kindFromStatus(status: number): ApiErrorKind {
-  if (status === 401 || status === 403) return 'auth'
-  if (status === 429) return 'rateLimit'
-  if (status >= 500) return 'server'
-  return 'unknown'
 }
 
 /** 解析 SSE 流。chunks：逐段推送的文本（模拟真实网络的分包边界） */
@@ -106,62 +92,6 @@ async function consumeSseStream(res: Response, handlers: StreamHandlers): Promis
     }
   }
   return full
-}
-
-/**
- * REQ-001：流式对话。POST {baseUrl}/chat/completions（OpenAI 兼容），
- * 逐 delta 回调；任何失败以 ApiError 抛出（REQ-007 错误分类）。
- * signal：AbortSignal，用于"生成中断"（REQ-003/004）。
- */
-export async function streamChat(
-  config: ApiClientConfig,
-  messages: ChatMessage[],
-  handlers: StreamHandlers,
-  signal?: AbortSignal,
-): Promise<string> {
-  let res: Response
-  const url = `${config.baseUrl.replace(/\/+$/, '')}/chat/completions`
-  try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify({ model: config.model, messages, stream: true }),
-      signal,
-    })
-  } catch (e) {
-    if ((e as Error).name === 'AbortError') throw e
-    throw new ApiError('network', '网络连接失败，请检查网络或 API 地址')
-  }
-
-  if (!res.ok) {
-    let detail = ''
-    try {
-      const body = await res.text()
-      try {
-        detail = JSON.parse(body)?.error?.message ?? body.slice(0, 200)
-      } catch {
-        detail = body.slice(0, 200)
-      }
-    } catch {
-      /* 忽略读取失败 */
-    }
-    const kind = kindFromStatus(res.status)
-    // 供应商用 429 同时表示限流和余额不足（如 GLM 1113），透传具体原因，避免误导
-    const msg =
-      kind === 'auth'
-        ? `密钥无效或未授权（${res.status}），请前往设置更新密钥`
-        : kind === 'rateLimit'
-          ? `请求被拒绝（${res.status}）${detail ? '：' + detail : '，请稍后重试'}`
-          : kind === 'server'
-            ? `服务端错误（${res.status}）${detail ? '：' + detail : ''}`
-            : `请求失败（${res.status}）${detail ? '：' + detail : ''}`
-    throw new ApiError(kind, msg, res.status)
-  }
-
-  return consumeSseStream(res, handlers)
 }
 
 /**

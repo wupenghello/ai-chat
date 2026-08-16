@@ -1,0 +1,4 @@
+# 前端构建产物静态托管（dist/ 由 `npm run build` 产出，不入 git；由根 docker-compose 构建）
+FROM nginx:alpine
+COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+COPY dist/ /usr/share/nginx/html/

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { ApiError, buildContext, streamChat, streamChatViaProxy, type ChatMessage } from '../client'
+import { ApiError, buildContext, streamChatViaProxy, type ChatMessage } from '../client'
 
 vi.mock('../../api/backend', () => ({
   notifyUnauthorized: vi.fn(),
@@ -9,8 +9,6 @@ vi.mock('../../api/backend', () => ({
 import { notifyUnauthorized } from '../../api/backend'
 
 const mockedNotifyUnauthorized = vi.mocked(notifyUnauthorized)
-
-const cfg = { baseUrl: 'https://api.test/v4', model: 'glm-5.3', apiKey: 'k' }
 
 function sseBody(deltas: string[]): ReadableStream<Uint8Array> {
   const enc = new TextEncoder()
@@ -34,55 +32,6 @@ function sseBody(deltas: string[]): ReadableStream<Uint8Array> {
 
 beforeEach(() => {
   vi.restoreAllMocks()
-})
-
-describe('streamChat（REQ-001 流式 + REQ-007 错误分类）', () => {
-  it('逐 delta 回调并返回完整文本', async () => {
-    const deltas = [
-      '{"choices":[{"delta":{"content":"你"}}]}',
-      '{"choices":[{"delta":{"content":"好"}}]}',
-    ]
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(sseBody(deltas), { status: 200 })))
-    const got: string[] = []
-    const full = await streamChat(cfg, [{ role: 'user', content: 'hi' }], { onDelta: (d) => got.push(d) })
-    expect(got).toEqual(['你', '好'])
-    expect(full).toBe('你好')
-  })
-
-  it('401 → auth 错误（引导设置页）', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('bad key', { status: 401 })))
-    await expect(streamChat(cfg, [], { onDelta: () => {} })).rejects.toMatchObject({
-      kind: 'auth',
-      status: 401,
-    })
-  })
-
-  it('429 → rateLimit；500 → server', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(new Response('{"error":{"code":"1113","message":"余额不足"}}', { status: 429 })),
-    )
-    const err = await streamChat(cfg, [], { onDelta: () => {} }).catch((e) => e)
-    expect(err.kind).toBe('rateLimit')
-    expect(err.message).toContain('余额不足') // 供应商具体原因透传给用户
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 500 })))
-    await expect(streamChat(cfg, [], { onDelta: () => {} })).rejects.toMatchObject({ kind: 'server' })
-  })
-
-  it('网络失败 → network（人话文案）', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')))
-    const err = await streamChat(cfg, [], { onDelta: () => {} }).catch((e) => e)
-    expect(err).toBeInstanceOf(ApiError)
-    expect(err.kind).toBe('network')
-    expect(err.message).toContain('网络')
-  })
-
-  it('base URL 尾部斜杠被正确处理', async () => {
-    const spy = vi.fn().mockResolvedValue(new Response(sseBody(['{"choices":[{"delta":{"content":"x"}}]}']), { status: 200 }))
-    vi.stubGlobal('fetch', spy)
-    await streamChat({ ...cfg, baseUrl: 'https://api.test/v4///' }, [], { onDelta: () => {} })
-    expect(spy.mock.calls[0][0]).toBe('https://api.test/v4/chat/completions')
-  })
 })
 
 describe('streamChatViaProxy（REQ-023 统一 key 模式：走后端代理，零密钥）', () => {

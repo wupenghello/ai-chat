@@ -11,7 +11,7 @@ from pathlib import Path
 import httpx
 import pytest
 from app import quota
-from app.db import connect
+from app.db import connect, init_db
 
 from tests.conftest import login, register
 from tests.test_proxy import SSE_FRAMES, _sse_response, chat, ok_handler, upstream_app
@@ -243,6 +243,47 @@ class TestUsageRecording:
             finally:
                 conn.close()
             assert rows == {"unified": (1, 18), "self": (1, 18)}
+
+    def test_跨零点流_token记到请求日而非today(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        # Code Review 观察项①：请求时落账 day=2099-01-01，流跨零点（today 已 2099-01-02）结束，
+        # record_tokens 传入请求日，token 归该日而非此刻 today()。
+        db_path = str(tmp_path / "cross.db")
+        conn = connect(db_path)
+        try:
+            init_db(conn)
+            with conn:
+                cur = conn.execute(
+                    "INSERT INTO users (username, username_key, password_hash) "
+                    "VALUES ('alice', 'alice', 'x')"
+                )
+                user_id = cur.lastrowid
+                conn.execute(
+                    "INSERT INTO usage_daily (day, user_id, mode, requests) "
+                    "VALUES ('2099-01-01', ?, 'unified', 1)",
+                    (user_id,),
+                )
+        finally:
+            conn.close()
+
+        monkeypatch.setattr(quota, "today", lambda: "2099-01-02")
+        quota.record_tokens(db_path, user_id, quota.MODE_UNIFIED, 18, "2099-01-01")
+
+        conn = connect(db_path)
+        try:
+            row = conn.execute(
+                "SELECT day, tokens FROM usage_daily WHERE user_id = ? AND mode = 'unified'",
+                (user_id,),
+            ).fetchone()
+            tomorrow_n = conn.execute(
+                "SELECT COUNT(*) AS n FROM usage_daily WHERE day = '2099-01-02'"
+            ).fetchone()["n"]
+        finally:
+            conn.close()
+        assert row["day"] == "2099-01-01"
+        assert row["tokens"] == 18
+        assert tomorrow_n == 0  # 未误记到 today() 的次日行
 
 
 class TestQuotaEndpoint:

@@ -88,26 +88,27 @@ def site_unified_used(conn: sqlite3.Connection, day: str | None = None) -> int:
 
 def check_and_consume(
     conn: sqlite3.Connection, user_id: int, mode: str, settings: Settings
-) -> tuple[int, str, str] | None:
+) -> tuple[str, tuple[int, str, str] | None]:
     """代理配额检查位（REQ-023 预留位，REQ-024 落地）。
 
-    通过 → 计数并返回 None；不通过 → (status, code, detail)，不计数、不转发上游。
+    返回 (day, blocked)：day = 请求落账自然日（流结束补记 token 需同归属，跨零点一致——
+    Code Review 观察项①）；blocked = None 通过（已计数），否则 (status, code, detail) 拦截。
     """
     day = today()
     limit = limit_for(conn, user_id, mode, settings)
     if limit > 0 and user_used(conn, user_id, day) >= limit:
         detail = QUOTA_EXHAUSTED_SELF if mode == MODE_SELF else QUOTA_EXHAUSTED_UNIFIED
-        return (429, "quota_exhausted", detail)
+        return (day, (429, "quota_exhausted", detail))
     if mode == MODE_UNIFIED and settings.unified_daily_total > 0:
         if site_unified_used(conn, day) >= settings.unified_daily_total:
-            return (503, "unified_daily_exceeded", UNIFIED_PAUSED)
+            return (day, (503, "unified_daily_exceeded", UNIFIED_PAUSED))
     with conn:
         conn.execute(
             "INSERT INTO usage_daily (day, user_id, mode, requests) VALUES (?, ?, ?, 1) "
             "ON CONFLICT (day, user_id, mode) DO UPDATE SET requests = requests + 1",
             (day, user_id, mode),
         )
-    return None
+    return (day, None)
 
 
 def extract_total_tokens(raw: bytes) -> int:
@@ -115,11 +116,14 @@ def extract_total_tokens(raw: bytes) -> int:
     return int(found[-1]) if found else 0
 
 
-def record_tokens(db_path: str, user_id: int, mode: str, tokens: int) -> None:
-    """流结束后补记 token 用量：独立短连接（不依赖请求连接生命周期），失败不影响已发响应。"""
+def record_tokens(db_path: str, user_id: int, mode: str, tokens: int, day: str) -> None:
+    """流结束后补记 token 用量：独立短连接（不依赖请求连接生命周期），失败不影响已发响应。
+
+    day = 请求时 check_and_consume 落账的自然日（Code Review 观察项①）：流跨零点结束时
+    token 仍归请求日，而非此刻 today()——与 requests 同一 (day, user_id, mode) 行。
+    """
     if tokens <= 0:
         return
-    day = today()
     try:
         conn = connect(db_path)
         try:

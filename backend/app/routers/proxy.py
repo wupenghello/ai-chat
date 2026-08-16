@@ -76,7 +76,7 @@ async def chat_completions(
         return _error(503, "unified_key_missing", "服务端未配置统一密钥，请联系管理员")
 
     mode = quota.MODE_SELF if profile is not None else quota.MODE_UNIFIED
-    blocked = quota.check_and_consume(conn, user.id, mode, settings)
+    day, blocked = quota.check_and_consume(conn, user.id, mode, settings)
     if blocked is not None:
         # REQ-024 验收取证：被拦截请求未抵达上游（服务端日志可观测）
         status_code, code, detail = blocked
@@ -134,9 +134,11 @@ async def chat_completions(
             yield _INTERRUPTED_FRAME
         finally:
             await resp.aclose()
-            # 逐字节透传不变，仅在旁路累积观测 usage 帧（不改写字节）
+            # 逐字节透传不变，仅在旁路累积观测 usage 帧（不改写字节）；
+            # day = 请求时 check_and_consume 落账自然日，跨零点流 token 仍归请求日
+            # （Code Review 观察项①）
             tokens = quota.extract_total_tokens(bytes(raw))
-            quota.record_tokens(request.app.state.db_path, user.id, mode, tokens)
+            quota.record_tokens(request.app.state.db_path, user.id, mode, tokens, day)
 
     return StreamingResponse(relay(), media_type="text/event-stream")
 

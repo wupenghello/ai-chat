@@ -4,7 +4,7 @@
  * 背景：iter-1 的 27 个单测覆盖 store/组件逻辑，但"发送→不刷新页面流式渲染"这类
  * 真实组件树路径无自动化用例，Pinia 响应式代理真 bug（发消息不刷新）由 CEO 试用才发现。
  * 本文件挂载完整 App.vue（真实 Pinia + 真实组件树），仅 mock IndexedDB 与网络层
- * （api/client.streamChat），断言 DOM 行为。
+ * （api/client.streamChatViaProxy），断言 DOM 行为。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'

@@ -1,0 +1,12 @@
+# 前端构建上下文最小化：仅 COPY dist/ 与 docker/nginx.conf，其余不进镜像、不膨胀上下文
+.git
+**/.git
+node_modules
+**/node_modules
+backend
+data
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
+*.db
