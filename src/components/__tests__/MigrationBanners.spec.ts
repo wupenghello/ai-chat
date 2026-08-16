@@ -41,12 +41,14 @@ describe('提示态与堆叠（走查 30/37/38）', () => {
     expect(banners[1].text()).toContain('本地不再保存任何档案与密钥数据')
   })
 
-  it('「暂不导入」：条移除 + sessionStorage 标记（本次登录不再显示，零上传）', async () => {
+  it('「暂不导入」：条移除 + sessionStorage 标记（本次登录不再显示，零上传）——DOM 同步移除（DEF-019 回归）', async () => {
     const mig = useMigrationStore()
     mig.sessions = { state: 'prompt', total: 5, done: 0, cancel: false }
     const wrapper = mountBanners()
+    expect(wrapper.findAll('.mig-banner')).toHaveLength(1)
     await wrapper.find('.mb-btn').trigger('click')
     expect(mig.sessions.state).toBe('none')
+    expect(wrapper.findAll('.mig-banner')).toHaveLength(0) // 界面同步消失，不滞留旧引用
     expect(sessionStorage.getItem('ai-chat:mig-dismissed-sessions')).toBe('1')
   })
 })
@@ -71,6 +73,7 @@ describe('进行中与完成（走查 33/35/40）', () => {
     expect(wrapper.text()).toContain('30 天后自动清除')
     await wrapper.find('button.mb-btn').trigger('click') // 知道了
     expect(mig.sessions.state).toBe('none')
+    expect(wrapper.findAll('.mig-banner')).toHaveLength(0) // DOM 同步收起（DEF-019 回归）
   })
 
   it('完成（档案）：本地不再保存任何档案与密钥数据说明（走查 40）', () => {

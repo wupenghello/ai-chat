@@ -38,12 +38,14 @@ const COPY: Record<MigKind, KindCopy> = {
   },
 }
 
-const kinds: { kind: MigKind; banner: typeof mig.sessions; run(): Promise<void>; cancel(): void }[] = [
+// kinds 必须是 computed：store 的 dismiss/knowDone 是整对象替换（freshBanner），
+// setup 时一次性捕获的引用会在替换后滞留旧对象，导致提示条不从界面消失（DEF-019）
+const kinds = computed<{ kind: MigKind; banner: typeof mig.sessions; run(): Promise<void>; cancel(): void }[]>(() => [
   { kind: 'sessions', banner: mig.sessions, run: () => mig.importSessions(), cancel: () => mig.cancelSessions() },
   { kind: 'profiles', banner: mig.profiles, run: () => mig.importProfiles(), cancel: () => mig.cancelProfiles() },
-]
+])
 
-const visible = computed(() => kinds.filter((k) => k.banner.state !== 'none'))
+const visible = computed(() => kinds.value.filter((k) => k.banner.state !== 'none'))
 </script>
 
 <template>
