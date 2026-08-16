@@ -135,6 +135,20 @@ function gotoAdv() {
   advSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
+/** iter-10 T1①：boot 失败后的重试入口——boot 可重入，成功即恢复档案列表（无需刷新页面） */
+const bootRetrying = ref(false)
+async function retryBoot() {
+  bootRetrying.value = true
+  try {
+    await settings.boot()
+    toast.push('供应商档案已加载')
+  } catch {
+    toast.push('供应商档案加载失败，请检查网络')
+  } finally {
+    bootRetrying.value = false
+  }
+}
+
 // ---- REQ-008 系统提示词（对话设置，design-iter-2 触点一）----
 const promptText = ref(settings.systemPrompt)
 const promptSaved = ref(false)
@@ -334,7 +348,14 @@ async function confirmDeleteAccount(password: string) {
             </svg>
           </button>
         </div>
-        <div v-if="settings.profiles.length === 0" class="p-empty">暂无档案，点击下方「添加供应商档案」创建第一套自有配置</div>
+        <!-- iter-10 T1①：boot 失败 → 档案区「重试」（boot 可重入），优先于空列表占位 -->
+        <div v-if="settings.bootFailed" class="p-empty">
+          档案加载失败，请检查网络
+          <button type="button" class="p-btn retry-btn" :disabled="bootRetrying" @click="retryBoot">
+            {{ bootRetrying ? '重试中…' : '重试' }}
+          </button>
+        </div>
+        <div v-else-if="settings.profiles.length === 0" class="p-empty">暂无档案，点击下方「添加供应商档案」创建第一套自有配置</div>
       </div>
 
       <div class="actions">
@@ -828,6 +849,11 @@ async function confirmDeleteAccount(password: string) {
   text-align: center;
   border: 1px dashed var(--c-border);
   border-radius: 8px;
+}
+/* iter-10 T1①：boot 失败重试按钮（居中独占一行） */
+.p-empty .retry-btn {
+  display: flex;
+  margin: 8px auto 0;
 }
 .modal-mask {
   position: fixed;

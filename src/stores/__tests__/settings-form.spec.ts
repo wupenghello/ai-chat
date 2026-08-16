@@ -75,6 +75,25 @@ describe('SettingsForm（REQ-014 v3 / design-iter-7 §1~2）', () => {
     expect(fallbackBtn).toBeTruthy()
   })
 
+  it('boot 失败：档案区显示加载失败与「重试」；重试成功后列表恢复（iter-10 T1①，不刷新页面）', async () => {
+    const settings = useSettingsStore()
+    settings.bootFailed = true
+    settings.profilesLoaded = false
+    useAuthStore().user = { id: 1, username: '猫南北' }
+    const w = await mount(SettingsForm)
+    expect(w.text()).toContain('档案加载失败')
+    expect(w.text()).not.toContain('暂无档案') // 失败态优先于空列表占位
+
+    mocked.listProfiles.mockResolvedValue([SERVER_P('a', 'DeepSeek', true)])
+    await w.findAll('button').find((b) => b.text().includes('重试'))!.trigger('click')
+    await vi.waitFor(() => {
+      expect(w.text()).not.toContain('档案加载失败')
+      expect(w.text()).toContain('DeepSeek')
+    })
+    expect(settings.profilesLoaded).toBe(true)
+    expect(settings.bootFailed).toBe(false)
+  })
+
   it('编辑模态：密钥不回显（留空=沿用），添加模态：密钥必填（走查 8/9）', async () => {
     const settings = useSettingsStore()
     settings.profiles = [{ id: 'a', name: 'DeepSeek', baseUrl: 'https://api.test', model: 'm', apiKeyMasked: 'sk-****1234' }]

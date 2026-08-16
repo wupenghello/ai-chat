@@ -83,6 +83,24 @@ describe('settings store（REQ-018 iter-7 T2：档案服务端源）', () => {
     expect(s.keyMode).toBe('unified')
   })
 
+  it('boot 失败 → bootFailed 标记；本会话重试成功 → 档案列表恢复（iter-10 T1①，不刷新页面）', async () => {
+    mocked.listProfiles.mockRejectedValueOnce(new Error('network down'))
+    const s = useSettingsStore()
+    await expect(s.boot()).rejects.toThrow('network down')
+    expect(s.bootFailed).toBe(true)
+    expect(s.profilesLoaded).toBe(false)
+    expect(s.profiles).toEqual([]) // 降级为空列表（App 侧 toast 提示）
+
+    // 设置页「重试」再次调用 boot（可重入）：成功后恢复列表与标记
+    mocked.listProfiles.mockResolvedValue([SERVER_P('a', 'A'), SERVER_P('b', 'B', true)])
+    await s.boot()
+    expect(s.bootFailed).toBe(false)
+    expect(s.profilesLoaded).toBe(true)
+    expect(s.profiles).toHaveLength(2)
+    expect(s.activeProfileId).toBe('b')
+    expect(s.profiles[1].apiKeyMasked).toBe('sk-****1234')
+  })
+
   it('saveNewProfile：校验失败不调 API；成功 POST 并入列表', async () => {
     const s = useSettingsStore()
     const errs = await s.saveNewProfile({ name: '', baseUrl: 'x', model: '', apiKey: '' })

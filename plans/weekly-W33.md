@@ -113,7 +113,7 @@ git 提交 5 个（63b6b4d 计划 / 50ef5d1 T0 设计 / 3fad772 T1 / ad8fe6a T2 
 
 测试结果（任务级）：**后端 pytest 105/105**（+test_admin 19 +两设备 LWW 1）、**前端 vitest 185/185**（+AdminView 17/TheSidebar 2/守卫 2/client 1/LoginView 1/KeyModeCard 2/migration 13/MigrationBanners 8——原 141）；ruff clean、生产构建、guard:style 全过；走查清单 44 条全量留档见 plans/iter-8-verify.md（浏览器观感项已闭账 puppeteer 30/30）。
 
-### iter-9（08-16，开发完成 T0~T3，待 QA 审计 + 复盘 + v0.5.0 发布）
+### iter-9（08-16，已关闭 G4 过；v0.5.0 暂缓待服务器）
 
 - 计划已批准（0a93326，Σ8 = M×4）：REQ-021 账号管理（T0 设计/T1 后端/T2 前端）+ T3 全链路 Compose/自部署文档/技术债收口；v0.5.0 发布走 iter-9 末
 - T0 design-iter-9 设计稿（已基线）：账号管理原型 + 视觉基调变更（正文白底 + 侧栏灰底，CEO 拍板参考 DeepSeek 管理页）；4 项定夺全按推荐定案；§7.2 走查 23 条
@@ -123,6 +123,15 @@ git 提交 5 个（63b6b4d 计划 / 50ef5d1 T0 设计 / 3fad772 T1 / ad8fe6a T2 
 
 测试终态：**前端 vitest 201/201**（23 文件）+ **后端 pytest 118/118** + ruff clean + 生产构建 + guard:style 全过。
 
+### iter-10（08-16，清理收口，开发完成 T1~T3，待 QA 审计 + 复盘）
+
+- 计划已批准（fafa487，Σ4 = M+S+S）：T1 技术债三项 + T2 spec hygiene 14 条 + T3 Compose 首块延迟复测；无需求类任务（基线 v3 已全部达成）
+- T1 技术债三项（完成）：settings.boot() 失败重试（bootFailed 标记 + 档案区失败态重试按钮，iter-7 Code Review 观察项销账）；auth_sessions 过期行惰性清理（随签发事务 DELETE，iter-5 QA 观察项销账）；useTheme 单测 +6（iter-5 观察项销账）
+- T2 spec「涉及页面」hygiene（完成）：14 条全部更新与 RTM 一致，残留 0（iter-9 QA 观察项 5 销账）
+- T3 Compose 首块延迟复测（完成）：稳态 -19ms ≤500ms 达标 + nginx SSE 直通验证（iter-8 Code Review 观察项销账，plans/iter-10-verify.md）
+
+测试终态：**前端 vitest 209/209**（+8）+ **后端 pytest 119/119**（+1）+ ruff clean + 生产构建全过。
+
 ## 进行中与阻塞
 
 | 任务 | 状态 | 阻塞原因 / 需要的决策 |
@@ -130,7 +139,8 @@ git 提交 5 个（63b6b4d 计划 / 50ef5d1 T0 设计 / 3fad772 T1 / ad8fe6a T2 
 | iter-8 T0~T3 | 全部完成 | 已关闭（G4 过，浏览器观感 puppeteer 30/30 闭账，见 retros/iter-8.md） |
 | iter-8 QA 审计 + Code Review | 完成 | 审计 5 NCR 全整改；Code Review CEO 已过目（2026-08-16） |
 | iter-8 复盘 + G4 关闭 | 已关闭 | G4 过，复盘落制度 v1.4.6（提交防漏核对），见 retros/iter-8.md |
-| iter-9 T0~T3 | 全部完成 | 待 QA 审计 + 复盘 + v0.5.0 发布（见上方 iter-9 章节） |
+| iter-9 T0~T3 | 已关闭 | G4 过，复盘落制度 v1.4.7，见 retros/iter-9.md；v0.5.0 暂缓待服务器 |
+| iter-10 T1~T3 | 全部完成 | 待 QA 审计 + 复盘（清理收口小迭代，见上方 iter-10 章节） |
 
 （iter-7 已关闭 G4 过，6+3 NCR 全部复查关闭；v0.4.0 已发布。）
 

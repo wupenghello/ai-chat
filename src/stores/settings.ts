@@ -75,6 +75,8 @@ export const useSettingsStore = defineStore('settings', {
     systemPrompt: readRaw().systemPrompt ?? '',
     pendingProfileEffect: false,
     profilesLoaded: false,
+    /** iter-10 T1①：boot 拉取失败标记——为 true 时设置页档案区提供「重试」（boot 可重入） */
+    bootFailed: false,
   }),
   getters: {
     activeProfile(state): ApiProfile | null {
@@ -91,12 +93,19 @@ export const useSettingsStore = defineStore('settings', {
     },
   },
   actions: {
-    /** 登录后拉取档案（App onMounted；Root 登录态变化重挂载时重跑） */
+    /** 登录后拉取档案（App onMounted；Root 登录态变化重挂载时重跑）。
+        可重入：失败置 bootFailed 后仍抛出（调用方降级提示），设置页重试再次调用即可恢复（iter-10 T1①）。 */
     async boot() {
-      const list = await backend.listProfiles()
-      this.profiles = list.map(toLocal)
-      this.activeProfileId = list.find((p) => p.is_active)?.id ?? null
-      this.profilesLoaded = true
+      try {
+        const list = await backend.listProfiles()
+        this.profiles = list.map(toLocal)
+        this.activeProfileId = list.find((p) => p.is_active)?.id ?? null
+        this.profilesLoaded = true
+        this.bootFailed = false
+      } catch (e) {
+        this.bootFailed = true
+        throw e
+      }
     },
 
     /** 新增档案（REQ-014 主流程 2：保存后下一次请求起生效） */

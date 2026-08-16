@@ -128,6 +128,35 @@ class TestLogin:
         assert resp.json()["detail"] == WRONG_LOGIN
 
 
+class TestSessionPurge:
+    """iter-10 T1②：auth_sessions 过期行惰性清理——随登录/注册签发顺带执行（iter-5 QA 观察项）。"""
+
+    def test_login_purges_expired_rows_keeps_valid(self, client: TestClient, db_conn):
+        """登录签发时：过期行被清除；未过期（有效）会话不受影响。"""
+        register(client, "alice")
+        past = (datetime.now(UTC) - timedelta(minutes=1)).isoformat()
+        future = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
+        with db_conn:
+            db_conn.execute(
+                "INSERT INTO auth_sessions (token_hash, user_id, expires_at) "
+                "VALUES ('expired-hash', 1, ?)",
+                (past,),
+            )
+            db_conn.execute(
+                "INSERT INTO auth_sessions (token_hash, user_id, expires_at) "
+                "VALUES ('valid-hash', 1, ?)",
+                (future,),
+            )
+        client.post("/api/auth/logout")
+        assert login(client, "alice", "password123").status_code == 200
+        hashes = {
+            r["token_hash"]
+            for r in db_conn.execute("SELECT token_hash FROM auth_sessions").fetchall()
+        }
+        assert "expired-hash" not in hashes  # 过期行被清除
+        assert "valid-hash" in hashes  # 未过期（有效）会话不受影响
+
+
 class TestLogoutAndGuard:
     def test_logout_invalidates_token(self, client: TestClient):
         """登出后 token 失效：受保护端点 401（T1 验收全链路终点）。"""

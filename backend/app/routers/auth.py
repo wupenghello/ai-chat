@@ -92,8 +92,16 @@ def _now() -> datetime:
 def _issue_session(response: Response, conn, user_id: int, settings: Settings) -> None:
     """签发会话：原始 token 进 Cookie（HttpOnly），库内只存 SHA-256。"""
     token = new_session_token()
-    expires = _now() + timedelta(hours=settings.session_ttl_hours)
+    now = _now()
+    expires = now + timedelta(hours=settings.session_ttl_hours)
     with conn:
+        # 惰性清理（iter-10 T1②，iter-5 QA 观察项）：随签发顺带清除过期行，防永久堆积。
+        # expires_at 均由本函数以 UTC aware isoformat 写入（统一 +00:00 后缀），
+        # 字典序与时间序一致，可直接字符串比较（与 get_current_user 的过期判断同口径）。
+        conn.execute(
+            "DELETE FROM auth_sessions WHERE expires_at < ?",
+            (now.isoformat(),),
+        )
         conn.execute(
             "INSERT INTO auth_sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)",
             (token_hash(token), user_id, expires.isoformat()),
