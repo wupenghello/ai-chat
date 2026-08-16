@@ -60,6 +60,20 @@ class TestRoundtrip:
         assert len(got) == 1
         assert got[0]["title"] == "第二版"
 
+    def test_two_devices_same_user_last_put_wins(self, client_factory):
+        """两设备并发修改同一会话标题：后保存者生效（REQ-022 验收原文；到达序即最终序，
+        与 updatedAt 数值无关——iter-6 挂账 LWW 并发用例，iter-8 T3 补验）。"""
+        register(client_factory(), "dave")  # 建号（同时占掉首注册管理员位）
+        a = client_factory()
+        login(a, "dave", "password123")
+        b = client_factory()
+        login(b, "dave", "password123")
+        a.put("/api/sessions/s1", json=session_payload("s1", title="设备A改的", updatedAt=2000))
+        # 后保存者 updatedAt 更小仍生效：LWW 按 PUT 到达序，不用向量时钟比较
+        b.put("/api/sessions/s1", json=session_payload("s1", title="设备B后改的", updatedAt=1000))
+        assert a.get("/api/sessions").json()[0]["title"] == "设备B后改的"
+        assert b.get("/api/sessions").json()[0]["title"] == "设备B后改的"
+
     def test_list_ordered_by_updated_at_desc(self, alice: TestClient):
         alice.put("/api/sessions/old", json=session_payload("old", updatedAt=1000))
         alice.put("/api/sessions/new", json=session_payload("new", updatedAt=9000))

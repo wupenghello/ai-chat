@@ -12,6 +12,8 @@ import ComposerBox from './components/ComposerBox.vue'
 import EmptyState from './components/EmptyState.vue'
 import SettingsForm from './components/SettingsForm.vue'
 import AppToast from './components/AppToast.vue'
+import MigrationBanners from './components/MigrationBanners.vue'
+import { useMigrationStore } from './stores/migration'
 
 const sessions = useSessionsStore()
 
@@ -20,6 +22,7 @@ const { theme, toggleTheme } = useTheme()
 const settings = useSettingsStore()
 const toast = useToastStore()
 const auth = useAuthStore()
+const migration = useMigrationStore()
 
 const view = ref<'chat' | 'settings'>('chat')
 
@@ -37,6 +40,8 @@ onMounted(() => {
   void settings.boot().catch(() => {
     toast.push('供应商档案加载失败，请检查网络')
   })
+  // iter-8 T3（REQ-022/018）：存量本地数据上云检测（登录后；无旧数据零打扰）
+  void migration.detect()
 })
 
 const locateAdv = ref(false) // 错误气泡「前往高级设置」入口：打开设置页并定位高级设置区（走查 15）
@@ -74,6 +79,8 @@ function editMessage(id: string, text: string) {
     <TheSidebar @open-settings="openSettings" @chat="view = 'chat'" @logout="logout" />
 
     <main class="main">
+      <!-- iter-8 T3（design-iter-8 §2.1/定夺 ②）：主界面顶部全局提示条区（无旧数据零渲染） -->
+      <MigrationBanners />
       <SettingsForm v-if="view === 'settings'" :locate-adv="locateAdv" />
 
       <template v-else>

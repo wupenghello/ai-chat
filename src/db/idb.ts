@@ -84,3 +84,14 @@ export async function saveSession(session: PersistedSession): Promise<void> {
 export async function deleteSession(id: string): Promise<void> {
   await tx('readwrite', (s) => s.delete(id))
 }
+
+/** REQ-022/006（iter-8 T3）：导入完成 30 天后整库删除（只读安全窗到期清除，可观测验收） */
+export function purgeLegacyDb(): Promise<void> {
+  dbPromise = null
+  return new Promise((resolve) => {
+    const req = indexedDB.deleteDatabase(DB_NAME)
+    req.onsuccess = () => resolve()
+    req.onerror = () => resolve() // 删除失败不阻塞启动，下次到期检查再试
+    req.onblocked = () => resolve()
+  })
+}
