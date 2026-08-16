@@ -8,6 +8,11 @@ services:
       - "8000:8000"
     environment:
       AI_CHAT_DB_PATH: /data/ai-chat.db
+    # 统一 key 三变量（design-iter-7 定夺①）：.env 不入 git，容器经 env_file 注入；
+    # required: false——未配置也能起服务（对话返回 503 引导文案，见代理端点）
+    env_file:
+      - path: ./backend/.env
+        required: false
     volumes:
       - ./data:/data
     healthcheck:

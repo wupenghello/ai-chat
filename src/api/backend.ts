@@ -22,6 +22,11 @@ export function setUnauthorizedHandler(fn: () => void) {
   onUnauthorized = fn
 }
 
+/** 401 失效通知：流式端点（client.ts streamChatViaProxy）复用同一钩子（REQ-023） */
+export function notifyUnauthorized(): void {
+  onUnauthorized?.()
+}
+
 /** 从 FastAPI 错误体提取人话文案：{detail: string} 或 pydantic 422 的 [{msg}] */
 function extractMessage(body: unknown, fallback: string): string {
   if (body && typeof body === 'object' && 'detail' in body) {

@@ -8,6 +8,7 @@ dependencies = [
     "uvicorn[standard]>=0.32",
     "bcrypt>=4.2",
     "pydantic-settings>=2.6",
+    "httpx>=0.28",
 ]
 
 [dependency-groups]

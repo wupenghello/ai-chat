@@ -40,11 +40,8 @@ function openSettings() {
 }
 
 async function send(text: string) {
-  if (!settings.isConfigured) {
-    // REQ-007：未配置密钥即发送 → 不发请求，引导设置页
-    toast.push('尚未配置 API 密钥', { label: '前往设置', to: 'settings' })
-    return
-  }
+  // v3 双模式（design-iter-7 §3.1）：「未配置密钥即发送」分支消亡——
+  // 无档案 = 统一 key 模式零配置可用（REQ-023），自填必填校验在档案保存时拦截
   await sessions.send(text)
 }
 

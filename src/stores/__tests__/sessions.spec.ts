@@ -10,10 +10,12 @@ vi.mock('../../db/persistence', () => ({
 vi.mock('../../api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api/client')>()),
   streamChat: vi.fn(),
+  streamChatViaProxy: vi.fn(),
 }))
 
-import { streamChat, type StreamHandlers } from '../../api/client'
+import { streamChat, streamChatViaProxy, type StreamHandlers } from '../../api/client'
 import { useSettingsStore } from '../settings'
+import { useAuthStore } from '../auth'
 import { useSessionsStore } from '../sessions'
 
 const mockedStream = vi.mocked(streamChat)
@@ -38,12 +40,33 @@ beforeEach(() => {
 })
 
 describe('sessions store · 发送与生成（REQ-001/002）', () => {
-  it('未配置时返回 false，不调 API', async () => {
+  it('未登录且无档案（主界面实际不可达态）：返回 false，不调 API', async () => {
     localStorage.clear()
     setActivePinia(createPinia())
     const sessions = useSessionsStore()
     await expect(sessions.send('hi')).resolves.toBe(false)
     expect(streamChat).not.toHaveBeenCalled()
+    expect(streamChatViaProxy).not.toHaveBeenCalled()
+  })
+
+  it('统一 key 模式（REQ-023 v3）：已登录无档案 → 走后端代理，直连不触发', async () => {
+    localStorage.clear()
+    setActivePinia(createPinia())
+    useAuthStore().user = { id: 1, username: 'alice' }
+    vi.mocked(streamChatViaProxy).mockImplementation((_m, h: StreamHandlers) => {
+      h.onDelta('你')
+      h.onDelta('好')
+      return Promise.resolve('你好')
+    })
+    const sessions = useSessionsStore()
+    await expect(sessions.send('hi')).resolves.toBe(true)
+    expect(streamChat).not.toHaveBeenCalled()
+    expect(vi.mocked(streamChatViaProxy)).toHaveBeenCalledTimes(1)
+    expect(sessions.active!.messages[1]).toMatchObject({
+      role: 'assistant',
+      content: '你好',
+      status: 'done',
+    })
   })
 
   it('正常流式：delta 累积、最终 done、标题取自首条消息', async () => {

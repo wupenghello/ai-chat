@@ -1,5 +1,13 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { ApiError, buildContext, streamChat, type ChatMessage } from '../client'
+import { ApiError, buildContext, streamChat, streamChatViaProxy, type ChatMessage } from '../client'
+
+vi.mock('../../api/backend', () => ({
+  notifyUnauthorized: vi.fn(),
+}))
+
+import { notifyUnauthorized } from '../../api/backend'
+
+const mockedNotifyUnauthorized = vi.mocked(notifyUnauthorized)
 
 const cfg = { baseUrl: 'https://api.test/v4', model: 'glm-5.3', apiKey: 'k' }
 
@@ -73,6 +81,114 @@ describe('streamChat（REQ-001 流式 + REQ-007 错误分类）', () => {
     vi.stubGlobal('fetch', spy)
     await streamChat({ ...cfg, baseUrl: 'https://api.test/v4///' }, [], { onDelta: () => {} })
     expect(spy.mock.calls[0][0]).toBe('https://api.test/v4/chat/completions')
+  })
+})
+
+describe('streamChatViaProxy（REQ-023 统一 key 模式：走后端代理，零密钥）', () => {
+  it('请求不含任何密钥/模型字段，逐 delta 回调', async () => {
+    const spy = vi.fn().mockResolvedValue(
+      new Response(sseBody(['{"choices":[{"delta":{"content":"你"}}]}', '{"choices":[{"delta":{"content":"好"}}]}']), {
+        status: 200,
+      }),
+    )
+    vi.stubGlobal('fetch', spy)
+    const got: string[] = []
+    const full = await streamChatViaProxy([{ role: 'user', content: 'hi' }], { onDelta: (d) => got.push(d) })
+    const [url, init] = spy.mock.calls[0]
+    expect(url).toBe('/api/chat/completions')
+    expect(init.credentials).toBe('same-origin')
+    const body = JSON.parse(init.body)
+    expect(body).toEqual({ messages: [{ role: 'user', content: 'hi' }] }) // 无 model / 密钥
+    expect(JSON.stringify(init) + JSON.stringify(body)).not.toContain('apiKey')
+    expect(got).toEqual(['你', '好'])
+    expect(full).toBe('你好')
+  })
+
+  it('401 → 会话失效：触发跳登录钩子 + auth 错误', async () => {
+    mockedNotifyUnauthorized.mockClear()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"detail":"登录已过期，请重新登录"}', { status: 401 })))
+    await expect(streamChatViaProxy([], { onDelta: () => {} })).rejects.toMatchObject({
+      kind: 'auth',
+      status: 401,
+      message: '登录已过期，请重新登录',
+    })
+    expect(mockedNotifyUnauthorized).toHaveBeenCalledTimes(1)
+  })
+
+  it('上游 401 经代理（502 upstream_auth）→ auth + 后端定稿文案', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          '{"detail":"请求失败：API 密钥无效，请检查高级设置中的供应商配置","code":"upstream_auth","upstream_status":401}',
+          { status: 502 },
+        ),
+      ),
+    )
+    await expect(streamChatViaProxy([], { onDelta: () => {} })).rejects.toMatchObject({
+      kind: 'auth',
+      message: '请求失败：API 密钥无效，请检查高级设置中的供应商配置',
+    })
+  })
+
+  it('上游 429 透传 → rateLimit + 定稿文案', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response('{"detail":"请求过于频繁，已被限流。请稍后重试","code":"upstream_rate_limited"}', { status: 429 }),
+      ),
+    )
+    await expect(streamChatViaProxy([], { onDelta: () => {} })).rejects.toMatchObject({
+      kind: 'rateLimit',
+      message: '请求过于频繁，已被限流。请稍后重试',
+    })
+  })
+
+  it('上游超时（504 upstream_timeout）→ server + 定稿文案', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response('{"detail":"请求超时，请稍后重试","code":"upstream_timeout"}', { status: 504 })),
+    )
+    await expect(streamChatViaProxy([], { onDelta: () => {} })).rejects.toMatchObject({
+      kind: 'server',
+      message: '请求超时，请稍后重试',
+    })
+  })
+
+  it('统一密钥未配置（503）→ server + 引导文案', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response('{"detail":"服务端未配置统一密钥，请联系管理员","code":"unified_key_missing"}', { status: 503 }),
+      ),
+    )
+    await expect(streamChatViaProxy([], { onDelta: () => {} })).rejects.toMatchObject({
+      kind: 'server',
+      message: '服务端未配置统一密钥，请联系管理员',
+    })
+  })
+
+  it('网络失败 → network（无法连接服务器）', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')))
+    const err = await streamChatViaProxy([], { onDelta: () => {} }).catch((e) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    expect(err.kind).toBe('network')
+    expect(err.message).toContain('无法连接服务器')
+  })
+
+  it('upstream_interrupted 帧 → network 连接中断（REQ-001 中断标注入口）', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(sseBody(['{"choices":[{"delta":{"content":"部分"}}]}', '{"upstream_interrupted":true}']), {
+          status: 200,
+        }),
+      ),
+    )
+    const err = await streamChatViaProxy([], { onDelta: () => {} }).catch((e) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    expect(err.kind).toBe('network')
+    expect(err.message).toBe('连接中断')
   })
 })
 

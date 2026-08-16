@@ -7,6 +7,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI
 
 from app.config import Settings
@@ -26,7 +27,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.db_version = db_version(conn)
         finally:
             conn.close()
-        yield
+        # 共享上游连接池：代理端点复用已建 TLS 会话，压低首块额外延迟（REQ-023 ≤500ms 验收）
+        app.state.http = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=10.0)
+        )
+        try:
+            yield
+        finally:
+            await app.state.http.aclose()
 
     app = FastAPI(title="ai-chat backend", version="0.1.0", lifespan=lifespan)
     app.include_router(auth.router)

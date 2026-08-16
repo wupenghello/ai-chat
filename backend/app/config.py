@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     # 同源部署（Vite dev proxy / 反代）下 Cookie 无需 Secure；上 HTTPS 后置 1（iter-7/8 部署时处理）
     cookie_secure: bool = False
     cookie_name: str = "ai_chat_session"
+    # 统一 key 模式三变量（design-iter-7 定夺①）：.env 提供，不入 git；key 为空 = 部署未配置
+    unified_key: str = ""
+    unified_base_url: str = "https://api.deepseek.com"
+    unified_model: str = "deepseek-chat"
 
 
 @lru_cache

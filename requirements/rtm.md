@@ -6,13 +6,13 @@
 
 | 需求 | 描述摘要 | 优先级 | 设计稿 | 实现（文件/模块） | 测试（用例/文件） | 状态 | 所在迭代 |
 |------|---------|--------|----------|-----------------|------------------|------|---------|
-| REQ-001 | 发送消息并流式接收回复 | P0 | design/iter-1（已基线） | api/client.ts, ComposerBox, MessageBubble | client.spec / composer.spec | 已验证（基线 v1 口径：DeepSeek 真实流式实测；GLM 按 DEF-002 不补验）。**v3 注记（NCR-iter6-005）**：iter-6 为直连上游过渡态，复验排 iter-7 T1（切后端代理后按新验收复验；iter-7 计划已批准 2026-08-16） | iter-1（复验 iter-7 T1） |
-| REQ-002 | 多轮上下文记忆（系统提示词 + 最近 20 轮截断） | P0 | 不涉及（数据层逻辑） | api/client.ts buildContext | client.spec | 已验证（基线 v1 口径）。**v3 注记（NCR-iter6-005）**：请求改经后端代理后复验，排 iter-7 T1（iter-7 计划已批准 2026-08-16） | iter-1（复验 iter-7 T1） |
+| REQ-001 | 发送消息并流式接收回复 | P0 | design/iter-1（已基线） | api/client.ts, ComposerBox, MessageBubble | client.spec / composer.spec | 已验证（基线 v1 口径：DeepSeek 真实流式实测；GLM 按 DEF-002 不补验）。**v3 注记（NCR-iter6-005）已销账（2026-08-16，iter-7 T1）**：代理架构下复验通过——浏览器统一 key 模式真实流式（新注册用户零配置）、停止保留部分+标注、断网错误气泡+重试恢复、空输入禁发均实测；pytest 52/52 | iter-1（复验 iter-7 T1 ✅） |
+| REQ-002 | 多轮上下文记忆（系统提示词 + 最近 20 轮截断） | P0 | 不涉及（数据层逻辑） | api/client.ts buildContext | client.spec | 已验证（基线 v1 口径）。**v3 注记（NCR-iter6-005）已销账（2026-08-16，iter-7 T1）**：代理架构下复验通过——浏览器实测请求体可观测：system 首位 + 多轮上下文携带、无 model/key 字段；20 轮截断由 client.spec 单测背书（buildContext 不变） | iter-1（复验 iter-7 T1 ✅） |
 | REQ-003 | 新建会话（生成中新建 = 中断并标注） | P0 | design/iter-1（已基线） | stores/sessions.ts, TheSidebar | sessions.spec | 已验证 | iter-1 |
 | REQ-004 | 查看历史会话并切换（CHG-001：切换不中断，后台继续生成） | P0 | design/iter-1（已基线） | stores/sessions.ts, SessionListItem | sessions.spec（CHG-001 用例） | 已验证 | iter-1 |
 | REQ-005 | 删除会话 | P0 | design/iter-1（已基线） | TheSidebar + ConfirmModal | sessions.spec | 已验证 | iter-1 |
 | REQ-006 | 会话本地持久化与恢复（IndexedDB） | P0 | design/iter-6（已基线，2026-08-15 CEO 批准——未登录门禁/路由守卫部分；数据层本身不涉及设计稿） | db/idb.ts, stores/sessions.ts | sessions.spec + 浏览器实测（修复 Proxy 克隆缺陷后端到端通过） | 已验证（基线 v3 改写后：数据层换源随 iter-6 T3——服务端为唯一持久层，idb 迁移源角色不变，换源后按新验收口径复验） | iter-1（改写落地 iter-6 T3） |
-| REQ-007 | 调用异常与降级提示（401 引导至设置页） | P0 | design/iter-1（已基线） | api/client.ts, ErrorBubble, AppToast | client.spec / sessions.spec + 浏览器实测（未配置引导、429 原因透传） | 已验证（基线 v1 口径）。**v3 注记（CHG-004/NCR-iter6-005）**：新增服务端层错误（登录态 401 跳登录已实现于 iter-6 T2、配额提示待 iter-8、上游经代理透传待 iter-7 复验） | iter-1 |
+| REQ-007 | 调用异常与降级提示（401 引导至设置页） | P0 | design/iter-1（已基线） | api/client.ts, ErrorBubble, AppToast | client.spec / sessions.spec + 浏览器实测（未配置引导、429 原因透传） | 已验证（基线 v1 口径）。**v3 注记（CHG-004/NCR-iter6-005）**：登录态 401 跳登录已实现于 iter-6 T2；**上游经代理错误映射已实现（iter-7 T1，design-iter-7 §3.1 定稿 10 场景：401/403→502 upstream_auth、429 透传、5xx→502、超时→504、未配置→503、流中断补帧；pytest 覆盖 + 浏览器断网/重试实测）**；配额提示待 iter-8（REQ-024 占位文案已定稿） | iter-1 |
 | REQ-008 | 系统提示词设置 | P1（CEO 已确认降级） | design/iter-2（已基线） | stores/settings.ts, SettingsForm, api/client.ts buildContext | settings.spec / sessions.spec + 走查（plans/iter-2-verify.md 24 条） | 已验证（"回复只用英文"端到端以请求体单测取证：system 恒居首位） | iter-2 |
 | REQ-009 | 会话自动命名 | P1 | design/iter-3（已基线） | stores/sessions.ts（titleOf 省略号 + renamed） | sessions-naming.spec | 已验证 | iter-3 |
 | REQ-010 | 停止生成 | P1 | design/iter-2（已基线） | stores/sessions.ts, ComposerBox, MessageBubble | sessions.spec / composer.spec / 集成用例 + 走查（含边界 19/20 实测） | 已验证 | iter-2 |

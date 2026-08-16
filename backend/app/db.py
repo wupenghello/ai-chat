@@ -48,7 +48,10 @@ MIGRATIONS: dict[int, str] = {
 
 
 def connect(db_path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path)
+    # check_same_thread=False（DEF-015）：FastAPI 把 sync 依赖（get_db 建连接）与 sync 路由
+    # 交给线程池时可能落在不同线程，默认的线程绑定会偶发 ProgrammingError（真实 uvicorn 下
+    # PUT /api/sessions 500）；连接本身每请求独立、WAL 串行安全，解除线程绑定无共享风险
+    conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode = WAL")
