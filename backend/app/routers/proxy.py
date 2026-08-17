@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 
 from app import agent, quota
 from app.config import Settings, get_settings
-from app.db import DatabaseDep
+from app.db import DatabaseDep, is_search_enabled
 from app.routers.auth import CurrentUser
 from app.tools import tools_for_user
 
@@ -207,9 +207,15 @@ async def chat_turn(
     history = agent.wire_messages_from_doc(doc)
     messages = agent.assemble_context(history, body.message, body.system_prompt or None)
 
-    # 工具可用性：自填档案「支持工具」开关（定夺①，默认开）+ 演示工具仅 admin（定夺④）
+    # 工具可用性（design-iter-14 §6.2/§6.3）：自填档案「支持工具」开关（定夺①，默认开；
+    # 统一 key 恒开）× admin 联网搜索总开关（KV 落库，回合受理时实时读——PUT 后下一回合
+    # 生效）× key 已配置（缺失时开关状态可存但 search 不注册，§6.1）。
+    # admin 关闭或 key 缺失 → search 不进下发 → 上游 tools 定义不含 search（模型不知其存在）。
     tools_allowed = profile is None or bool(profile["tools_enabled"])
-    tool_defs = tools_for_user(is_admin=user.is_admin) if tools_allowed else []
+    tool_defs = tools_for_user(
+        is_admin=user.is_admin,
+        gates={"search": is_search_enabled(conn) and bool(settings.search_key)},
+    ) if tools_allowed else []
 
     def record_usage(calls: int, tokens: int) -> None:
         # 回合结束/断连后落账 tokens（定夺⑧：已抵上游则回合已计，tokens 记已发生部分）

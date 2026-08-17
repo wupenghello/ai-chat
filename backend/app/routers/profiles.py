@@ -31,6 +31,7 @@ class ProfileOut(BaseModel):
     model: str
     api_key_masked: str
     is_active: bool
+    tools_enabled: bool  # 「支持工具」能力开关（design-iter-14 §6.3 加法字段，默认开）
 
 
 class ProfileIn(BaseModel):
@@ -38,6 +39,7 @@ class ProfileIn(BaseModel):
     base_url: str
     model: str
     api_key: str = ""  # 编辑时可空 = 沿用原值（安全：已存 key 不回显，见模态设计）
+    tools_enabled: bool | None = None  # 可选布尔：缺省 = 新建 true / 编辑沿用原值（老前端零破坏）
 
     @field_validator("name", "model")
     @classmethod
@@ -63,6 +65,7 @@ def _out(row) -> ProfileOut:
         model=row["model"],
         api_key_masked=mask_key(row["api_key"]),
         is_active=bool(row["is_active"]),
+        tools_enabled=bool(row["tools_enabled"]),
     )
 
 
@@ -95,12 +98,14 @@ def create_profile(body: ProfileIn, user: CurrentUser, conn: DatabaseDep) -> Pro
         body.base_url,
         body.model,
         body.api_key.strip(),
+        # 缺省 true（design-iter-14 §6.3：老形状不带字段 = 默认开）
+        1 if (body.tools_enabled is None or body.tools_enabled) else 0,
     )
     with conn:
         cur = conn.execute(
             """
-            INSERT INTO profiles (id, user_id, name, base_url, model, api_key)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO profiles (id, user_id, name, base_url, model, api_key, tools_enabled)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             row,
         )
@@ -112,24 +117,33 @@ def create_profile(body: ProfileIn, user: CurrentUser, conn: DatabaseDep) -> Pro
 def update_profile(
     profile_id: str, body: ProfileIn, user: CurrentUser, conn: DatabaseDep
 ) -> ProfileOut:
-    _own_row(conn, user.id, profile_id)
+    existing = _own_row(conn, user.id, profile_id)
     key = body.api_key.strip()
+    # tools_enabled 缺省 = 沿用原值（design-iter-14 §6.3：与 api_key「留空 = 沿用」同精神）
+    tools_enabled = (
+        existing["tools_enabled"] if body.tools_enabled is None
+        else (1 if body.tools_enabled else 0)
+    )
     with conn:
         if key:
             conn.execute(
                 """
                 UPDATE profiles SET name = ?, base_url = ?, model = ?, api_key = ?,
-                    updated_at = datetime('now') WHERE id = ? AND user_id = ?
+                    tools_enabled = ?, updated_at = datetime('now')
+                WHERE id = ? AND user_id = ?
                 """,
-                (body.name, body.base_url, body.model, key, profile_id, user.id),
+                (body.name, body.base_url, body.model, key, tools_enabled,
+                 profile_id, user.id),
             )
         else:  # key 留空 = 沿用原值（design-iter-7 §2.2 编辑模态）
             conn.execute(
                 """
                 UPDATE profiles SET name = ?, base_url = ?, model = ?,
-                    updated_at = datetime('now') WHERE id = ? AND user_id = ?
+                    tools_enabled = ?, updated_at = datetime('now')
+                WHERE id = ? AND user_id = ?
                 """,
-                (body.name, body.base_url, body.model, profile_id, user.id),
+                (body.name, body.base_url, body.model, tools_enabled,
+                 profile_id, user.id),
             )
     return _out(_own_row(conn, user.id, profile_id))
 

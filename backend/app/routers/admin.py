@@ -15,10 +15,11 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
+from pydantic.types import StrictBool
 
 from app import quota
 from app.config import Settings, get_settings
-from app.db import DatabaseDep
+from app.db import DatabaseDep, is_search_enabled, set_search_enabled
 from app.routers.auth import CurrentUser, UserOut
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -36,6 +37,16 @@ AdminUser = Annotated[UserOut, Depends(get_admin_user)]
 
 class QuotaBody(BaseModel):
     daily_limit: int | None  # None = 恢复默认档；正整数 = 自定义固定日限（设计定夺①）
+
+
+class AppSettingsBody(BaseModel):
+    """PUT /api/admin/settings 请求体（design-iter-14 §6.1 定案形状，逐字对照）。
+
+    search_enabled 必填布尔：缺字段/非布尔 422（StrictBool 拒绝 "false"/1 等隐式转换，
+    design §6.1「非布尔 422」逐字）。
+    """
+
+    search_enabled: StrictBool
 
 
 def _require_user(conn, user_id: int):
@@ -243,6 +254,17 @@ def _usage_row(r) -> dict:
     }
 
 
+@router.put("/settings")
+def put_settings(body: AppSettingsBody, admin: AdminUser, conn: DatabaseDep) -> dict[str, bool]:
+    """服务端设置写入（design-iter-14 §6.1 定夺⑥：B1 配置面板可扩展复用的独立写端点）。
+
+    联网搜索整体开关（REQ-025 A2 句）：落库运行时生效——PUT 后下一回合生效，无需重启；
+    幂等（重复 PUT 同值 200）；key 与开关分离（key = .env 部署配置改需重启，开关 = 落库）。
+    """
+    set_search_enabled(conn, body.search_enabled)
+    return {"search_enabled": body.search_enabled}
+
+
 @router.get("/overview")
 def overview(
     admin: AdminUser,
@@ -254,6 +276,8 @@ def overview(
     既有三字段零变化（全站配额条口径）；REQ-029 加法扩展三字段——今日 = 服务器本地自然日
     （usage_daily.day 同源；流跨零点 token 归请求日由 quota.record_tokens 保证）；
     请求/token 为全模式当日合计；总用户含已封禁与管理员；无记录即 0，不估算补齐（铁律 5）。
+    iter-14 T2 加法扩展两字段（design-iter-14 §6.1）：search_enabled（KV 落库实值）+
+    search_key_configured（只报有无，不泄露 key 内容）。
     """
     day = quota.today()
     used = conn.execute(
@@ -269,4 +293,6 @@ def overview(
         "total_users": total_users,
         "today_requests": int(used["req"]),
         "today_tokens": int(used["tok"]),
+        "search_enabled": is_search_enabled(conn),
+        "search_key_configured": bool(settings.search_key),
     }

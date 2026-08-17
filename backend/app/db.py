@@ -12,7 +12,7 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 MIGRATIONS: dict[int, str] = {
     1: """
@@ -101,6 +101,15 @@ MIGRATIONS: dict[int, str] = {
     ALTER TABLE usage_daily ADD COLUMN turns INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE profiles ADD COLUMN tools_enabled INTEGER NOT NULL DEFAULT 1;
     """,
+    # iter-14 T2（CHG-007 REQ-035 / design-iter-14 §6.1）：服务端运行时设置 KV——
+    # 首个键 search_enabled（admin 联网搜索整体开关：落库运行时生效、默认开 REQ-025；
+    # 行缺失 = 默认值，不回填存量库；B1 服务端配置面板可扩展复用本表）
+    7: """
+    CREATE TABLE app_settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+    """,
 }
 
 
@@ -135,6 +144,33 @@ def init_db(conn: sqlite3.Connection) -> None:
 
 def db_version(conn: sqlite3.Connection) -> int:
     return conn.execute("PRAGMA user_version").fetchone()[0]
+
+
+# ---------- 服务端运行时设置 KV（迁移 v7，design-iter-14 §6.1） ----------
+
+def kv_get(conn: sqlite3.Connection, key: str, default: str | None = None) -> str | None:
+    row = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
+    return default if row is None else row["value"]
+
+
+def kv_set(conn: sqlite3.Connection, key: str, value: str) -> None:
+    with conn:
+        conn.execute(
+            "INSERT INTO app_settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+
+
+_SEARCH_ENABLED = "search_enabled"  # 值 '0'/'1'；行缺失 = 默认开（REQ-025 口径）
+
+
+def is_search_enabled(conn: sqlite3.Connection) -> bool:
+    return kv_get(conn, _SEARCH_ENABLED, "1") != "0"
+
+
+def set_search_enabled(conn: sqlite3.Connection, enabled: bool) -> None:
+    kv_set(conn, _SEARCH_ENABLED, "1" if enabled else "0")
 
 
 @contextmanager
