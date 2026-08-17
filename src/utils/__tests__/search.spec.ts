@@ -55,3 +55,31 @@ describe('highlightSegments（REQ-016）', () => {
     ])
   })
 })
+
+describe('matchSession · v2 blocks（CHG-007 REQ-016 改写，iter-13 T2）', () => {
+  it('命中消息文本段；工具调用参数与结果不入索引', () => {
+    const session = {
+      id: 's1',
+      title: 't',
+      createdAt: 1,
+      updatedAt: 1,
+      messages: [
+        { id: 'm1', role: 'user', content: '北京天气', status: 'done' },
+        {
+          id: 'm2',
+          role: 'assistant',
+          content: [
+            { type: 'text', text: '查到的结论' },
+            { type: 'tool_call', tool_call_id: 'c1', name: 'demo_weather', arguments: '{"city":"北京"}' },
+            { type: 'tool_result', tool_call_id: 'c1', status: 'ok', result: 'SECRETRESULT', duration_ms: 1 },
+          ],
+          status: 'done',
+        },
+      ],
+    } as never
+    expect(matchSession(session, '结论')).toMatchObject({ type: 'body' })
+    expect(matchSession(session, 'SECRETRESULT')).toBeNull() // 结果不入索引
+    expect(matchSession(session, 'demo_weather')).toBeNull() // 工具名/参数不入索引
+  })
+})
+

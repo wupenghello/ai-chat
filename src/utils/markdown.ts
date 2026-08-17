@@ -8,6 +8,10 @@ import DOMPurify from 'dompurify'
 const md = new MarkdownIt({
   html: false, // 不解析原始 HTML，缩小注入面
   linkify: true,
+  // breaks:true：段内单换行 → <br>（聊天语义）。与 .md { white-space: normal }（DEF-030 修复）
+  // 成对配置：段内换行显式化由本项承载，块间换行符交由 normal 折叠——pre-wrap 继承曾把
+  // markdown-it 输出的块间 \n 渲染成整行空行（段间距 34px = 26px 行高 + 8px 段距）
+  breaks: true,
 })
 
 // 代码块：包一层深底容器 + 语言标签 + 复制按钮（结构对齐 design/iter-3 触点一）

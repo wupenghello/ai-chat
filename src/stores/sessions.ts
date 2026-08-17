@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { buildContext, streamChatViaProxy, type ChatMessage } from '../api/client'
+import { runChatTurn, type Block, type MessageContent } from '../api/client'
 import { useAuthStore } from './auth'
 import { useSettingsStore } from './settings'
 import * as db from '../db/persistence'
@@ -10,13 +10,16 @@ export type MessageStatus = 'done' | 'generating' | 'interrupted' | 'stopped' | 
 export interface Message {
   id: string
   role: 'user' | 'assistant'
-  content: string
+  /** CHG-007 REQ-032：v1 = string（存量与用户消息恒 string）；v2 assistant = Block[]（读时归一化在渲染层） */
+  content: MessageContent
   status: MessageStatus
   error?: { kind: string; message: string }
   /** REQ-019：有可切换版本时指向 Session.branches 的 key */
   forkId?: string
   /** REQ-019：版本序号（0=新版，1=旧版），供版本计数器展示 */
   forkIndex?: 0 | 1
+  /** CHG-007 REQ-030：turn.end(max_steps) 定型标注——消息末尾「已到单回合步数上限」pill（design-iter-13 §3.4） */
+  maxSteps?: boolean
 }
 
 export interface Session extends PersistedSession {
@@ -34,13 +37,6 @@ const titleOf = (text: string) => {
   const t = text.trim()
   if (!t) return '新会话'
   return t.length > 20 ? `${t.slice(0, 20)}…` : t
-}
-
-/** 会话内可作为上下文的消息：用户消息 + 有内容的 ai 回复（错误/空回复不进上下文） */
-function toContext(messages: Message[]): ChatMessage[] {
-  return messages
-    .filter((m) => m.role === 'user' || (m.role === 'assistant' && m.content && m.status !== 'error'))
-    .map((m) => ({ role: m.role, content: m.content }))
 }
 
 export const useSessionsStore = defineStore('sessions', {
@@ -84,9 +80,13 @@ export const useSessionsStore = defineStore('sessions', {
     persist(session: Session) {
       const { corrupted: _c, ...clean } = session
       // 深拷贝为普通对象后整档 PUT 服务端（LWW）；断网暂存与自动重试在 persistence 层（iter-7 T3），
-      // 此处仅兜非临时性失败（结构类 4xx，预期不可见）
+      // 此处仅兜非临时性失败（结构类 4xx，预期不可见）。
+      // CHG-007（iter-13 T2）：新客户端 PUT 恒带 schema: 2（写侧守卫载体，design-iter-13 §4.3；
+      // 消息级 v1/v2 与档级标记独立，老消息 string 原样保存）
+      const doc = JSON.parse(JSON.stringify(clean)) as typeof clean & { schema?: number }
+      doc.schema = 2
       return db
-        .saveSession(JSON.parse(JSON.stringify(clean)))
+        .saveSession(doc)
         .catch((e) => console.warn('会话保存失败（非临时性）', e))
     },
 
@@ -254,26 +254,64 @@ export const useSessionsStore = defineStore('sessions', {
       const controller = new AbortController()
       const epoch = (this.generation[session.id] = (this.generation[session.id] ?? 0) + 1)
       this.controllers[session.id] = controller
+      // CHG-007（iter-13 T2）：回合端点——上下文由服务端自库组装（REQ-033，请求体无历史数组）；
+      // 本回合用户消息 = aiMsg 之前最近一条 user（send/retry/editAndRegenerate 均为相邻结构）
+      const idx = session.messages.findIndex((m) => m.id === aiMsg.id)
+      let userText = ''
+      for (let i = idx - 1; i >= 0; i--) {
+        const m = session.messages[i]
+        if (m.role === 'user') {
+          userText = typeof m.content === 'string' ? m.content : ''
+          break
+        }
+      }
+      aiMsg.content = [] // v2 写侧：assistant 消息以 blocks 起稿（至少一段在定型时保证）
+      const blocks = aiMsg.content as Block[]
+      // 回合端点在服务端按会话 id 取库组装（REQ-033）：必须确保本条用户消息已落服务端
+      // ——首次 send 的 createSession/persist 均为 fire-and-forget，不 await 会与回合请求竞态
+      // （真实走查发现的集成缺陷：回合先到 → 服务端 404）。persist 已 catch 非临时性失败。
+      await this.persist(session)
       try {
-        // REQ-023（iter-7 T2）：全部经后端代理——自填/统一 key 由服务端按生效档案路由；
-        // CHG-002 语义天然保持：档案在请求开始时由服务端读取，生成中切换下一请求才生效
-        // REQ-008：系统提示词（如有）置于首位；buildContext 保证其不受 20 轮截断影响
-        const context = buildContext(
-          settings.systemPrompt
-            ? [{ role: 'system', content: settings.systemPrompt }, ...toContext(session.messages.filter((m) => m.id !== aiMsg.id))]
-            : toContext(session.messages.filter((m) => m.id !== aiMsg.id)),
-        )
-        const full = await streamChatViaProxy(
-          context,
+        const reason = await runChatTurn(
+          session.id,
+          userText,
+          { systemPrompt: settings.systemPrompt || undefined },
           {
-            onDelta: (d) => {
-              aiMsg.content += d
+            onEvent: (ev) => {
+              // TurnEvent 含宽型未知成员：字面量判别后分支内显式断言字段
+              if (ev.type === 'text.delta') {
+                const e = ev as { type: 'text.delta'; text: string }
+                const last = blocks[blocks.length - 1]
+                // 工具事件后首帧开新文本段（design-iter-13 §4.1：blocks 顺序 = 事件顺序）
+                if (last && last.type === 'text') last.text += e.text
+                else blocks.push({ type: 'text', text: e.text })
+              } else if (ev.type === 'tool.call') {
+                const e = ev as { type: 'tool.call'; tool_call_id: string; name: string; arguments: string }
+                blocks.push({ type: 'tool_call', tool_call_id: e.tool_call_id, name: e.name, arguments: e.arguments })
+              } else if (ev.type === 'tool.result') {
+                const e = ev as {
+                  type: 'tool.result'
+                  tool_call_id: string
+                  status: 'ok' | 'error' | 'timeout'
+                  result: string
+                  duration_ms: number
+                }
+                blocks.push({
+                  type: 'tool_result',
+                  tool_call_id: e.tool_call_id,
+                  status: e.status,
+                  result: e.result,
+                  duration_ms: e.duration_ms,
+                })
+              }
+              // 其余事件（turn.start/step/usage/未知 type）不驱动 UI（design-iter-13 §4.1）
             },
           },
           controller.signal,
         )
-        if (!aiMsg.content) aiMsg.content = full // 兜底：兼容未走流式回调的响应
+        if (blocks.length === 0) blocks.push({ type: 'text', text: '' })
         aiMsg.status = 'done'
+        if (reason === 'max_steps') aiMsg.maxSteps = true
       } catch (e) {
         if ((e as Error).name === 'AbortError') {
           // REQ-010 用户主动停止 = stopped；REQ-003/006 系统中断 = interrupted

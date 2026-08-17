@@ -352,6 +352,15 @@ describe('调配额模态（design-iter-12 §2 治理沿用，REQ-025 零回退�
     await flushPromises()
   }
 
+  it('DEF-028 销账断言面：默认档位副文案为回合计口径（CHG-007 REQ-024 改写，逐字）', async () => {
+    const { w } = await mountView()
+    await openQuotaModal(w)
+    // NCR-iter13-004 整改：该文案即 iter-12 NCR-002 同一位，逐字断言防第 3 次复发
+    expect(document.querySelector('.q-desc')?.textContent).toBe(
+      '统一 key = 免费档 · 自填 key = 高档（每日对话回合数，部署配置默认值）',
+    )
+  })
+
   it('正整数校验：小数不入库，行内错误文案', async () => {
     const { w } = await mountView()
     await openQuotaModal(w)

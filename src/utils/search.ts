@@ -1,4 +1,5 @@
 import type { Session } from '../stores/sessions'
+import { contentText } from '../api/client'
 
 /** 搜索结果：标题命中（优先）或正文命中（带上下文片段） */
 export interface SearchHit {
@@ -13,14 +14,16 @@ function snippetAround(content: string, index: number, length: number): string {
   return (start > 0 ? '…' : '') + content.slice(start, end) + (end < content.length ? '…' : '')
 }
 
-/** REQ-016：匹配会话——标题命中优先返回，其次正文命中；损坏会话/空关键词返回 null */
+/** REQ-016（CHG-007 改写）：标题或消息**文本段**命中——blocks 消息取文本段拼接，
+ * 工具调用参数与结果不入索引（design-iter-13 §2 适配面）；损坏会话/空关键词返回 null */
 export function matchSession(session: Session, query: string): SearchHit | null {
   const q = query.trim().toLowerCase()
   if (!q || session.corrupted) return null
   if (session.title.toLowerCase().includes(q)) return { type: 'title' }
   for (const m of session.messages) {
-    const idx = m.content.toLowerCase().indexOf(q)
-    if (idx >= 0) return { type: 'body', snippet: snippetAround(m.content, idx, q.length) }
+    const text = contentText(m.content)
+    const idx = text.toLowerCase().indexOf(q)
+    if (idx >= 0) return { type: 'body', snippet: snippetAround(text, idx, q.length) }
   }
   return null
 }

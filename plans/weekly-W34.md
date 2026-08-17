@@ -32,6 +32,24 @@
   - 整改后复跑：前端 254/254 + guard + 构建 + 后端 139/139 + e2e 新库重建 49/49 全绿
 - **复盘关闭（G4 过，2026-08-17）**：四问 CEO「四问全认可」；改进 A/B/C 全批落制度 **v1.4.10**（A CHG 承诺清单化 → requirements §3；B 走查断言面 → testing §5 第 6 条；C 走查脚本自迭代口径 → tailoring 补记）；CHG-006 落地核对清单补建为范本（10 项全 ✅）；容量维持 Σ≤10（连续七轮零偏差）；见 retros/iter-12.md
 
+
+---
+
+## iter-13（A1 Agent 地基，2026-08-17 计划批准并当日全交付；NCR-iter13-003 整改补录）
+
+**变更与基线**：CHG-007 批准出基线 req-baseline-v5（dcc7dd6 + tag）——agent 架构升级第一期：REQ-030~035 新增、存量改写 6 条、两定夺项定案（①档案级工具开关 ②schema:2 写侧守卫 409）；架构升级方向审核稿留档（七期路线 A1→D2，docs/architecture-upgrade-plan-2026-08-17.md，愿景叙事 §九）。
+
+**任务交付**（计划 5bf78ad；统一提交 5 笔 = NCR-iter13-001 整改）：
+- T0 design-iter-13 基线（6c874e8 + tag）：九项定夺全按推荐（步数 10/超时 120s/32KiB/仅 admin/独立端点 /api/chat/turn/turns 列/断连已抵上游则计）；走查清单 51 条。
+- T1 后端 agent 运行时（a5d10c3）：ReAct 循环三护栏 + 工具网关六项校验 + SSE 解析重组 + 回合端点 + 配额回合化（迁移 v6）+ schema:2 守卫 + echo/demo_weather；**pytest 139→182（+43）+ ruff，既有 139 零改动**。
+- T2 前端协议与渲染（本笔）：blocks 模型 + ToolStepCard 四态徽章 + 回合端点接入 + export/search/markdown 适配 + DEF-028 核销；**vitest 254→273（存量逐用例迁移映射登记）+ vue-tsc + guard + 构建**。
+- 走查：真实 Chrome 全链路（真 DeepSeek 统一 key，北极星链路：工具卡运行中→完成→综合回答）+ 51 条清单脚本化（scripts/e2e-walkthrough-13.mjs，38 断言 0 FAIL + 13 条自动化承载标注；截图 6 张）。
+- 缺陷：DEF-028 销账；DEF-029（回合与会话 PUT 竞态 404）/030（markdown 块间空行，iter-1 存量）/031（用户气泡左缘，iter-11 存量基线偏离）/032（错误共存形态）——CEO 走查×2 + 脚本走查×2，全部当轮修复同提交登记。
+- QA 审计：有条件通过 5 NCR（retros/qa-audit-iter-13.md）——002/004/005 当轮整改，001/003 经本统一提交闭环（tailoring 已补登偏离与防复发口径）。
+
+**Code Review（G4 前置）**：iter-13 全量 review（3c7a834..HEAD，5 笔）——**待产出呈 CEO 过目**（OBS-7）。
+
+
 ## 技术债
 
 - 无新增

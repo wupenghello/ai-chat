@@ -45,3 +45,48 @@ describe('sessionToMarkdown（REQ-013）', () => {
     expect(md).toContain('const a = 1')
   })
 })
+
+describe('sessionToMarkdown · v2 blocks（CHG-007 REQ-013 改写，iter-13 T2）', () => {
+  it('文本段照旧 + 工具段一行「> [工具 name · 状态]」（格式逐字断言面）', () => {
+    const s = makeSession('工具会话', [
+      { id: 'm1', role: 'user', content: '北京天气', status: 'done' },
+      {
+        id: 'm2',
+        role: 'assistant',
+        content: [
+          { type: 'text', text: '我先查一下' },
+          { type: 'tool_call', tool_call_id: 'c1', name: 'demo_weather', arguments: '{"city":"北京"}' },
+          { type: 'tool_result', tool_call_id: 'c1', status: 'ok', result: '北京：晴', duration_ms: 5 },
+          { type: 'text', text: '今天晴。' },
+        ],
+        status: 'done',
+      },
+    ] as never)
+    const md = sessionToMarkdown(s)
+    expect(md).toContain('我先查一下')
+    expect(md).toContain('> [工具 demo_weather · 完成]')
+    expect(md).toContain('今天晴。')
+    expect(md).not.toContain('北京：晴') // 工具结果本体不入导出正文
+  })
+
+  it('状态词四态：失败 / 超时 / 已中断（无结果派生）', () => {
+    const mk = (result?: { status: string }) =>
+      makeSession('t', [
+        { id: 'm1', role: 'user', content: 'q', status: 'done' },
+        {
+          id: 'm2',
+          role: 'assistant',
+          content: [
+            { type: 'text', text: 'r' },
+            { type: 'tool_call', tool_call_id: 'c1', name: 'echo', arguments: '{}' },
+            ...(result ? [{ type: 'tool_result', tool_call_id: 'c1', status: result.status, result: 'x', duration_ms: 1 }] : []),
+          ],
+          status: 'done',
+        },
+      ] as never)
+    expect(sessionToMarkdown(mk({ status: 'error' }))).toContain('> [工具 echo · 失败]')
+    expect(sessionToMarkdown(mk({ status: 'timeout' }))).toContain('> [工具 echo · 超时]')
+    expect(sessionToMarkdown(mk(undefined))).toContain('> [工具 echo · 已中断]')
+  })
+})
+

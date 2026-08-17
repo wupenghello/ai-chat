@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { ApiError, buildContext, streamChatViaProxy, type ChatMessage } from '../client'
+import { ApiError, runChatTurn } from '../client'
 
 vi.mock('../../api/backend', () => ({
   notifyUnauthorized: vi.fn(),
@@ -10,14 +10,22 @@ import { notifyUnauthorized } from '../../api/backend'
 
 const mockedNotifyUnauthorized = vi.mocked(notifyUnauthorized)
 
-function sseBody(deltas: string[]): ReadableStream<Uint8Array> {
+/**
+ * iter-13 T2（CHG-007）：回合端点客户端。口径迁移登记：
+ * - buildContext 组（最近 20 轮截断 3 例）退役 → 服务端组装等价 pytest 承载
+ *   （backend/tests/test_turn.py test_组装等价_* / test_组装_库内已含本条消息_*）
+ * - upstream_interrupted 帧例退役 → v2 后端将上游中断转为 error 事件（backend test_turn 错误映射组）
+ * - HTTP 层错误映射组（401/403/502/429/504/503/网络失败）语义不变、逐例平移
+ */
+
+function sseBody(events: object[]): ReadableStream<Uint8Array> {
   const enc = new TextEncoder()
   let i = 0
   return new ReadableStream({
     pull(controller) {
-      if (i < deltas.length) {
+      if (i < events.length) {
         // 故意把一帧拆两包，验证跨包解析
-        const frame = `data: ${deltas[i]}\n\n`
+        const frame = `data: ${JSON.stringify(events[i])}\n\n`
         const half = Math.floor(frame.length / 2)
         controller.enqueue(enc.encode(frame.slice(0, half)))
         controller.enqueue(enc.encode(frame.slice(half)))
@@ -34,30 +42,113 @@ beforeEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('streamChatViaProxy（REQ-023 统一 key 模式：走后端代理，零密钥）', () => {
-  it('请求不含任何密钥/模型字段，逐 delta 回调', async () => {
+async function turn(message = 'hi', opts: { systemPrompt?: string } = {}) {
+  const got: object[] = []
+  const reason = await runChatTurn('s1', message, opts, { onEvent: (ev) => got.push(ev) })
+  return { got, reason }
+}
+
+describe('runChatTurn（CHG-007 REQ-030/033：回合端点 + SSE v2 九事件）', () => {
+  it('请求体 = 会话 id + 本条消息（无历史数组），事件逐帧回调', async () => {
     const spy = vi.fn().mockResolvedValue(
-      new Response(sseBody(['{"choices":[{"delta":{"content":"你"}}]}', '{"choices":[{"delta":{"content":"好"}}]}']), {
-        status: 200,
-      }),
+      new Response(
+        sseBody([
+          { type: 'turn.start', session_id: 's1', turn_id: 't1' },
+          { type: 'text.delta', text: '你' },
+          { type: 'text.delta', text: '好' },
+          { type: 'turn.end', reason: 'done' },
+        ]),
+        { status: 200 },
+      ),
     )
     vi.stubGlobal('fetch', spy)
-    const got: string[] = []
-    const full = await streamChatViaProxy([{ role: 'user', content: 'hi' }], { onDelta: (d) => got.push(d) })
+    const { got, reason } = await turn()
     const [url, init] = spy.mock.calls[0]
-    expect(url).toBe('/api/chat/completions')
+    expect(url).toBe('/api/chat/turn')
     expect(init.credentials).toBe('same-origin')
     const body = JSON.parse(init.body)
-    expect(body).toEqual({ messages: [{ role: 'user', content: 'hi' }] }) // 无 model / 密钥
+    expect(body).toEqual({ session_id: 's1', message: 'hi' }) // 无历史数组 / 无密钥
     expect(JSON.stringify(init) + JSON.stringify(body)).not.toContain('apiKey')
-    expect(got).toEqual(['你', '好'])
-    expect(full).toBe('你好')
+    expect(got.map((e) => (e as { type: string }).type)).toEqual([
+      'turn.start',
+      'text.delta',
+      'text.delta',
+      'turn.end',
+    ])
+    expect(reason).toBe('done')
+  })
+
+  it('system_prompt 可选上传（REQ-008 客户端设置随回合上传，design-iter-13 §4.2 补注）', async () => {
+    const spy = vi.fn().mockResolvedValue(
+      new Response(sseBody([{ type: 'turn.end', reason: 'done' }]), { status: 200 }),
+    )
+    vi.stubGlobal('fetch', spy)
+    await turn('hi', { systemPrompt: '你是助手' })
+    expect(JSON.parse(spy.mock.calls[0][1].body)).toEqual({
+      session_id: 's1',
+      message: 'hi',
+      system_prompt: '你是助手',
+    })
+  })
+
+  it('工具事件透传：tool.call / tool.result 按序回调，max_steps 回合 resolve 其 reason', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          sseBody([
+            { type: 'turn.start', session_id: 's1', turn_id: 't1' },
+            { type: 'tool.call', tool_call_id: 'c1', name: 'demo_weather', arguments: '{"city":"北京"}' },
+            { type: 'tool.result', tool_call_id: 'c1', status: 'ok', result: '北京：晴', duration_ms: 12 },
+            { type: 'turn.end', reason: 'max_steps' },
+          ]),
+          { status: 200 },
+        ),
+      ),
+    )
+    const { got, reason } = await turn()
+    expect(got[1]).toMatchObject({ type: 'tool.call', name: 'demo_weather' })
+    expect(got[2]).toMatchObject({ type: 'tool.result', status: 'ok', result: '北京：晴' })
+    expect(reason).toBe('max_steps')
+  })
+
+  it('未知事件 type 静默跳过不抛错（前向兼容，design-iter-13 §4.1）', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(sseBody([{ type: 'future.event', payload: { x: 1 } }, { type: 'turn.end', reason: 'done' }]), {
+          status: 200,
+        }),
+      ),
+    )
+    const { got, reason } = await turn()
+    expect(reason).toBe('done')
+    expect((got[0] as { type: string }).type).toBe('future.event')
+  })
+
+  it('流内 error 事件 → ApiError（REQ-007 错误体系映射）', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          sseBody([
+            { type: 'text.delta', text: '部分' },
+            { type: 'error', code: 'upstream_auth', message: '请求失败：API 密钥无效，请检查高级设置中的供应商配置' },
+          ]),
+          { status: 200 },
+        ),
+      ),
+    )
+    await expect(turn()).rejects.toMatchObject({
+      kind: 'auth',
+      message: '请求失败：API 密钥无效，请检查高级设置中的供应商配置',
+    })
   })
 
   it('401 → 会话失效：触发跳登录钩子 + auth 错误', async () => {
     mockedNotifyUnauthorized.mockClear()
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"detail":"登录已过期，请重新登录"}', { status: 401 })))
-    await expect(streamChatViaProxy([], { onDelta: () => {} })).rejects.toMatchObject({
+    await expect(runChatTurn('s1', 'q', {}, { onEvent: () => {} })).rejects.toMatchObject({
       kind: 'auth',
       status: 401,
       message: '登录已过期，请重新登录',
@@ -68,7 +159,7 @@ describe('streamChatViaProxy（REQ-023 统一 key 模式：走后端代理，零
   it('403 账号已被封禁（在线被封禁，design-iter-8 走查 29）→ 标记 + 跳登录钩子', async () => {
     mockedNotifyUnauthorized.mockClear()
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"detail":"账号已被封禁"}', { status: 403 })))
-    await expect(streamChatViaProxy([], { onDelta: () => {} })).rejects.toMatchObject({
+    await expect(runChatTurn('s1', 'q', {}, { onEvent: () => {} })).rejects.toMatchObject({
       status: 403,
       message: '账号已被封禁',
     })
@@ -87,7 +178,7 @@ describe('streamChatViaProxy（REQ-023 统一 key 模式：走后端代理，零
         ),
       ),
     )
-    await expect(streamChatViaProxy([], { onDelta: () => {} })).rejects.toMatchObject({
+    await expect(runChatTurn('s1', 'q', {}, { onEvent: () => {} })).rejects.toMatchObject({
       kind: 'auth',
       message: '请求失败：API 密钥无效，请检查高级设置中的供应商配置',
     })
@@ -100,7 +191,7 @@ describe('streamChatViaProxy（REQ-023 统一 key 模式：走后端代理，零
         new Response('{"detail":"请求过于频繁，已被限流。请稍后重试","code":"upstream_rate_limited"}', { status: 429 }),
       ),
     )
-    await expect(streamChatViaProxy([], { onDelta: () => {} })).rejects.toMatchObject({
+    await expect(runChatTurn('s1', 'q', {}, { onEvent: () => {} })).rejects.toMatchObject({
       kind: 'rateLimit',
       message: '请求过于频繁，已被限流。请稍后重试',
     })
@@ -111,77 +202,32 @@ describe('streamChatViaProxy（REQ-023 统一 key 模式：走后端代理，零
       'fetch',
       vi.fn().mockResolvedValue(new Response('{"detail":"请求超时，请稍后重试","code":"upstream_timeout"}', { status: 504 })),
     )
-    await expect(streamChatViaProxy([], { onDelta: () => {} })).rejects.toMatchObject({
+    await expect(runChatTurn('s1', 'q', {}, { onEvent: () => {} })).rejects.toMatchObject({
       kind: 'server',
       message: '请求超时，请稍后重试',
     })
   })
 
-  it('统一密钥未配置（503）→ server + 引导文案', async () => {
+  it('配额拦截（429 quota_exhausted 回合受理即拦）→ rateLimit + 后端文案', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
-        new Response('{"detail":"服务端未配置统一密钥，请联系管理员","code":"unified_key_missing"}', { status: 503 }),
+        new Response('{"detail":"配额已用尽，将于明日 00:00 重置。可在高级设置使用自有密钥解锁更高配额","code":"quota_exhausted"}', {
+          status: 429,
+        }),
       ),
     )
-    await expect(streamChatViaProxy([], { onDelta: () => {} })).rejects.toMatchObject({
-      kind: 'server',
-      message: '服务端未配置统一密钥，请联系管理员',
+    await expect(runChatTurn('s1', 'q', {}, { onEvent: () => {} })).rejects.toMatchObject({
+      kind: 'rateLimit',
+      status: 429,
     })
   })
 
   it('网络失败 → network（无法连接服务器）', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')))
-    const err = await streamChatViaProxy([], { onDelta: () => {} }).catch((e) => e)
+    const err = await runChatTurn('s1', 'q', {}, { onEvent: () => {} }).catch((e) => e)
     expect(err).toBeInstanceOf(ApiError)
     expect(err.kind).toBe('network')
     expect(err.message).toContain('无法连接服务器')
-  })
-
-  it('upstream_interrupted 帧 → network 连接中断（REQ-001 中断标注入口）', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        new Response(sseBody(['{"choices":[{"delta":{"content":"部分"}}]}', '{"upstream_interrupted":true}']), {
-          status: 200,
-        }),
-      ),
-    )
-    const err = await streamChatViaProxy([], { onDelta: () => {} }).catch((e) => e)
-    expect(err).toBeInstanceOf(ApiError)
-    expect(err.kind).toBe('network')
-    expect(err.message).toBe('连接中断')
-  })
-})
-
-describe('buildContext（REQ-002 最近 20 轮截断）', () => {
-  function history(rounds: number): ChatMessage[] {
-    const msgs: ChatMessage[] = [{ role: 'system', content: 'sys' }]
-    for (let i = 1; i <= rounds; i++) {
-      msgs.push({ role: 'user', content: `问${i}` }, { role: 'assistant', content: `答${i}` })
-    }
-    return msgs
-  }
-
-  it('30 轮历史仅携带最近 20 轮，且系统提示词保留', () => {
-    const out = buildContext(history(30))
-    expect(out[0]).toEqual({ role: 'system', content: 'sys' })
-    expect(out).toHaveLength(41) // 1 system + 20 轮 × 2
-    expect(out[1].content).toBe('问11') // 第 11~30 轮
-    expect(out.at(-1)!.content).toBe('答30')
-  })
-
-  it('不足 20 轮时全量携带', () => {
-    expect(buildContext(history(3))).toHaveLength(7)
-  })
-
-  it('截断后不以悬空 assistant 开头', () => {
-    const msgs: ChatMessage[] = [
-      { role: 'user', content: 'u1' },
-      { role: 'assistant', content: 'a1' },
-      ...history(20).slice(1), // 20 轮
-    ]
-    const out = buildContext(msgs)
-    expect(out.find((m) => m.role !== 'system')!.role).toBe('user')
   })
 })

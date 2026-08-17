@@ -4,7 +4,7 @@
  * 背景：iter-1 的 27 个单测覆盖 store/组件逻辑，但"发送→不刷新页面流式渲染"这类
  * 真实组件树路径无自动化用例，Pinia 响应式代理真 bug（发消息不刷新）由 CEO 试用才发现。
  * 本文件挂载完整 App.vue（真实 Pinia + 真实组件树），仅 mock IndexedDB 与网络层
- * （api/client.streamChatViaProxy），断言 DOM 行为。
+ * （api/client.runChatTurn，iter-13 T2 回合端点化），断言 DOM 行为。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
@@ -21,20 +21,20 @@ vi.mock('../db/persistence', () => ({
 
 vi.mock('../api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/client')>()),
-  streamChatViaProxy: vi.fn(),
+  runChatTurn: vi.fn(),
 }))
 
-import { streamChatViaProxy, type StreamHandlers } from '../api/client'
+import { runChatTurn, type TurnHandlers, type TurnEndReason } from '../api/client'
 
-const mockedStream = vi.mocked(streamChatViaProxy)
+const mockedStream = vi.mocked(runChatTurn)
 
-/** 挂起式流式 mock：delta 手动推送，finish 手动收尾——模拟真实网络的分包与耗时 */
+/** 挂起式回合 mock：事件手动推送，finish 手动收尾——模拟真实网络的分包与耗时（iter-13 T2 事件流） */
 function gatedStream() {
   let delta!: (t: string) => void
   let finish!: () => void
-  const promise = new Promise<string>((res) => (finish = () => res('完整回复')))
-  mockedStream.mockImplementation((_m, h: StreamHandlers) => {
-    delta = (t) => h.onDelta(t)
+  const promise = new Promise<TurnEndReason>((res) => (finish = () => res('done')))
+  mockedStream.mockImplementation((_sid: string, _msg: string, _opts: { systemPrompt?: string }, h: TurnHandlers) => {
+    delta = (t: string) => h.onEvent({ type: 'text.delta', text: t })
     return promise
   })
   return { push: (t: string) => delta(t), finish: () => finish() }

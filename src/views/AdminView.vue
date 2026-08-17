@@ -610,7 +610,7 @@ onBeforeUnmount(() => {
             </p>
             <label class="q-opt">
               <input v-model="quotaCustom" :value="false" type="radio" name="qmode" />
-              <span>按默认档位（随密钥模式）<span class="q-desc">统一 key = 免费档 · 自填 key = 高档（部署配置默认值）</span></span>
+              <span>按默认档位（随密钥模式）<span class="q-desc">统一 key = 免费档 · 自填 key = 高档（每日对话回合数，部署配置默认值）</span></span>
             </label>
             <label class="q-opt" :class="{ invalid: quotaErr }">
               <input v-model="quotaCustom" :value="true" type="radio" name="qmode" />

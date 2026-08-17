@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
 import type { Message } from '../stores/sessions'
+import { contentBlocks, contentText, type Block, type ToolResultBlock } from '../api/client'
 import { renderMarkdown } from '../utils/markdown'
+import ToolStepCard from './ToolStepCard.vue'
 
 const props = defineProps<{ message: Message; followingCount?: number }>()
 const emit = defineEmits<{ edit: [id: string, text: string]; toggleVersion: [forkId: string] }>()
@@ -15,8 +17,16 @@ const canSave = computed(() => editing.value && draft.value.trim().length > 0)
 // CHG-003 复制整条消息（复制原文，非渲染后 HTML）
 const copied = ref(false)
 
-// AI 回复按 Markdown 渲染（流式增量：每次 onDelta 触发重渲染）
-const rendered = computed(() => renderMarkdown(props.message.content))
+// CHG-007 REQ-032（iter-13 T2）：读时归一化（v1 string ⇒ 单文本段）进同一渲染管线；
+// v1/v2 消息同流无差别呈现（逐字零回退）。文本段走 Markdown（REQ-011 改写：仅 text 段），
+// 工具调用段渲染步骤卡（结果按 tool_call_id 就地配对；tool_result 段不独立渲染）
+const blocks = computed<Block[]>(() => contentBlocks(props.message.content))
+const results = computed(() => {
+  const map = new Map<string, ToolResultBlock>()
+  for (const b of blocks.value) if (b.type === 'tool_result') map.set(b.tool_call_id, b)
+  return map
+})
+const renderedOf = (text: string) => renderMarkdown(text)
 
 async function copyToClipboard(text: string): Promise<boolean> {
   try {
@@ -56,9 +66,9 @@ function onCopy(e: MouseEvent) {
   })
 }
 
-// CHG-003：复制整条消息原文，短暂反馈「已复制」
+// CHG-003：复制整条消息原文，短暂反馈「已复制」——文本段空行拼接，工具内容不入（design-iter-13 §2 适配面）
 function copyMessage() {
-  void copyToClipboard(props.message.content).then((ok) => {
+  void copyToClipboard(contentText(props.message.content)).then((ok) => {
     if (!ok) return
     copied.value = true
     window.setTimeout(() => (copied.value = false), 1500)
@@ -67,7 +77,7 @@ function copyMessage() {
 
 // REQ-015 编辑态交互：进入编辑回填原文本；Enter 确认、Shift+Enter 换行、Esc 取消
 function startEdit() {
-  draft.value = props.message.content
+  draft.value = typeof props.message.content === 'string' ? props.message.content : contentText(props.message.content)
   editing.value = true
   void nextTick(() => editEl.value?.focus())
 }
@@ -118,9 +128,21 @@ function onEditKey(e: KeyboardEvent) {
       </div>
 
       <div v-else class="bubble" :class="message.role">
-        <!-- 用户消息保持纯文本；AI 回复走 Markdown 富文本（v-html 内容，样式见下方非 scoped 块） -->
+        <!-- 用户消息保持纯文本（恒 string，design-iter-13 §2 写侧） -->
         <span v-if="message.role === 'user'" class="content">{{ message.content }}</span>
-        <div v-else class="md" v-html="rendered" @click="onCopy"></div>
+        <!-- AI 回复（REQ-032）：blocks 顺序渲染——文本段走 Markdown 富文本，工具调用段渲染步骤卡；
+             顺序 = 事件顺序，不重排、不合并跨工具卡文本段（design-iter-13 §2） -->
+        <template v-else>
+          <template v-for="(b, i) in blocks" :key="i">
+            <div v-if="b.type === 'text'" class="md" v-html="renderedOf(b.text)" @click="onCopy"></div>
+            <ToolStepCard
+              v-else-if="b.type === 'tool_call'"
+              :call="b"
+              :result="results.get(b.tool_call_id)"
+              :live="message.status === 'generating'"
+            />
+          </template>
+        </template>
 
         <span v-if="message.status === 'generating'" class="cursor" aria-hidden="true" />
         <span v-if="message.status === 'generating'" class="status-hint">正在生成…</span>
@@ -129,6 +151,8 @@ function onEditKey(e: KeyboardEvent) {
           <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect width="10" height="10" rx="1.5" fill="currentColor" /></svg>
           已停止生成
         </span>
+        <!-- REQ-030：turn.end(max_steps) 回合级标注（design-iter-13 §3.4，文案逐字） -->
+        <span v-if="message.maxSteps && message.status !== 'generating'" class="pill max-steps">已到单回合步数上限</span>
       </div>
 
       <!-- CHG-003：消息下方操作栏（icon-only，hover 出 tooltip；复制/修改 hover 才显示） -->
@@ -169,6 +193,12 @@ function onEditKey(e: KeyboardEvent) {
   display: flex;
   width: 100%;
   animation: rise 0.25s ease;
+}
+/* DEF-031 修复（2026-08-17，CEO 走查发现）：design-iter-11 基线「用户消息浅色气泡右对齐」
+   ——本规则缺失使用户气泡自 iter-11 起停靠正文列左缘（.row width:100% 架空了外层
+   row-wrap 的 justify-content:flex-end） */
+.row.user {
+  justify-content: flex-end;
 }
 /* CHG-003：消息列（气泡 + 下方操作栏），宽度由本列约束 */
 .msg-col {
@@ -236,6 +266,16 @@ function onEditKey(e: KeyboardEvent) {
   background: var(--c-hover-bg);
   border-radius: 999px;
   padding: 2px 8px;
+}
+/* REQ-030：步数上限 pill（warning 族——时效性截停，design-iter-13 §3.4） */
+.pill.max-steps {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--c-warning);
+  background: var(--c-warning-l);
+  border-radius: 999px;
+  padding: 2px 10px;
 }
 /* CHG-003：消息下方操作栏——icon-only、hover 出 tooltip；复制/修改 hover 才显示，版本箭头常显 */
 .action-row {
@@ -366,6 +406,10 @@ function onEditKey(e: KeyboardEvent) {
   font-size: 15px;
   line-height: 1.75;
   color: var(--c-text-1);
+  /* DEF-030 修复（2026-08-17，CEO 走查发现）：气泡容器的 pre-wrap（用户纯文本需要）
+     曾继承进本容器，把 markdown-it 块间 \n 渲染成整行空行（段间距 34px）。
+     段内单换行改由 markdown-it breaks:true 显式 <br> 承载，语义不变 */
+  white-space: normal;
 }
 .md p {
   margin: 0 0 8px;

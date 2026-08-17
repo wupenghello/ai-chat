@@ -9,15 +9,15 @@ vi.mock('../../db/persistence', () => ({
 
 vi.mock('../../api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api/client')>()),
-  streamChatViaProxy: vi.fn(),
+  runChatTurn: vi.fn(),
 }))
 
-import { streamChatViaProxy } from '../../api/client'
+import { runChatTurn } from '../../api/client'
 import { useSettingsStore } from '../settings'
 import { useAuthStore } from '../auth'
 import { useSessionsStore } from '../sessions'
 
-const mockedStream = vi.mocked(streamChatViaProxy)
+const mockedStream = vi.mocked(runChatTurn)
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -30,7 +30,7 @@ beforeEach(() => {
 
 describe('会话自动命名（REQ-009，iter-3 T1）', () => {
   it('首条消息超 20 字：截前 20 字加省略号', async () => {
-    mockedStream.mockResolvedValue('ok')
+    mockedStream.mockResolvedValue('done')
     const sessions = useSessionsStore()
     const long = '帮我写一封请假邮件，理由是家里有急事需要尽快处理'
     await sessions.send(long)
@@ -38,7 +38,7 @@ describe('会话自动命名（REQ-009，iter-3 T1）', () => {
   })
 
   it('首条消息 ≤20 字：原文作标题，不加省略号', async () => {
-    mockedStream.mockResolvedValue('ok')
+    mockedStream.mockResolvedValue('done')
     const sessions = useSessionsStore()
     await sessions.send('我叫小明')
     expect(sessions.active!.title).toBe('我叫小明')
@@ -58,7 +58,7 @@ describe('会话重命名（REQ-012，iter-3 T3）', () => {
   })
 
   it('手动重命名后，首条消息不再覆盖标题', async () => {
-    mockedStream.mockResolvedValue('ok')
+    mockedStream.mockResolvedValue('done')
     const sessions = useSessionsStore()
     const id = sessions.createSession()
     sessions.renameSession(id, '请假邮件（重要）')
@@ -67,7 +67,7 @@ describe('会话重命名（REQ-012，iter-3 T3）', () => {
   })
 
   it('空标题（trim 空）no-op：不改标题、不置 renamed', async () => {
-    mockedStream.mockResolvedValue('ok')
+    mockedStream.mockResolvedValue('done')
     const sessions = useSessionsStore()
     const id = sessions.createSession()
     sessions.renameSession(id, '   ')

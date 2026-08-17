@@ -1,9 +1,68 @@
 import { markBanned, notifyUnauthorized } from './backend'
 
-/** OpenAI 兼容对话消息（system/user/assistant） */
-export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant'
-  content: string
+/**
+ * CHG-007（iter-13 T2）：回合端点客户端 + blocks 消息模型。
+ *
+ * - 上下文组装迁服务端（REQ-033）：buildContext / streamChatViaProxy 读路径退役，
+ *   发送/编辑重建/重新生成统一走 POST /api/chat/turn（SSE 协议 v2 九事件，
+ *   design-iter-13 §4）；旧透传端点仅服务端保留（老客户端窗口期），前端不再调用。
+ * - 未知事件 type 静默跳过（parseSse 前向兼容原则沿用，为 B/C/D 期留扩展位）。
+ */
+
+/** 文本段（Markdown 管线，REQ-011 改写：仅 text 段进 Markdown） */
+export interface TextBlock {
+  type: 'text'
+  text: string
+}
+/** 工具调用段（arguments 为 JSON 字符串原样，零转换） */
+export interface ToolCallBlock {
+  type: 'tool_call'
+  tool_call_id: string
+  name: string
+  arguments: string
+}
+/** 工具结果段（result 为网关截断后文本，前端原样渲染） */
+export interface ToolResultBlock {
+  type: 'tool_result'
+  tool_call_id: string
+  status: 'ok' | 'error' | 'timeout'
+  result: string
+  duration_ms?: number
+}
+export type Block = TextBlock | ToolCallBlock | ToolResultBlock
+
+/** v1 消息 content 为 string；v2 起 assistant 消息为 Block[]（至少一段，design-iter-13 §2 写侧） */
+export type MessageContent = string | Block[]
+
+/** 读时归一化（REQ-032：v1 ⇒ 单文本段，进同一渲染管线——逐字零回退） */
+export function contentBlocks(content: MessageContent): Block[] {
+  return typeof content === 'string' ? [{ type: 'text', text: content }] : content
+}
+
+/** 文本段提取（复制/导出/搜索共用适配层：工具参数与结果不入，design-iter-13 §2 适配面） */
+export function contentText(content: MessageContent): string {
+  return contentBlocks(content)
+    .filter((b): b is TextBlock => b.type === 'text')
+    .map((b) => b.text)
+    .join('\n\n')
+}
+
+/** SSE 协议 v2 事件（CHG-007 4.1 事件表；未知 type 以宽类型承载、消费方静默跳过） */
+export type TurnEvent =
+  | { type: 'turn.start'; session_id: string; turn_id: string }
+  | { type: 'text.delta'; text: string }
+  | { type: 'tool.call'; tool_call_id: string; name: string; arguments: string }
+  | { type: 'tool.result'; tool_call_id: string; status: 'ok' | 'error' | 'timeout'; result: string; duration_ms: number }
+  | { type: 'turn.step'; step: number; max_steps: number }
+  | { type: 'usage'; requests: number; tokens: number }
+  | { type: 'turn.end'; reason: 'done' | 'max_steps' | 'aborted' | 'error' }
+  | { type: 'error'; code: string; message: string }
+  | { type: string; [key: string]: unknown }
+
+export type TurnEndReason = 'done' | 'max_steps' | 'aborted'
+
+export interface TurnHandlers {
+  onEvent: (ev: TurnEvent) => void
 }
 
 export type ApiErrorKind = 'auth' | 'rateLimit' | 'server' | 'network' | 'unknown'
@@ -17,23 +76,6 @@ export class ApiError extends Error {
     super(message)
     this.name = 'ApiError'
   }
-}
-
-/** REQ-002：上下文组装——系统提示词（如有）+ 最近 N 轮（1 轮 = 1 问 + 1 答） */
-export function buildContext(messages: ChatMessage[], maxRounds = 20): ChatMessage[] {
-  const system = messages.filter((m) => m.role === 'system')
-  const rest = messages.filter((m) => m.role !== 'system')
-  // 从最新往回取整"轮"：以 user 消息开头、assistant 结尾为一轮
-  const kept: ChatMessage[] = []
-  let rounds = 0
-  for (let i = rest.length - 1; i >= 0 && rounds < maxRounds; i--) {
-    kept.unshift(rest[i])
-    if (rest[i].role === 'user') rounds++
-  }
-  // 截断后开头若是悬空的 assistant（其 user 已被截掉），丢弃到第一条 user
-  const firstUser = kept.findIndex((m) => m.role === 'user')
-  const aligned = firstUser > 0 ? kept.slice(firstUser) : kept
-  return [...system, ...aligned]
 }
 
 /** 解析 SSE 流。chunks：逐段推送的文本（模拟真实网络的分包边界） */
@@ -51,64 +93,37 @@ async function* parseSse(chunks: AsyncIterable<string>): AsyncGenerator<string> 
   if (buffer.trim().startsWith('data:')) yield buffer.trim().slice(5).trim()
 }
 
-export interface StreamHandlers {
-  onDelta: (text: string) => void
-}
-
-/** 消费 SSE 响应体：逐 delta 回调，返回完整文本（直连与代理共用）。
-    后端代理在上游中断时向流末尾补 upstream_interrupted 帧（REQ-023），转「连接中断」。 */
-async function consumeSseStream(res: Response, handlers: StreamHandlers): Promise<string> {
-  if (!res.body) throw new ApiError('unknown', '响应无内容')
-
-  const reader = res.body.getReader()
-  const decoder = new TextDecoder()
-  async function* chunks(): AsyncGenerator<string> {
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        yield decoder.decode(value, { stream: true })
-      }
-    } catch (e) {
-      if ((e as Error).name === 'AbortError') throw e
-      throw new ApiError('network', '连接中断')
-    }
-  }
-
-  let full = ''
-  for await (const data of parseSse(chunks())) {
-    if (data === '[DONE]') break
-    try {
-      const json = JSON.parse(data)
-      if (json?.upstream_interrupted) throw new ApiError('network', '连接中断')
-      const delta: string | undefined = json?.choices?.[0]?.delta?.content
-      if (delta) {
-        full += delta
-        handlers.onDelta(delta)
-      }
-    } catch (e) {
-      if (e instanceof ApiError) throw e
-      // 单帧解析失败不致命（跳过注释帧/心跳帧）
-    }
-  }
-  return full
+/** 流内 error 事件 → REQ-007 错误体系（design-iter-7 §3.1 同源文案由后端下发，前端原样呈现） */
+function errorKindOf(code: string): ApiErrorKind {
+  if (code === 'upstream_auth') return 'auth'
+  if (code === 'upstream_rate_limited') return 'rateLimit'
+  return 'server'
 }
 
 /**
- * REQ-023（iter-7 T1）：统一 key 模式——对话请求发往后端代理（同源 /api，Cookie 自动携带），
- * 前端零密钥。错误文案由后端按 design-iter-7 §3.1 定稿下发；401 = 会话失效，走既有跳登录钩子。
+ * 发起服务端回合（REQ-030~033）：请求体 = 本条消息 + 会话 id（+ 可选 system_prompt，
+ * REQ-008 客户端设置随回合上传——design-iter-13 §4.2 基线后补注），无历史数组。
+ *
+ * resolve 于 turn.end（done/max_steps/aborted）；流内 error 事件与 HTTP 层错误抛 ApiError
+ * （已生成文本与工具步骤由调用方保留——store 侧 aiMsg 已累积的 blocks 不回滚）。
  */
-export async function streamChatViaProxy(
-  messages: ChatMessage[],
-  handlers: StreamHandlers,
+export async function runChatTurn(
+  sessionId: string,
+  message: string,
+  opts: { systemPrompt?: string },
+  handlers: TurnHandlers,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<TurnEndReason> {
   let res: Response
   try {
-    res = await fetch('/api/chat/completions', {
+    res = await fetch('/api/chat/turn', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages }),
+      body: JSON.stringify({
+        session_id: sessionId,
+        message,
+        ...(opts.systemPrompt ? { system_prompt: opts.systemPrompt } : {}),
+      }),
       credentials: 'same-origin',
       signal,
     })
@@ -126,12 +141,13 @@ export async function streamChatViaProxy(
     let kind: ApiErrorKind = res.status >= 500 ? 'server' : 'unknown'
     let msg = `请求失败（${res.status}）`
     try {
-      const body = (await res.json()) as { detail?: string; code?: string }
-      if (body.detail) msg = body.detail
+      const body = (await res.json()) as { detail?: string | { message?: string }; code?: string }
+      if (typeof body.detail === 'string') msg = body.detail
+      else if (body.detail && typeof body.detail === 'object' && body.detail.message) msg = body.detail.message
       if (body.code === 'upstream_auth') kind = 'auth'
       else if (body.code === 'upstream_rate_limited' || res.status === 429) kind = 'rateLimit'
       // REQ-025（design-iter-8 §1.5 走查 29）：在线被封禁——跳登录（横幅由 LoginView 补显）
-      if (res.status === 403 && body.detail === '账号已被封禁') {
+      if (res.status === 403 && msg === '账号已被封禁') {
         markBanned()
         notifyUnauthorized()
       }
@@ -141,5 +157,42 @@ export async function streamChatViaProxy(
     throw new ApiError(kind, msg, res.status)
   }
 
-  return consumeSseStream(res, handlers)
+  if (!res.body) throw new ApiError('unknown', '响应无内容')
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  async function* chunks(): AsyncGenerator<string> {
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        yield decoder.decode(value, { stream: true })
+      }
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') throw e
+      throw new ApiError('network', '连接中断')
+    }
+  }
+
+  let reason: TurnEndReason | null = null
+  for await (const data of parseSse(chunks())) {
+    if (data === '[DONE]') break
+    try {
+      const ev = JSON.parse(data) as TurnEvent
+      if (ev?.type === 'error') {
+        const err = ev as { type: 'error'; code: string; message: string }
+        throw new ApiError(errorKindOf(err.code), err.message)
+      }
+      handlers.onEvent(ev)
+      if (ev.type === 'turn.end') {
+        const r = (ev as { reason: string }).reason
+        if (r === 'done' || r === 'max_steps' || r === 'aborted') reason = r
+        break
+      }
+    } catch (e) {
+      if (e instanceof ApiError) throw e
+      // 单帧解析失败不致命（跳过注释帧/心跳帧）
+    }
+  }
+  return reason ?? 'done' // 流异常截断而无 turn.end：按现状「连接中断」语义由调用方兜底标注
 }

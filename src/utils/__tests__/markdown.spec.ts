@@ -44,3 +44,18 @@ describe('renderMarkdown（REQ-011）', () => {
     expect(renderMarkdown('')).toBe('')
   })
 })
+
+describe('DEF-030 修复（2026-08-17，CEO 走查）：空行治理', () => {
+  it('段内单换行 → 显式 <br>（breaks:true，聊天语义不变）', () => {
+    const html = renderMarkdown('第一行\n第二行')
+    expect(html).toContain('<br>')
+  })
+
+  it('多空行折叠为单个段落间距（渲染端不再依赖 pre-wrap 继承）', () => {
+    const html = renderMarkdown('段落一\n\n\n\n\n段落二')
+    expect((html.match(/<br>/g) ?? []).length).toBe(0) // 块间空行不产生 <br>
+    expect(html).toContain('<p>段落一</p>')
+    expect(html).toContain('<p>段落二</p>')
+  })
+})
+

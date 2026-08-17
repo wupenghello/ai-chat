@@ -1,11 +1,19 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
 import type { Message } from '../stores/sessions'
+import { contentBlocks, contentText } from '../api/client'
 import MessageBubble from './MessageBubble.vue'
 import ErrorBubble from './ErrorBubble.vue'
 
 const props = defineProps<{ messages: Message[] }>()
 const emit = defineEmits<{ retry: [id: string]; goSettings: []; edit: [id: string, text: string]; toggleVersion: [forkId: string] }>()
+
+/** design-iter-13 条 32：错误回合已生成的文本与工具步骤保留（与错误气泡共存形态）；
+ *  存量空内容错误消息仅错误气泡（REQ-007 形态零回退） */
+function hasKeptContent(m: Message): boolean {
+  if (contentText(m.content).trim()) return true
+  return contentBlocks(m.content).some((b) => b.type === 'tool_call')
+}
 
 const el = ref<HTMLElement | null>(null)
 
@@ -18,8 +26,12 @@ let follow = true
 function onScroll() {
   follow = nearBottom()
 }
+// CHG-007（iter-13 T2）：content 为 string | Block[]——blocks 消息序列化后拼接作 watch 键
+function contentKey(m: Message): string {
+  return typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
+}
 watch(
-  () => props.messages.map((m) => m.content).join(''),
+  () => props.messages.map(contentKey).join(''),
   async () => {
     if (!follow) return
     await nextTick()
@@ -40,13 +52,23 @@ watch(
   <div ref="el" class="list" @scroll.passive="onScroll">
     <div class="list-col">
       <template v-for="(m, i) in messages" :key="m.id">
-        <ErrorBubble
-          v-if="m.status === 'error'"
-          :kind="m.error?.kind ?? 'unknown'"
-          :message="m.error?.message ?? '未知错误'"
-          @retry="emit('retry', m.id)"
-          @go-settings="emit('goSettings')"
-        />
+        <template v-if="m.status === 'error'">
+          <!-- 条 32 共存：错误前已生成内容保留渲染（含工具步骤），错误气泡随其后 -->
+          <div v-if="hasKeptContent(m)" class="row-wrap assistant">
+            <MessageBubble
+              :message="m"
+              :following-count="messages.length - i - 1"
+              @edit="(id, text) => emit('edit', id, text)"
+              @toggle-version="(forkId) => emit('toggleVersion', forkId)"
+            />
+          </div>
+          <ErrorBubble
+            :kind="m.error?.kind ?? 'unknown'"
+            :message="m.error?.message ?? '未知错误'"
+            @retry="emit('retry', m.id)"
+            @go-settings="emit('goSettings')"
+          />
+        </template>
         <div v-else class="row-wrap" :class="m.role">
           <MessageBubble
             :message="m"

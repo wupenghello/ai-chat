@@ -4,6 +4,8 @@
  * 运行时读写已切至 db/persistence.ts（服务端，REQ-022）。
  */
 
+import type { Block } from '../api/client'
+
 const DB_NAME = 'ai-chat'
 const STORE = 'sessions'
 const VERSION = 1
@@ -11,13 +13,16 @@ const VERSION = 1
 export interface PersistedMessage {
   id: string
   role: 'user' | 'assistant'
-  content: string
+  /** CHG-007 REQ-032（iter-13 T2）：v1 = string（存量与用户消息恒 string）；v2 assistant = blocks */
+  content: string | Block[]
   status: 'done' | 'generating' | 'interrupted' | 'stopped' | 'error'
   error?: { kind: string; message: string }
   /** REQ-019：有可切换版本时指向 Session.branches 的 key */
   forkId?: string
   /** REQ-019：版本序号（0=新版，1=旧版），供版本计数器展示 */
   forkIndex?: 0 | 1
+  /** CHG-007 REQ-030：turn.end(max_steps) 定型标注 */
+  maxSteps?: boolean
 }
 
 export interface PersistedSession {
@@ -30,6 +35,9 @@ export interface PersistedSession {
   renamed?: boolean
   /** REQ-019：版本分支存档（key=forkId，value=深拷贝的替代分支消息序列） */
   branches?: Record<string, PersistedMessage[]>
+  /** CHG-007（iter-13 T2）：整档写侧守卫载体——新客户端 PUT 恒带 2；无标记 = v1 老档。
+   *  与消息级 v1/v2 独立（消息按 content 类型各自判定，branches 内可混流） */
+  schema?: number
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null
