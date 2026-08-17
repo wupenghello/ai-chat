@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     agent_max_steps: int = 10  # 单回合最大上游调用步数（验收用例以小值注入压测）
     agent_step_timeout: float = 120.0  # 上游单步超时（秒）；工具超时按各工具声明（演示工具 2s）
     tool_result_limit: int = 32 * 1024  # 工具结果大小上限（字节），超限截断并追加标注
+    # iter-14 T2（CHG-007 REQ-035 / design-iter-14 §7）：Tavily 搜索 key——backend/.env 注入
+    # （AI_CHAT_SEARCH_KEY，与统一 key 三变量同法）；空 = 未配置 → search 工具不注册
+    # （admin 开关状态可存，key 与开关分离，design §6.1）；不入 git/日志/响应体
+    search_key: str = ""
 
 
 @lru_cache

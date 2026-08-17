@@ -351,9 +351,17 @@ async def run_turn(
                     execution = await toolsgw.execute_tool(
                         defn, tc["arguments"], limit=tool_result_limit
                     )
-                yield {"type": "tool.result", "tool_call_id": tc["id"],
-                       "status": execution.status, "result": execution.result,
-                       "duration_ms": execution.duration_ms}
+                # tool.result 事件（design-iter-14 §6.4 加法扩展）：搜索结果双视角——
+                # result 文本给模型、sources 数组给前端引用卡（可选字段，仅 ok 且非空携带；
+                # 老前端遇未知字段忽略不崩，iter-13 §4.1 前向兼容口径）
+                event: dict[str, Any] = {
+                    "type": "tool.result", "tool_call_id": tc["id"],
+                    "status": execution.status, "result": execution.result,
+                    "duration_ms": execution.duration_ms,
+                }
+                if execution.sources:
+                    event["sources"] = execution.sources
+                yield event
                 # 注入防护包裹后回填（数据非指令，CHG-007 4.5-⑥）；错误结果同样回填，
                 # 模型可降级直答（回合继续，REQ-030 异常分支）
                 context.append({

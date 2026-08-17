@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI
 
+from app import search as searchsvc  # noqa: F401 —— import 即静态注册 search 工具（REQ-035）
 from app.config import Settings
 from app.db import connect, db_version, init_db
 from app.routers import admin, auth, profiles, proxy, sessions
@@ -36,9 +37,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.http = httpx.AsyncClient(
             timeout=httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=10.0)
         )
+        # 联网搜索运行时绑定（REQ-035 / design-iter-14 §6.1）：key 配置才绑定——search 工具
+        # 的下发门控（admin 开关 ∧ key）在回合受理处按 settings 判定，此处只管客户端与 key
+        if settings.search_key:
+            searchsvc.bind(app.state.http, settings.search_key)
         try:
             yield
         finally:
+            searchsvc.unbind()
             await app.state.http.aclose()
 
     app = FastAPI(title="ai-chat backend", version="0.1.0", lifespan=lifespan)

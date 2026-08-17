@@ -52,10 +52,21 @@ class ToolDef:
     name: str
     description: str
     parameters: dict[str, Any]  # JSON Schema 精简子集：type/properties/required
-    handler: Callable[[dict[str, Any]], Awaitable[str]]
+    handler: Callable[[dict[str, Any]], Awaitable[str | ToolOutput]]
     timeout: float
     egress_domains: tuple[str, ...] = field(default=())  # 空 = 无出网（A1 演示工具）
     admin_only: bool = False
+    # 运行时能力门名（design-iter-14 §6.2，A2 起）：非 None = 该工具额外受运行时开关过滤
+    # （如 search 受 admin 开关 ∧ key 已配置；gates 缺省视为关——A1 行为不变）
+    gate: str | None = None
+
+
+@dataclass
+class ToolOutput:
+    """iter-14 T2（design-iter-14 §6.4）：结构化工具输出——text 供模型消费（走截断/注入链），
+    sources 为 tool.result 事件的可选来源数组（引用来源卡数据面，前端按结构化列表消费）。"""
+    text: str
+    sources: list[dict[str, Any]] | None = None
 
 
 @dataclass
@@ -64,6 +75,7 @@ class ToolExecution:
     result: str  # 截断后的文本（error/timeout 时为机器可读原因）
     duration_ms: int
     truncated: bool = False
+    sources: list[dict[str, Any]] | None = None  # 仅 ok 且有来源时非空（design §6.4）
 
 
 _REGISTRY: dict[str, ToolDef] = {}
@@ -73,9 +85,23 @@ def register_tool(defn: ToolDef) -> None:
     _REGISTRY[defn.name] = defn
 
 
-def tools_for_user(*, is_admin: bool) -> list[ToolDef]:
-    """按请求者过滤注册表（定夺④：演示工具仅 admin；A2 起生产工具另定可见性）。"""
-    return [d for d in _REGISTRY.values() if not d.admin_only or is_admin]
+def tools_for_user(
+    *, is_admin: bool, gates: dict[str, bool] | None = None
+) -> list[ToolDef]:
+    """按请求者过滤注册表（定夺④：演示工具仅 admin）。
+
+    gates = 运行时能力门状态（design-iter-14 §6.2，回合受理时实时读后传入）：
+    带 gate 声明的工具仅在 gates[gate] 为真时进入下发列表——admin 关闭或 key 缺失时
+    search 不在注册表可见面（上游 tools 定义不含 search，模型不知其存在）。缺省 = 全关。
+    """
+    out: list[ToolDef] = []
+    for d in _REGISTRY.values():
+        if d.admin_only and not is_admin:
+            continue
+        if d.gate is not None and not (gates or {}).get(d.gate):
+            continue
+        out.append(d)
+    return out
 
 
 def openai_tools_payload(defns: list[ToolDef]) -> list[dict[str, Any]]:
@@ -116,7 +142,15 @@ def validate_args(args: dict[str, Any], schema: dict[str, Any]) -> None:
             raise ToolError(f"参数 {key} 超过最大长度 {spec['maxLength']}")
 
 
-# ---------- ③ 出网白名单 + SSRF 防护（A2 真实出网工具生效；本层随网关先行落地） ----------
+# ---------- ③ 出网白名单 + SSRF 防护（A2 搜索工具起真实出网生效） ----------
+
+def is_disallowed_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """内网/环回/链路本地/保留/组播地址判定（CHG-007 4.5-③ 地址集）。"""
+    return (
+        ip.is_private or ip.is_loopback or ip.is_link_local
+        or ip.is_reserved or ip.is_multicast
+    )
+
 
 def ensure_egress_allowed(url: str, whitelist: tuple[str, ...]) -> None:
     host = urlparse(url).hostname or ""
@@ -127,8 +161,8 @@ def ensure_egress_allowed(url: str, whitelist: tuple[str, ...]) -> None:
     try:
         ip = ipaddress.ip_address(host)
     except ValueError:
-        return  # 域名：白名单已判过；解析期地址核验随 A2 真实抓取一并落地
-    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+        return  # 域名：白名单已判过；解析期地址核验由调用方在连接前完成（app/search.py，A2 落地）
+    if is_disallowed_ip(ip):
         raise ToolError("出网目标为内网/保留地址，已拒绝")
 
 
@@ -177,10 +211,14 @@ async def execute_tool(defn: ToolDef, arguments_json: str, *, limit: int) -> Too
             logger.error("tool crashed name=%s error=%s", defn.name, type(exc).__name__)
             _log(defn.name, "error", duration, False)
             return ToolExecution("error", f"工具执行异常：{type(exc).__name__}", duration)
+        # 结构化输出（design-iter-14 §6.4）：sources 与文本为同一结果两视角，仅 ok 时携带
+        sources: list[dict[str, Any]] = []
+        if isinstance(output, ToolOutput):
+            output, sources = output.text, list(output.sources or [])
         text, truncated = truncate_result(output, limit)
         duration = int((time.monotonic() - start) * 1000)
         _log(defn.name, "ok", duration, truncated)
-        return ToolExecution("ok", text, duration, truncated)
+        return ToolExecution("ok", text, duration, truncated, sources or None)
     except ToolError as exc:
         duration = int((time.monotonic() - start) * 1000)
         _log(defn.name, "error", duration, False)
