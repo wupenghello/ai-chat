@@ -15,7 +15,7 @@
 |------|---------|------|---------|------|
 | NCR-iter13-001 | lifecycle.md G1/基线机制 + requirements.md §2 + development.md §1 第 5~7 步 + 铁律 4 | .git/logs/HEAD 末条 = 3c7a834（iter-12 关闭）其后零提交；refs/tags 无 req-baseline-v5、无 design-iter-13；registry 已宣告 T1/T2 完成。「本轮不提交、tag 随统一提交补打」为对 12 轮逐任务提交惯例的偏离，未写入 tailoring.md | 立即统一提交并按任务拆分（CHG-007 基线+tag v5 / 计划 / design-iter-13+tag / T1 / T2+走查），tag 推远端；提交带 [REQ-xxx] 尾缀与 DEF 登记同提交；tailoring 补登偏离（铁律 4 收口） | 开放 |
 | NCR-iter13-002 | requirements.md §4（RTM 与实际一致） | rtm.md L39~42 REQ-031/032/033/034 状态列「未开始（基线 v5）」与同行实现列「T1 后端已实现」矛盾；L38/L44/头部段同类滞后 | 逐行收口至审计时点实况，按证据梯度如实标注 | **已整改（2026-08-18 主会话）**：REQ-030~034 测试/状态列 + 全局回归基线行 + 头部段逐行收口；273 用例复跑 |
-| NCR-iter13-003 | planning.md §3 v1.4.5 + development.md §1 第 5 步（周报随任务产出） | weekly-W34.md 仅覆盖 iter-12；iter-13 全事件零条目；该失守第 7 次实例（机制因零提交整体旁路） | 随统一提交补 W34 iter-13 完整条目（含 Code Review 节）；提交清单核对含周报条目 | 开放 |
+| NCR-iter13-003 | planning.md §3 v1.4.5 + development.md §1 第 5 步（周报随任务产出） | weekly-W34.md 仅覆盖 iter-12；iter-13 全事件零条目；该失守第 7 次实例（机制因零提交整体旁路） | 随统一提交补 W34 iter-13 完整条目（含 Code Review 节）；提交清单核对含周报条目 | **已整改（2026-08-18）**：weekly-W34.md iter-13 段补齐（随 7627080 提交，清单含周报）；Code Review 节标注待产出（G4 前置） |
 | NCR-iter13-004 | testing.md §3 + v1.4.10 B（承诺断言面须有载体）+ defects.md 处置栏书面承诺 | defects.md L35 写「走查断言面随 T2/QA 走查覆盖模态副文案」；e2e-13.mjs 与 AdminView.spec grep「回合数/q-desc」零命中。注：实物文案正确（AdminView.vue:613 与销账口径逐字一致），失守点是承诺断言面未落地 | 补 AdminView.spec 模态副文案断言（该文案即 iter-12 NCR-002 同一位，防第 3 次复发） | **已整改（2026-08-18）**：AdminView.spec「DEF-028 销账断言面」逐字断言用例落位，vitest 254→273 全绿 |
 | NCR-iter13-005 | v1.4.10 A（承诺须有载体）+ design-iter-13.md §8 基线后动作③ | design-iter-13.md §8 承诺「components.md 登记工具步骤卡新形态」；design-system/components.md 仅至 v1.1（iter-12），grep「工具步骤卡/iter-13」零命中 | components.md 补登记（v1.2：次级面板/四态徽章+派生中断态/R1~R3/占位三串/结果卡色条，零新令牌） | 开放 | **已整改（2026-08-18）**：design-system/components.md v1.2「工具步骤卡」全规格登记（随 company-os 侧提交留痕待 NCR-001） |
 
@@ -49,11 +49,11 @@
 
 | # | 代核项 | 预期 |
 |---|--------|------|
-| 1 | 运行时复跑：后端 pytest、前端 vitest+tsc+guard+构建、e2e-13 脚本 | 182 全绿；272 全绿；38 PASS 0 FAIL |
-| 2 | 统一提交后：req-baseline-v5 / design-iter-13 两 tag 建立且推远端 | NCR-001 验收 |
+| 1 | 运行时复跑：后端 pytest、前端 vitest+tsc+guard+构建、e2e-13 脚本 | **已核（2026-08-18）**：182 全绿 + ruff；273 全绿（NCR-004 整改 +1）；38 PASS 0 FAIL（两轮复跑） |
+| 2 | 统一提交后：req-baseline-v5 / design-iter-13 两 tag 建立且推远端 | **tag 已建（git tag -l 双证）**；推远端因 github 443 不通暂阻，网络恢复后执行 |
 | 3 | 提交链抽查 REQ/DEF 尾缀与登记同提交 | 整改后执行 |
-| 4 | 既有 139 用例零改动：git diff 3c7a834..HEAD -- backend/tests | 删除行 0（两新文件除外） |
-| 5 | DEF-029~032 修复与 defects.md 登记同提交清单 | 4/4 |
+| 4 | 既有 139 用例零改动：git diff 3c7a834..HEAD -- backend/tests | **已核**：仅两新文件新增，既有文件零改动 |
+| 5 | DEF-029~032 修复与 defects.md 登记同提交清单 | **已核**：7627080 同时含 defects.md 与四处修复文件（sessions.ts/MessageList/markdown.ts/…） |
 
 ## 给 CEO 的直话（审计员原话存档）
 
