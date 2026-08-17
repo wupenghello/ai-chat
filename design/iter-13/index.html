@@ -1,0 +1,1237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-chat · iter-13 设计稿（A1 Agent 地基：blocks 与工具步骤 UI，已基线 2026-08-17）</title>
+<!--
+  ============================================================
+  ai-chat 迭代 13 T0 设计稿草案（设计稿即页面骨架，开发对照实现）
+  依据（逐条登记）：
+  1. projects/ai-chat/plans/iter-13.md T0（2026-08-17 CEO 批准 Σ10=M+L+L）：
+     blocks 模型展示层（v1/v2 消息同流呈现）、工具步骤 UI（状态徽章/可折叠/结果卡，暗色同步）、
+     SSE 协议 v2 前端契约（9 类事件消费规则 + 未知 type 静默跳过）、组装迁服务端边界（请求体 =
+     本条消息 + session_id，无历史数组）；A1 T0 定夺参数 9 项随稿定死（含定夺④联动定案）；
+     验收 = CEO 批准基线（tag design-iter-13）+ 走查清单随稿（v1.4.4 任务级门槛）+
+     spec REQ-030/032「涉及页面」指针随基线回填（NCR-iter12-001 防线，v1.4.10 A 条）
+  2. requirements/changes.md CHG-007（2026-08-17 批准，基线 req-baseline-v5）：
+     REQ-030（ReAct 循环 + 异常分支用户所见——步数上限标注文案随本稿）、REQ-032（blocks 模型 +
+     工具步骤 UI，「原型即需求」）、REQ-033（组装迁服务端）；内容 4.1 SSE v2 九事件表与示例帧、
+     4.2 blocks 类型定义与 v1/v2 对照、4.3 schema:2 写侧守卫（409 session_schema_conflict）、
+     4.6 演示工具 echo / demo_weather 定义（固定假数据 + 200~500ms 模拟延迟 + 单工具超时 2s）、
+     4.8 T0 定夺参数表；REQ-001 改写（回合流式渲染）、REQ-011/013/016 波及口径
+     （文本段 Markdown 管线 / 导出简明标记行格式随本稿 / 搜索取文本段拼接）
+  3. docs/architecture-upgrade-plan-2026-08-17.md §九 分期效果叙事——A1「AI 第一次会动手且过程透明」
+     为本稿北极星：消息流出现工具步骤卡（运行中→完成），AI 拿工具结果作答
+  4. 公司设计规范 design-system/tokens.md v1.3/v1.3.1 + components.md v1.1：只用既有令牌，
+     零自造色值、零新增令牌（评估结论 §8-⑤）；「工具步骤卡」建议随基线登记 components.md 新形态
+  5. design/iter-11/index.html（已基线）：主界面消息流基线——用户浅气泡 / AI 全宽 / 操作栏悬停浮现 /
+     版本切换 / pill 与错误气泡语言，本稿全部沿用零翻案；文档外壳 + .tk 作用域 + §7/§8 格式沿其范本
+  6. design/iter-12/index.html（已基线）：走查清单 52 条与定夺 8 项格式惯例（本稿同构）
+  7. design/iter-7 §3.1（已基线）：上游错误 10 场景映射——CHG-007 明确「完全复用、不新建映射」，
+     本稿只引用不重画（§1 样例含共存形态）
+  8. 现状实现核对：src/api/client.ts（parseSse 未知帧静默跳过先例、upstream_interrupted 自定义帧先例）、
+     src/stores/sessions.ts（PUT 整档透传 + 暂存队列）、src/components/MessageBubble.vue（五态状态机）
+  视觉基调（CEO 已定，不得偏离）：沿 iter-11——侧栏灰底 --c-bg + 正文白底 --c-surface；消息列 712px 居中；
+     主色飞书蓝 #3370FF（暗色前景 #5C8DFF）；交互参照 chat.deepseek.com。
+  硬约束落实：REQ-032「老 string 会话逐字零回退」走查组（§7.2 条 2/4/8）；「正在生成…/生成中断/已停止生成」
+     等存量文案零回退（逐字断言面 §2.4）；v1.4.10 B 条三件套——样件文案逐字（§2.4 登记表）+ 加载态一帧
+     （运行中卡 spinner 帧，§7.2 条 10/51）+ 双主题承载口径（全条目亮暗各过一遍，§7.2 条 48）；
+     移动端不做（CHG-007 让位定序）；输入区沿 CHG-003 定案不翻案；引用来源卡 = A2/design-iter-14（本稿仅占位说明 §2.5）。
+  状态：已基线（2026-08-17 CEO 批准「批准，全部按推荐」）。tag design-iter-13 随统一提交补打。
+  可交互：右上「演示控制」一键亮/暗（写 localStorage）；§1 主样件可真实操作——
+     ▶ 重放回合（SSE v2 事件时序演示：turn.start → text.delta* → tool.call → tool.result → turn.step →
+     text.delta* → usage → turn.end，事件观测面板逐帧打印，含未知 type 静默跳过演示帧）；
+     工具结果三结局切换（完成 / 失败 / 超时——徽章四态与降级直答）；工具卡点击折叠/展开
+     （自动折叠规则 R1-R3 演示）；版本分支 ‹1/2› v1↔v2 混流切换；v1/v2 格式标注开关（走查辅助，非产品 UI）。
+     演示数据全为虚构（demo_weather 本身即 CHG-007 4.6 固定假数据；耗时数值虚构，铁律 5）。
+     零外部依赖，双击即开。
+  ============================================================
+-->
+<style>
+/* ============================================================
+   一、文档外壳（说明页自身，浅色固定，不随演示切换；色值 = tokens 浅色原值，沿 iter-5~12 惯例）
+   ============================================================ */
+:root { --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-full: 999px; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-size: 14px; line-height: 1.6; color: #1F2329; background: #F5F6F7; padding: 40px 32px 80px;
+}
+.page { max-width: 1160px; margin: 0 auto; }
+h1 { font-size: 20px; font-weight: 600; }
+.sub { font-size: 13px; color: #8F959E; margin: 4px 0 8px; }
+.sub b { color: #646A73; }
+.badge {
+  display: inline-block; padding: 1px 10px; border-radius: var(--r-full);
+  font-size: 12px; font-weight: 500; background: #FFF7E8; color: #B45309; margin-bottom: 24px;
+}
+section { margin-bottom: 48px; }
+h2 { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+h2 .no { color: #3370FF; margin-right: 4px; }
+.sec-desc { font-size: 13px; color: #8F959E; margin-bottom: 16px; }
+.sec-desc b { color: #646A73; }
+table { width: 100%; border-collapse: collapse; background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-md); overflow: hidden; font-size: 13px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #E5E6EB; vertical-align: top; }
+th { color: #8F959E; font-weight: 500; background: #FAFBFC; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+td code, li code, .ann code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; background: #F2F3F5; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
+pre { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; background: #F2F3F5; border: 1px solid #E5E6EB; border-radius: var(--r-md); padding: 10px 14px; overflow: auto; line-height: 1.7; color: #1F2329; margin: 8px 0 0; }
+pre code { background: none; padding: 0; white-space: pre; }
+.spec { background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-lg); padding: 24px; box-shadow: 0 1px 2px rgba(31,35,41,.06); margin-bottom: 16px; }
+.spec-title { font-size: 13px; font-weight: 600; color: #646A73; margin-bottom: 12px; }
+.spec-title .tag { font-weight: 400; color: #8F959E; margin-left: 8px; }
+.stage { border: 1px dashed #E5E6EB; border-radius: var(--r-md); padding: 16px; background: #F5F6F7; }
+.ann { font-size: 12px; color: #8F959E; margin-top: 8px; line-height: 1.8; }
+.ann b { color: #646A73; font-weight: 600; }
+.sim-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; font-size: 12px; color: #646A73; margin-bottom: 12px; }
+.sim-row label { cursor: pointer; white-space: nowrap; }
+.lnk-reset { display: inline-block; margin-top: 8px; font-size: 12px; color: #3370FF; cursor: pointer; }
+.lnk-reset:hover { text-decoration: underline; color: #2E5FDF; }
+.frame-cap { text-align: center; font-size: 12px; color: #8F959E; margin-bottom: 8px; }
+.cols { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+.cols > div { flex: 1; min-width: 380px; max-width: 580px; }
+/* ---- 演示控制条（文档功能件，非产品组件） ---- */
+.demo-ctl {
+  position: sticky; top: 0; z-index: 500; display: flex; align-items: center; gap: 12px;
+  background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-md);
+  padding: 10px 16px; margin-bottom: 32px; box-shadow: 0 1px 2px rgba(31,35,41,.06);
+  font-size: 13px; color: #646A73; flex-wrap: wrap;
+}
+.demo-ctl .seg { display: inline-flex; border: 1px solid #E5E6EB; border-radius: var(--r-md); overflow: hidden; }
+.demo-ctl .seg button {
+  height: 30px; padding: 0 14px; border: none; background: #FFFFFF; color: #646A73;
+  font-size: 13px; cursor: pointer; transition: background .15s ease, color .15s ease;
+}
+.demo-ctl .seg button.on { background: #3370FF; color: #fff; font-weight: 600; }
+.demo-ctl .note { font-size: 12px; color: #8F959E; }
+
+/* ============================================================
+   二、演示令牌作用域 .tk（组件全部引用 var()，同 src 范式；浅 = tokens v1.3 浅值，暗 = v1.3 暗值，零自造）
+   ============================================================ */
+.tk {
+  --c-bg: #F5F6F7; --c-surface: #FFFFFF; --c-border: #E5E6EB;
+  --c-text-1: #1F2329; --c-text-2: #646A73; --c-text-3: #8F959E;
+  --c-primary: #3370FF; --c-primary-h: #2E5FDF; --c-primary-a: #2860D8; --c-primary-l: #F0F4FF;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #2E5FDF; --c-primary-solid-a: #2860D8;
+  --c-danger: #D93025; --c-danger-l: #FDECEA; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #1A9E5C; --c-success-on-dark: #4CC38A;
+  --c-warning: #B45309; --c-warning-l: #FFF7E8;
+  --c-hover-bg: #F2F3F5; --c-disabled-bg: #C9CFDB; --c-subtle-bg: #FAFBFC;
+  --c-avatar-bg: #E8EBF2; --c-scrollbar: #D5D9E0;
+  --c-toast-bg: #23272E; --c-toast-border: #23272E; --c-primary-on-dark: #A3BCFF;
+  --c-code-head: #23272E; --c-code-bg: #2B303A; --c-code-head-text: #9AA4B2; --c-code-text: #E6EAF0;
+  --c-mask: rgba(31,35,41,.4); --c-focus-ring: rgba(51,112,255,.12);
+  --shadow-1: 0 1px 2px rgba(31,35,41,.06);
+  --shadow-2: 0 4px 16px rgba(31,35,41,.10);
+  --shadow-3: 0 12px 40px rgba(31,35,41,.16);
+  color: var(--c-text-1);
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+.tk.dark, .tk.force-dark {
+  --c-bg: #131417; --c-surface: #1E2026; --c-border: #33363E;
+  --c-text-1: #E6EAF0; --c-text-2: #A2A9B6; --c-text-3: #808896;
+  --c-primary: #5C8DFF; --c-primary-h: #7AA4FF; --c-primary-a: #4C84FF; --c-primary-l: #1D2740;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #4C84FF; --c-primary-solid-a: #3D78FF;
+  --c-danger: #FF8073; --c-danger-l: #361B18; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #4CC38A;
+  --c-warning: #EDA23B; --c-warning-l: #38290F;
+  --c-hover-bg: #262930; --c-disabled-bg: #3D414A; --c-subtle-bg: #24272E;
+  --c-avatar-bg: #33363E; --c-scrollbar: #3A3E46;
+  --c-toast-bg: #2A2D34; --c-toast-border: #33363E; --c-primary-on-dark: #A3BCFF;
+  --c-code-head: #141518; --c-code-bg: #191B20; --c-code-head-text: #9AA4B2; --c-code-text: #E6EAF0;
+  --c-mask: rgba(0,0,0,.55); --c-focus-ring: rgba(92,141,255,.25);
+  --shadow-1: 0 1px 2px rgba(0,0,0,.4);
+  --shadow-2: 0 4px 16px rgba(0,0,0,.45);
+  --shadow-3: 0 12px 40px rgba(0,0,0,.6);
+}
+/* ============================================================
+   三、产品组件样式（全部 var() 引用，零裸色值）
+   3a. 应用外壳与消息流（沿 design-iter-11 基线引用，零翻案）
+   3b. 工具步骤卡（REQ-032 本稿新增）：四态徽章 + 折叠 + 结果卡
+   3c. 文档辅助件（SSE 观测面板 / v1v2 格式标注——非产品组件）
+   ============================================================ */
+
+/* ---- 3a. 应用外壳与消息流（iter-11 基线引用：侧栏灰 --c-bg + 正文白 --c-surface；消息列 712px） ---- */
+.app-stage { position: relative; overflow: hidden; background: var(--c-bg); }
+.app-shell { display: flex; height: 100%; }
+.side { flex: none; display: flex; flex-direction: column; background: var(--c-bg); border-right: 1px solid var(--c-border); width: 264px; padding: 12px; gap: 8px; }
+.sp { flex: 1; }
+.brand-row { flex: none; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 2px; }
+.brand-name { font-size: 15px; font-weight: 600; color: var(--c-text-1); }
+.new-btn {
+  flex: none; height: 36px; border: none; border-radius: var(--r-md); background: var(--c-primary-solid);
+  color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px;
+  justify-content: center; transition: background .15s ease, transform .1s ease; font-family: inherit;
+}
+.search-box {
+  flex: none; display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 8px;
+  background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-md);
+}
+.search-box .s-ico { flex: none; color: var(--c-text-3); display: inline-flex; }
+.search-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: 13px; color: var(--c-text-1); font-family: inherit; }
+.search-input::placeholder { color: var(--c-text-3); }
+.s-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding: 2px; scrollbar-width: thin; scrollbar-color: var(--c-scrollbar) transparent; }
+.s-group { flex: none; font-size: 12px; color: var(--c-text-3); padding: 12px 10px 4px; }
+.s-item { flex: none; display: flex; align-items: center; min-height: 34px; padding: 6px 10px; border-radius: var(--r-md); cursor: pointer; }
+.s-item:hover { background: var(--c-hover-bg); }
+.s-item.on { background: var(--c-primary-l); }
+.s-title { min-width: 0; font-size: 13px; color: var(--c-text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.s-item.on .s-title { color: var(--c-primary); font-weight: 500; }
+.acct { flex: none; display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--c-border); padding-top: 10px; min-height: 44px; }
+.acct-avatar { flex: none; width: 24px; height: 24px; border-radius: var(--r-full); background: var(--c-avatar-bg); color: var(--c-text-2); font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; }
+.acct-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; color: var(--c-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--c-surface); }
+.msg-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 24px 12px; scrollbar-width: thin; scrollbar-color: var(--c-scrollbar) transparent; }
+.msg-col { max-width: 712px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+.m-row { display: flex; }
+.m-row.user { justify-content: flex-end; }
+.m-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; max-width: 80%; }
+.m-col.ai { flex: 1; max-width: 100%; }
+.m-col.user { align-items: flex-end; }
+.ububble {
+  max-width: 100%; background: var(--c-avatar-bg); color: var(--c-text-1); font-size: 15px; line-height: 1.75;
+  padding: 10px 14px; border-radius: var(--r-lg) var(--r-lg) 4px var(--r-lg);
+  white-space: pre-wrap; word-break: break-word;
+}
+.md { font-size: 15px; line-height: 1.75; color: var(--c-text-1); }
+.md p { margin: 0 0 8px; }
+.md p:last-child { margin-bottom: 0; }
+.md b { font-weight: 600; }
+/* blocks 容器（本稿新增）：一条 assistant 消息内的分段（文本段 .md / 工具卡 .tcard）纵向排布，段间 8px */
+.blocks { display: flex; flex-direction: column; gap: 8px; }
+.act-row { display: flex; align-items: center; gap: 4px; min-height: 24px; }
+.abtn {
+  width: 24px; height: 24px; border: none; border-radius: var(--r-sm); background: transparent; color: var(--c-text-3);
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; padding: 0;
+  transition: opacity .15s ease, background .15s ease, color .15s ease;
+}
+.m-col:hover .abtn { opacity: 1; }
+.abtn:hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+.abtn:focus-visible { opacity: 1; box-shadow: 0 0 0 3px var(--c-focus-ring); }
+.ver-nav { display: flex; align-items: center; gap: 2px; }
+.ver-nav .abtn { opacity: 1; }
+.vcount { font-size: 12px; color: var(--c-text-3); min-width: 30px; text-align: center; font-variant-numeric: tabular-nums; }
+.cursor { display: inline-block; width: 2px; height: 1em; background: var(--c-primary-solid); margin-left: 2px; vertical-align: text-bottom; animation: blink .9s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.status-hint { font-size: 12px; color: var(--c-text-3); }
+.pill { flex: none; font-size: 12px; border-radius: var(--r-full); padding: 2px 10px; width: fit-content; }
+.pill.cut { color: var(--c-warning); background: var(--c-warning-l); font-weight: 500; }
+.pill.stopped { color: var(--c-text-2); background: var(--c-hover-bg); font-weight: 500; display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; }
+.err-bubble { max-width: 76%; border: 1px solid var(--c-danger-l); background: var(--c-danger-l); border-radius: var(--r-lg); padding: 12px 16px; }
+.err-bubble .eb-head { display: flex; align-items: center; gap: 6px; color: var(--c-danger); font-size: 13px; }
+.err-bubble .eb-dot { width: 6px; height: 6px; border-radius: var(--r-full); background: var(--c-danger-solid); }
+.err-bubble .eb-msg { margin: 6px 0 10px; font-size: 14px; line-height: 1.6; color: var(--c-text-2); }
+.err-bubble .eb-acts { display: flex; gap: 8px; }
+.btn-p { height: 32px; padding: 0 16px; background: var(--c-primary-solid); color: #fff; border: none; border-radius: var(--r-md); font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; transition: background .15s ease, transform .1s ease; }
+.btn-p:hover { background: var(--c-primary-solid-h); }
+.btn-p:active { background: var(--c-primary-solid-a); transform: scale(.98); }
+.composer { flex: none; padding: 12px 24px 20px; }
+.composer-col { max-width: 712px; margin: 0 auto; }
+.comp-box { border: 1px solid var(--c-border); border-radius: var(--r-lg); padding: 10px 12px; background: var(--c-surface); }
+.comp-box textarea { width: 100%; border: none; outline: none; resize: none; background: transparent; font-size: 15px; color: var(--c-text-1); font-family: inherit; }
+.comp-box textarea::placeholder { color: var(--c-text-3); }
+.comp-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.comp-hint { font-size: 12px; color: var(--c-text-3); }
+.send-btn {
+  flex: none; width: 28px; height: 28px; border: none; border-radius: var(--r-sm); background: var(--c-primary-solid);
+  color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  transition: background .15s ease, transform .1s ease;
+}
+
+/* ---- 3b. 工具步骤卡（REQ-032 本稿新增；定夺⑤=4.8-5 载体） ----
+   容器：--c-subtle-bg 底 + 1px --c-border + --r-md（消息白底上的次级面板，与正文轻区分）；
+   头部行：工具 icon 14px text-3 + 名称 13px/500 text-1 + 参数摘要 mono 12px text-3 ellipsis
+           + 耗时 12px text-3 tabular-nums（终态）+ 状态徽章 20px + chevron（.15s 旋转）
+   徽章四态：运行中 primary-l/primary+spinner ｜ 完成 surface/success+border+✓ ｜ 失败 danger-l/danger+✕
+             ｜ 超时 warning-l/warning+时钟 ｜ 派生中断态 hover-bg/text-2（中性） */
+.tcard { background: var(--c-subtle-bg); border: 1px solid var(--c-border); border-radius: var(--r-md); overflow: hidden; }
+.tcard-h {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; padding: 7px 12px;
+  background: transparent; border: none; cursor: pointer; font-family: inherit; text-align: left;
+  transition: background .15s ease; border-radius: inherit;
+}
+.tcard-h:hover { background: var(--c-hover-bg); }
+.tcard-h:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--c-focus-ring); }
+.t-ico { flex: none; color: var(--c-text-3); display: inline-flex; }
+.t-name { flex: none; font-size: 13px; font-weight: 500; color: var(--c-text-1); max-width: 34%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.t-args { flex: 1; min-width: 0; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; color: var(--c-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.t-dur { flex: none; font-size: 12px; color: var(--c-text-3); font-variant-numeric: tabular-nums; }
+.tbadge { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 8px; border-radius: var(--r-full); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.tb-run { background: var(--c-primary-l); color: var(--c-primary); }
+.tb-ok { background: var(--c-surface); color: var(--c-success); border: 1px solid var(--c-border); }
+.tb-err { background: var(--c-danger-l); color: var(--c-danger); }
+.tb-tmo { background: var(--c-warning-l); color: var(--c-warning); }
+.tb-cut { background: var(--c-hover-bg); color: var(--c-text-2); }
+.b-spin { flex: none; width: 11px; height: 11px; border-radius: 50%; border: 2px solid transparent; border-top-color: currentColor; border-right-color: currentColor; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.t-chev { flex: none; color: var(--c-text-3); display: inline-flex; transition: transform .15s ease; }
+.tcard.open .t-chev { transform: rotate(180deg); }
+.t-body { display: none; padding: 0 12px 12px; }
+.tcard.open .t-body { display: block; }
+.t-sec { margin-top: 8px; }
+.t-lab { font-size: 12px; color: var(--c-text-3); margin-bottom: 4px; }
+.t-pre {
+  margin: 0; background: var(--c-surface); border-radius: var(--r-sm); padding: 8px 10px;
+  font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; line-height: 1.6; color: var(--c-text-1);
+  white-space: pre; overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--c-scrollbar) transparent;
+}
+.t-res {
+  background: var(--c-surface); border-radius: var(--r-sm); padding: 8px 10px;
+  font-size: 13px; line-height: 1.6; color: var(--c-text-1); white-space: pre-wrap; word-break: break-word;
+  max-height: 200px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--c-scrollbar) transparent;
+}
+.t-res.ok { border-left: 3px solid var(--c-success); }
+.t-res.err { border-left: 3px solid var(--c-danger); }
+.t-res.tmo { border-left: 3px solid var(--c-warning); }
+.t-ph { color: var(--c-text-3); }
+
+/* ---- 3c. 文档辅助件（非产品组件；SSE 观测面板 / v1v2 格式标注） ---- */
+.sse-box { border: 1px solid var(--c-border); border-radius: var(--r-md); background: var(--c-surface); overflow: hidden; }
+.sse-head { padding: 8px 12px; font-size: 12px; font-weight: 600; color: var(--c-text-2); background: var(--c-subtle-bg); border-bottom: 1px solid var(--c-border); }
+.sse-body { height: 168px; overflow-y: auto; padding: 8px 12px; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; line-height: 1.8; color: var(--c-text-2); scrollbar-width: thin; scrollbar-color: var(--c-scrollbar) transparent; }
+.sse-body .f-tool { color: var(--c-primary); }
+.sse-body .f-err { color: var(--c-danger); }
+.sse-body .f-end { color: var(--c-success); font-weight: 600; }
+.sse-body .f-dim { color: var(--c-text-3); }
+.fmt-tag {
+  display: none; align-self: flex-start; font-size: 11px; line-height: 1; padding: 3px 7px; border-radius: var(--r-full);
+  border: 1px dashed var(--c-primary); color: var(--c-primary); background: var(--c-surface); font-weight: 500;
+}
+.m-col.user .fmt-tag { align-self: flex-end; }
+.fmt-mode .fmt-tag { display: inline-block; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>ai-chat · iter-13 设计稿（A1 Agent 地基：blocks 与工具步骤 UI）</h1>
+  <div class="sub">
+    依据：<b>plans/iter-13.md</b> T0（REQ-032 主 + REQ-030 事件契约 / REQ-033 边界；<b>v1.4.4 硬要求：§7 走查清单为 T2 任务级门槛</b>；
+    A1 T0 定夺参数 9 项随稿定死——§8）· <b>req-baseline-v5</b>（CHG-007：REQ-030/032/033 + REQ-001 改写 + REQ-011/013/016 波及口径）·
+    北极星 = <b>docs/architecture-upgrade-plan-2026-08-17.md §九</b>（A1：AI 第一次「会动手」且过程透明）·
+    令牌全部来自公司 <b>design-system/tokens.md v1.3/v1.3.1</b> + <b>components.md v1.1</b>，本稿<b>零新增令牌、零自造色值</b>（§8-⑤）·
+    消息流/气泡/操作栏/pill/错误气泡语言沿 <b>design-iter-11</b> 基线引用零翻案；上游错误映射沿 <b>design-iter-7 §3.1</b> 复用不新建；
+    文档结构沿 <b>design-iter-12</b> 范本；parseSse 未知帧静默跳过 / upstream_interrupted 先例核对自 <b>src/api/client.ts</b>
+  </div>
+  <div class="badge">状态：设计稿 iter-13 —— <b>已基线（2026-08-17，九项定夺全按推荐）</b>；§8 九项定夺 CEO 已拍板（全按推荐）；tag 随统一提交补打</div>
+  <div style="font-size:12px;color:#3370FF;background:#F0F4FF;border:1px solid #E5E6EB;border-radius:8px;padding:8px 12px;margin:-12px 0 28px;line-height:1.7;">
+    <b>视觉基调（CEO 已定，不得偏离）：</b>沿 iter-11——侧栏灰底 <code>--c-bg</code> + 正文白底 <code>--c-surface</code>；消息列 <b>712px</b> 居中；
+    主色飞书蓝 <b>#3370FF</b>（暗色前景 #5C8DFF）；用户浅气泡 / AI 全宽无气泡 / 操作栏悬停浮现全部沿用。
+    <b>本稿新增面只有一件产品组件：工具步骤卡</b>（嵌入 AI 消息流内，REQ-032「原型即需求」）；消息流其余形态零翻案。
+  </div>
+
+  <!-- 演示控制 -->
+  <div class="demo-ctl">
+    <b>演示控制：</b>
+    <span class="seg">
+      <button id="btnLight" class="on">浅色</button>
+      <button id="btnDark">暗色</button>
+    </span>
+    <label style="cursor:pointer;"><input type="checkbox" id="fmtToggle"> 标注消息格式 v1/v2（走查辅助件，非产品 UI）</label>
+    <span class="note">一键切换下方全部可翻转样件（第 5 节锁定帧不随动）；选择写 localStorage 刷新保持。
+    §1 主样件可真实操作：重放回合（SSE 事件时序逐帧演示）、工具结果三结局、卡折叠/展开、版本分支混流切换。
+    <b>演示数据全为虚构：demo_weather 为 CHG-007 4.6 固定假数据，耗时数值虚构（铁律 5）</b>。</span>
+  </div>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">1</span>消息流主样件：blocks 混排 + 工具步骤全状态（可交互）</h2>
+    <div class="sec-desc">
+      REQ-032 主流程落形：回合事件流到达 → <b>text.delta 追加文本段 / tool.call 开工具步骤卡（运行中）/ tool.result 终态 + 结果</b> →
+      turn.end 定型；打开历史会话 → <b>v1（纯文本）与 v2（blocks）同流无差别呈现</b>（REQ-032 验收 1/2 的稿内载体）。
+      样件叙事 = 一个真实会话的演进：上部两条为升级前旧消息（v1），下部为 agent 化后的新消息（v2）——含版本分支 v1↔v2 混流（m4）、
+      双工具回合（m6）、长结果截断示意（m8）、生成中断 + 已中断工具卡（m10）、步数上限标注（m12）、上游错误气泡共存（m14）、
+      可重放回合（m16 = A1 北极星演示）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.1 会话「周末出行调研」（可交互主样件）<span class="tag">消息流骨架零翻案（iter-11 基线）· 唯一新增产品组件 = 工具步骤卡</span></div>
+      <div class="sim-row">
+        <b>试：</b>点「▶ 重放回合」看 SSE 时序（m16：文本打字 → 工具卡运行中→终态自动折叠 → 回答续写；事件观测面板逐帧打印，含一帧未知 type 演示）；
+        切换工具结局（完成 / 失败 / 超时）再重放，看徽章四态与降级直答；
+        点任意工具卡头部折叠/展开（运行中手动折叠后终态到达<b>不再</b>自动折叠——规则 R2）；m4 ‹1/2› 切换 v1↔v2 分支混流。
+        <a class="lnk-reset" id="aReset" style="margin-top:0;">↺ 重置主样件</a>
+      </div>
+      <div class="sim-row">
+        <b>工具结局：</b>
+        <label><input type="radio" name="toolOutcome" value="ok" checked> 完成（ok）</label>
+        <label><input type="radio" name="toolOutcome" value="err"> 失败（error · 参数校验拒绝）</label>
+        <label><input type="radio" name="toolOutcome" value="timeout"> 超时（timeout · 2s 到期）</label>
+        <button class="btn-p" id="btnReplay" style="height:28px;padding:0 14px;">▶ 重放回合（m16）</button>
+      </div>
+      <div class="stage">
+        <div class="tk app-stage" id="mfStage" style="height:760px;">
+          <div class="app-shell">
+            <!-- 侧栏：静态衬景（iter-11 基线引用，交互不在本稿范围） -->
+            <aside class="side">
+              <div class="brand-row">
+                <svg viewBox="0 0 128 128" width="20" height="20" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+                <span class="brand-name">喵喵</span>
+              </div>
+              <button class="new-btn" type="button"><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>新建会话</button>
+              <div class="search-box">
+                <span class="s-ico"><svg width="14" height="14" viewBox="0 0 24 24"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5Zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14Z"/></svg></span>
+                <input class="search-input" type="text" placeholder="搜索会话" aria-label="搜索会话">
+              </div>
+              <div class="s-list">
+                <div class="s-group">今天</div>
+                <div class="s-item on"><span class="s-title">周末出行调研</span></div>
+                <div class="s-item"><span class="s-title">迭代周报整理</span></div>
+                <div class="s-group">更早</div>
+                <div class="s-item"><span class="s-title">架构升级审核稿讨论</span></div>
+              </div>
+              <div class="acct">
+                <span class="acct-avatar" title="猫南北">猫</span>
+                <span class="acct-name" title="猫南北">猫南北</span>
+              </div>
+            </aside>
+            <!-- 主区：消息流 -->
+            <div class="chat-main">
+              <div class="msg-scroll">
+                <div class="msg-col" id="mfCol"></div>
+              </div>
+              <div class="composer">
+                <div class="composer-col">
+                  <div class="comp-box">
+                    <textarea rows="1" placeholder="输入消息，Enter 发送"></textarea>
+                    <div class="comp-row"><span class="comp-hint">演示件 · 输入区沿 CHG-003 定案不翻案；回合期间发送钮呈停止态（现状口径）</span><span class="sp"></span><button class="send-btn" title="发送" aria-label="发送" type="button"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M12.5 1.5 2 6.2l4.3 1.9 1.9 4.3 4.3-10.9z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></button></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>消息清单（自上而下，m1~m16）</b>：m1/m2 = <b>v1 旧消息</b>（纯文本，读时归一化为单文本段）·
+        m3/m4 = 版本分支混流（分支 1 = v1 纯文本，分支 2 = v2 blocks 含工具卡，‹1/2› 互换）·
+        m5~m8 = v2（双工具回合 / echo 长结果截断示意）· m9~m14 = <b>回合异常组</b>（生成中断 + 已中断工具卡 / 步数上限标注 / 上游错误气泡共存）·
+        m15/m16 = 可重放回合（A1 北极星：运行中→完成，AI 拿工具结果作答）。<b>侧栏为静态衬景</b>（iter-11 基线引用，本稿不涉侧栏交互）。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.2 SSE 事件流观测（文档辅助件，非产品 UI）<span class="tag">重放 m16 时逐帧打印——九类事件消费规则的直观载体（§4.1 契约）</span></div>
+      <div class="stage">
+        <div class="tk" id="sseScope">
+          <div class="sse-box">
+            <div class="sse-head">GET /api/chat/turn · text/event-stream —— 事件帧观测（data: 前缀 + JSON，逐帧原样；未知 type 静默跳过不渲染）</div>
+            <div class="sse-body" id="sseBody"><span style="color:var(--c-text-3);">（待重放——点上方「▶ 重放回合」后逐帧打印）</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="ann"><b>走查口径</b>：本面板为文档辅助件，产品不渲染事件流 UI；面板内容与 §4.1 消费规则表逐条对应（turn.step / usage 不产生界面变化、未知 type 无异常无渲染，均可在面板与界面对照验证）。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">2</span>工具步骤卡规格（REQ-032 · 定夺⑤=4.8-5 载体，「原型即需求」）</h2>
+    <div class="sec-desc">
+      AI 消息流内的<b>次级面板</b>：一条 assistant 消息的 blocks 中，每个 <code>tool_call</code> 段渲染一张卡（与文本段按 blocks 顺序混排）。
+      结构 = 头部行（常显，点击折叠/展开）+ 展开区（参数块 + 结果块）。全部既有令牌组合，零新增令牌。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.1 状态徽章四态 + 派生中断态<span class="tag">tool.result 的 status 映射；中断态为渲染派生态（非协议状态）</span></div>
+      <table>
+        <tr><th style="width:96px">状态</th><th style="width:190px">来源</th><th>徽章规格（20px 胶囊 · r-full · 12px/500）</th><th>语义与后续</th></tr>
+        <tr><td><b>运行中</b></td><td>tool.call 到达</td><td><code>--c-primary-l</code> 底 + <code>--c-primary</code> 字 + 11px 双色环 spinner（currentColor，.8s linear）；浅 #F0F4FF/#3370FF · 暗 #1D2740/#5C8DFF</td><td>工具执行中（受单工具超时约束）；展开区结果块显示占位「（等待结果…）」</td></tr>
+        <tr><td><b>完成</b></td><td>tool.result(status=ok)</td><td><code>--c-surface</code> 底 + <code>--c-success</code> 字 + 1px <code>--c-border</code> + ✓ icon；浅 #FFFFFF/#1A9E5C · 暗 #1E2026/#4CC38A</td><td>结果挂载（截断后文本原样渲染）；头部行显示耗时</td></tr>
+        <tr><td><b>失败</b></td><td>tool.result(status=error)</td><td><code>--c-danger-l</code> 底 + <code>--c-danger</code> 字 + ✕ icon；浅 #FDECEA/#D93025 · 暗 #361B18/#FF8073</td><td>错误结果回填模型，<b>回合继续</b>，模型可降级直答（REQ-030 异常分支）</td></tr>
+        <tr><td><b>超时</b></td><td>tool.result(status=timeout)</td><td><code>--c-warning-l</code> 底 + <code>--c-warning</code> 字 + 时钟 icon；浅 #FFF7E8/#B45309 · 暗 #38290F/#EDA23B</td><td>单工具超时到期取消执行；与「失败」分色保留诊断信息（参数错 vs 时间到）；回合继续</td></tr>
+        <tr><td><b>已中断</b>（派生）</td><td>tool_call 段<b>无</b>匹配 tool_result 段（回合 aborted / 上游中断 / 用户停止后落库）</td><td><code>--c-hover-bg</code> 底 + <code>--c-text-2</code> 字 + 「—」icon（中性，同「已停止生成」pill 语言）；浅 #F2F3F5/#646A73 · 暗 #262930/#A2A9B6</td><td>渲染规则：工具步骤不得以「运行中」徽章留存历史（spinner 冻结 = 误导）；展开区结果块显示「（回合中断，未获得结果）」</td></tr>
+      </table>
+      <div class="ann"><b>为什么超时用 warning 而非 danger</b>：失败（error）= 确定性拒绝（参数/权限/未注册，重试同样失败）；超时（timeout）= 时效性失败（服务慢，重试可能成功）——语义色分档沿全站 success/warning/danger 三族既有语言，与「生成中断」（warning）同族的时效语义一致。</div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.2 折叠交互与默认态（规则 R1~R3）<span class="tag">4.8-5 待定夺项的推荐落形——样件已按推荐实现</span></div>
+      <table>
+        <tr><th style="width:64px">规则</th><th>内容</th><th>理由</th></tr>
+        <tr><td><b>R1</b></td><td>tool.call 到达 → 卡创建即<b>展开</b>（可见运行中徽章与参数）</td><td>A1 北极星「过程透明」：运行中让用户看见 AI 在做什么</td></tr>
+        <tr><td><b>R2</b></td><td>终态到达（tool.result）→ 若用户<b>未手动操作过</b>该卡（无折叠/展开点击），<b>自动折叠</b>为头部行；操作过则保持用户当前态</td><td>平衡「过程透明」与信息密度：终态信息由徽章 + 耗时一行承载，历史浏览不被大卡淹没；尊重用户主动选择</td></tr>
+        <tr><td><b>R3</b></td><td>历史消息（读库渲染）中的工具卡<b>恒折叠</b>（仅头部行，含终态徽章 + 耗时）</td><td>同上；打开旧会话先看到回答骨架，需要时逐张展开核验</td></tr>
+        <tr><td>切换交互</td><td>头部行整体为 button（点击切换展开/折叠）；chevron 12px <code>--c-text-3</code> 随状态旋转 180°（.15s ease）；<code>aria-expanded</code> 同步；键盘 Enter/Space 原生触发，<code>:focus-visible</code> 内嵌 2px 焦点环</td><td>沿公司可交互组件口径（components.md 图标按钮/焦点环惯例）</td></tr>
+        <tr><td>头部行布局</td><td>工具 icon 14px <code>--c-text-3</code> + 名称 13px/500 <code>--c-text-1</code>（ellipsis，max-width 34%）+ 参数摘要 mono 12px <code>--c-text-3</code>（verbatim JSON，ellipsis）+ 耗时 12px <code>--c-text-3</code> tabular-nums（仅终态）+ 徽章 + chevron；行高 ≥36px（padding 7px 12px）</td><td>单行承载全部状态信息；参数摘要 verbatim 零转换（可断言）</td></tr>
+      </table>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.3 展开区：参数块 + 结果卡<span class="tag">极端内容承载：超长参数 / 长结果内滚 / 截断标注 / 空结果</span></div>
+      <table>
+        <tr><th style="width:110px">块</th><th>规格</th></tr>
+        <tr><td>参数块</td><td>label「参数」12px <code>--c-text-3</code> + <code>--c-surface</code> 内面板（r-sm，padding 8px 10px）内 mono 12px/1.6 <code>--c-text-1</code>，内容 = arguments JSON 字符串<b>原样</b>（不 pretty-print、零转换）；超长横向滚动（<code>overflow-x:auto</code>，细滚动条 <code>--c-scrollbar</code>），不换行不折行</td></tr>
+        <tr><td>结果块</td><td>label「结果」+ <code>--c-surface</code> 内面板：13px/1.6 <code>--c-text-1</code> pre-wrap；<b>左缘 3px 语义色条</b>（ok <code>--c-success</code> / error <code>--c-danger</code> / timeout <code>--c-warning</code>，沿 iter-8 site-strip 左缘语言）；<b>max-height 200px</b> 超出内部滚动（细滚动条）</td></tr>
+        <tr><td>占位（三串）</td><td>运行中 →「（等待结果…）」；终态 result 为空串 →「（无返回内容）」；中断派生态 →「（回合中断，未获得结果）」——均 13px <code>--c-text-3</code>（t-ph）</td></tr>
+        <tr><td>截断标注</td><td>网关截断（结果 &gt; 32 KiB，定夺③）由<b>后端在 result 文本尾部追加标注</b>（文案 T1 定，CHG-007 4.5「截断加标注」），前端<b>原样渲染</b>不做二次处理——m8 样例中为示意文案</td></tr>
+        <tr><td>耗时显示</td><td>折叠头部行徽章右侧 12px <code>--c-text-3</code> tabular-nums，格式 <b>ms 整数</b>（如 <code>412ms</code>，来自 duration_ms）；展开区不重复显示</td></tr>
+      </table>
+      <div class="ann"><b>不做的事</b>（信息密度考量，登记防膨胀）：不渲染步数计数与 usage（turn.step / usage 为记账数据不进用户界面，护栏仅以回合级终态标注呈现）；不做结果语法高亮 / 复制按钮（A1 工具结果均为短文本；A2 搜索结果呈现随 design-iter-14 复核）。</div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.4 回合级标注与逐字文案登记表（v1.4.10 B 条：样件文案逐字断言面）</div>
+      <table>
+        <tr><th style="width:200px">文案（逐字）</th><th>触发（turn.end reason）</th><th>形态</th></tr>
+        <tr><td><b>已到单回合步数上限</b></td><td>max_steps（REQ-030 异常分支，文案随本稿定死）</td><td>消息末尾 warning pill（<code>--c-warning-l</code>/<code>--c-warning</code>，同「生成中断」形制）；已生成内容保留并落库</td></tr>
+        <tr><td><b>生成中断</b></td><td>upstream_interrupted / 断连取消（存量口径零回退）</td><td>消息末尾 warning pill；运行中工具卡转「已中断」派生态</td></tr>
+        <tr><td><b>已停止生成</b></td><td>用户点停止（aborted；存量口径零回退）</td><td>中性 pill（<code>--c-hover-bg</code>/<code>--c-text-2</code>）；运行中工具卡转「已中断」派生态</td></tr>
+        <tr><td><b>正在生成…</b></td><td>回合进行中（存量口径零回退）</td><td>12px <code>--c-text-3</code> hint + 行内光标；turn.end 移除</td></tr>
+        <tr><td>徽章五串：<b>运行中 / 完成 / 失败 / 超时 / 已中断</b></td><td>—</td><td>§2.1；走查条 15 逐字断言</td></tr>
+        <tr><td>占位三串：<b>（等待结果…）/（无返回内容）/（回合中断，未获得结果）</b></td><td>—</td><td>§2.3；走查条 25 逐字断言</td></tr>
+        <tr><td>块标签两串：<b>参数 / 结果</b>；耗时格式 <b>412ms</b>（ms 整数）</td><td>—</td><td>§2.3</td></tr>
+        <tr><td>导出标记行：<b><code>&gt; [工具 demo_weather · 完成]</code></b>（状态词 = 完成/失败/超时/已中断）</td><td>REQ-013 改写口径，格式随本稿定死</td><td>文本段照旧输出，工具段替换为该标记行（§3.3）</td></tr>
+        <tr><td>后端拥有文案（前端原样渲染）</td><td>—</td><td>截断标注（T1 定）、tool.result 错误原因文本、409 <code>session_schema_conflict</code> 的 detail.message</td></tr>
+      </table>
+      <div class="ann"><b>A1 无固定「降级直答」标注文案</b>：工具失败/超时后模型自述降级（如 m16 失败结局的「（这次工具调用没有成功…）」为模型生成文本，非固定 UI 文案）；A2 搜索降级的固定标注文案随 design-iter-14（REQ-035 异常分支已预告）。</div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.5 A2 占位说明：引用来源卡（不做，登记边界）<span class="tag">design-iter-14 的活——本稿只留位置与契约</span></div>
+      <div class="ann" style="margin-top:0;">
+        A2（REQ-035 联网搜索）将在消息流新增<b>引用来源卡</b>（工具结果中的来源列表 → 标题 + 链接的卡片形态），设计归 <b>design-iter-14</b>。
+        本稿为其预留的契约：<b>①</b> 位置 = AI 消息流内、blocks 顺序模型自然容纳新段类型（搜索结果的来源呈现挂在回答末尾，不破坏文本/工具段混排规则）；
+        <b>②</b> 容器语言 = 沿用本稿工具卡的次级面板口径（subtle-bg/border/r-md 家族），届时随原型定形态；
+        <b>③</b> admin 搜索开关入口（REQ-025 改写预告）同归 design-iter-14。<b>本稿不画引用来源卡视觉稿</b>（边界：CHG-007 定夺⑥=4.8-6 明确随 design-iter-14 基线）。
+      </div>
+    </div>
+  </section>
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">3</span>blocks 展示层与 v1/v2 同流呈现（REQ-032 / REQ-006 改写口径）</h2>
+    <div class="sec-desc">
+      消息模型 string → Block[]（类型定义 = CHG-007 内容 4.2，前后端共享语义，本稿不重复抄录、只登记展示规则）；
+      <b>存量会话不迁移、读时归一化</b>——v1 string ⇒ 单文本段，渲染无差别（REQ-032 验收 1 的规则面）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">3.1 读路径规则（渲染器输入侧）</div>
+      <table>
+        <tr><th style="width:210px">规则</th><th>口径</th></tr>
+        <tr><td>读时归一化</td><td>v1 消息（content: string）⇒ <code>[{type:'text', text: content}]</code>，进入与 v2 完全相同的渲染管线——<b>逐字零回退</b>（含 branches / 编辑态 / 版本切换用例数据，REQ-032 验收 1）</td></tr>
+        <tr><td>消息级判定</td><td>v1/v2 按<b>消息 content 类型</b>判定（string vs array），与会话档顶层 <code>schema: 2</code> 标记独立——branches 内 v1/v2 混合消息各自按自身类型归一化（m4 样例即此形态）</td></tr>
+        <tr><td>blocks 顺序渲染</td><td>文本段（.md）与工具卡按数组顺序原样呈现，<b>不重排、不合并</b>跨工具卡的文本段（保留生成时序感——「先说一句 → 调工具 → 继续答」）；段间 8px（.blocks gap），消息间 20px 沿用</td></tr>
+        <tr><td>写侧</td><td><b>用户消息恒 string</b>（无工具语义，现状不变）；assistant 消息 v2 起用 blocks（至少一段）；回合事件流组装规则见 §4.1（text.delta 归并当前文本段 / 工具事件后 text.delta 开新段）</td></tr>
+        <tr><td>文本段管线</td><td>仅 text 段进 markdown-it + DOMPurify（REQ-011 改写口径）；<b>工具参数与结果不进 Markdown 管线</b>（卡内 pre-wrap/mono 直排）——代码块样式沿 design-iter-3 基线引用不重画</td></tr>
+        <tr><td>防御</td><td>blocks 空数组 / 未知段类型：不渲染该段、不抛错（沿 parseSse 前向兼容精神）；写侧保证至少一段（T2 断言）</td></tr>
+      </table>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">3.2 同流呈现规则（v1/v2 混排 = REQ-032 验收 1 的界面面）</div>
+      <table>
+        <tr><th style="width:230px">场景</th><th>呈现</th></tr>
+        <tr><td>同会话 v1 + v2 消息混排</td><td>文本部分<b>视觉零差异</b>：同字号/行高/气泡规则/间距，无任何格式标记或分隔（m1/m2 与 m5+ 对照；「标注消息格式」开关为走查辅助件，产品无此 UI）</td></tr>
+        <tr><td>版本分支混流</td><td>‹1/2› 切换的两分支可为 v1（重新生成前旧回答）与 v2（重新生成后新回答）——各分支独立归一化渲染，切换交互零回退（m4 可验；REQ-019 波及口径）</td></tr>
+        <tr><td>编辑态</td><td>编辑用户消息（string）→ 保存删后消息并发起服务端回合 → 新回复为 v2 blocks（编辑面板 UI 沿现状零回退，本稿不重画）</td></tr>
+        <tr><td>导出（REQ-013 改写）</td><td>v2 会话导出：文本段照旧输出（区分用户/AI 沿现状）+ 每组 tool_call/tool_result 段输出一行 <code>&gt; [工具 name · 状态]</code>（状态词：完成/失败/超时/已中断）；<b>v1 会话导出逐字不变</b></td></tr>
+        <tr><td>搜索（REQ-016 定案）</td><td>blocks 消息取<b>文本段拼接</b>参与索引；工具调用参数与结果不入索引（500ms 口径不变）</td></tr>
+        <tr><td>复制</td><td>AI 消息复制 = 文本段以空行拼接（<code>\n\n</code> join）；工具参数/结果不入复制文本（与导出/搜索同口径：工具内容非正文）</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">4</span>SSE 协议 v2 前端契约与回合边界（REQ-030 事件面 / REQ-033 边界）</h2>
+    <div class="sec-desc">
+      事件类型与负载字段 = CHG-007 内容 4.1（本稿不改动协议定义，只登记<b>前端消费规则</b>）；承载 = 独立回合端点
+      <code>POST /api/chat/turn</code>（定夺⑦=4.8-8 推荐定案）。1.2 观测面板即本表的直观演示。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.1 九类事件消费规则表（T2 StreamHandlers 扩展依据）</div>
+      <table>
+        <tr><th style="width:150px">事件</th><th style="width:230px">负载（CHG-007 4.1 原文）</th><th>前端处理（本稿定死）</th></tr>
+        <tr><td><code>turn.start</code></td><td>session_id, turn_id</td><td><b>建立回合态</b>：创建 assistant 消息（status=streaming）、「正在生成…」hint + 光标；回合期间发送钮呈停止态（现状机制）</td></tr>
+        <tr><td><code>text.delta</code></td><td>text</td><td>追加至<b>当前文本段</b>（尾部无 text 段则新建）；工具事件之后到来的首帧 text.delta <b>开新文本段</b>（blocks 顺序 = 事件顺序）</td></tr>
+        <tr><td><code>tool.call</code></td><td>tool_call_id, name, arguments</td><td>按 tool_call_id 新建工具卡（运行中徽章、展开态 R1）；arguments 字符串原样入头部摘要与参数块</td></tr>
+        <tr><td><code>tool.result</code></td><td>tool_call_id, status, result, duration_ms</td><td>按 tool_call_id <b>匹配更新</b>对应卡：终态徽章（§2.1 映射）+ 结果（原样渲染）+ 耗时（ms 整数）+ R2 自动折叠</td></tr>
+        <tr><td><code>turn.step</code></td><td>step, max_steps</td><td><b>不渲染</b>（步数计数内部记账；护栏仅以回合级终态标注呈现）</td></tr>
+        <tr><td><code>usage</code></td><td>requests, tokens</td><td><b>不渲染</b>（回合用量记账数据，落 usage_daily 由服务端完成，REQ-034）</td></tr>
+        <tr><td><code>turn.end</code></td><td>reason（done/max_steps/aborted/error）</td><td><b>定型消息</b>：移除生成 hint；reason 映射——done→status=done；max_steps→定型 + 「已到单回合步数上限」pill；aborted→「已停止生成」/「生成中断」标注（按取消来源）；error→按错误分支标注（已生成内容保留）。定型后<b>触发会话 PUT（整档，顶层 schema: 2）</b>（4.3）</td></tr>
+        <tr><td><code>error</code></td><td>code, message</td><td><b>完全复用 REQ-007 / design-iter-7 §3.1 十场景错误气泡体系</b>（含可重试错误的重试；重试发起新回合）；本回合已生成的文本与工具步骤保留（m14 共存形态）</td></tr>
+        <tr><td><code>upstream_interrupted</code></td><td>（沿用现帧）</td><td>已收内容保留 + 「生成中断」pill（存量口径零回退）；运行中工具卡转「已中断」派生态</td></tr>
+        <tr><td><b>未知 type</b></td><td>—</td><td><b>静默跳过</b>：不渲染、不抛错、不中断回合（沿 parseSse 前向兼容原则，为 B/C/D 期新事件留扩展位——1.2 面板含演示帧 <code>{"type":"future.event"}</code>）</td></tr>
+      </table>
+      <pre><code>data: {"type":"turn.start","session_id":"s_ab12","turn_id":"t_01HX"}
+data: {"type":"text.delta","text":"我先查一下"}
+data: {"type":"tool.call","tool_call_id":"c_1","name":"demo_weather","arguments":"{\"city\":\"北京\"}"}
+data: {"type":"tool.result","tool_call_id":"c_1","status":"ok","result":"北京：晴，最高 32°C","duration_ms":412}
+data: {"type":"turn.step","step":2,"max_steps":10}
+data: {"type":"usage","requests":2,"tokens":2100}
+data: {"type":"turn.end","reason":"done"}
+data: {"type":"future.event","x":1}   ← 未知 type：静默跳过（演示帧，产品无此 UI）</code></pre>
+      <div class="ann">示例帧逐条 = CHG-007 内容 4.1 原文（末行为本稿补充的未知 type 演示）。<b>回合态建立/定型规则汇总</b>：turn.start 建立 → 期间可停止（aborted）→ turn.end 定型（四 reason 映射见上表）→ 定型即 PUT。<b>断连取消</b>：用户关页/断网由服务端检测并取消上游与工具执行（前端无孤儿态；已落库内容保留，REQ-006 刷新恢复口径衔接）。</div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.2 请求体边界（REQ-033：组装迁服务端）</div>
+      <pre><code>POST /api/chat/turn
+Content-Type: application/json
+{ "session_id": "s_ab12", "message": "北京今天天气怎么样？" }   ← 仅此两字段，无历史数组
+
+→ 200 text/event-stream（九类事件，见 4.1）</code></pre>
+      <table>
+        <tr><th style="width:210px">边界口径</th><th>内容</th></tr>
+        <tr><td>前端不再组装与上传历史</td><td>系统提示词 + 最近 20 轮由<b>服务端组装器</b>执行（规则照搬，REQ-002/033 改写口径）；前端 buildContext() 读路径退役为服务端调用（T2 移除，vitest 断言请求载荷形状 = REQ-033 验收 3）</td></tr>
+        <tr><td>统一入口</td><td><b>发送 / 编辑重建 / 重新生成统一走回合端点</b>（同请求体形状）；编辑重建 = 先按 REQ-015 删后消息并保存会话，再发起回合（截断与保存仍为前端既有职责，上下文由服务端按删后消息组装）</td></tr>
+        <tr><td>旧透传端点保留（注记=4.8-11 关联）</td><td><b>POST /api/chat 零改动保留</b>：窗口期老客户端可用（无工具能力；1 请求 = 1 回合计，两入口配额同源）；下线时点 B1 排期评估——<b>T0/T1/T2 均不得擅自移除</b></td></tr>
+        <tr><td>上游错误复用</td><td>回合路径下 design-iter-7 §3.1 十场景映射用例复跑全绿（REQ-030 验收 5）；配额 429 在回合受理即拦（零上游调用、零工具卡；提示沿现状 quota 口径，本稿不新增设计）</td></tr>
+      </table>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.3 定型落库：schema: 2 写侧守卫的前端配合（CHG-007 4.3）</div>
+      <table>
+        <tr><th style="width:210px">项</th><th>口径</th></tr>
+        <tr><td>写标记</td><td>turn.end 定型后随会话 PUT 落库，会话 JSON <b>顶层带 <code>"schema": 2</code></b>（新客户端恒带；REQ-032 验收 3，vitest 断言持久化载荷）</td></tr>
+        <tr><td>守卫 409（防御路径）</td><td>新客户端遇 409 <code>session_schema_conflict</code>（理论不触发）→ 按 REQ-007 错误体系提示，<b>后端 detail.message 原样呈现</b>（「该会话已升级为新格式，请刷新页面获取最新版本后再编辑」）+ 引导刷新页面动作；不自动重试</td></tr>
+        <tr><td>存量读路径</td><td>GET 原样 JSON（含 v2 档）→ 前端读时归一化（§3.1）→ schema 标记透传不剥离（透传保真，CHG-007 4.3 取证结论沿用）</td></tr>
+      </table>
+    </div>
+  </section>
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">5</span>亮暗锁定对照（双帧并置，走查方法 = 找亮色残留）</h2>
+    <div class="sec-desc">同一 DOM，仅根节点令牌覆盖；暗色帧内任何肉眼发白块即为漏改裸色值。本节锁定帧不随「演示控制」切换。</div>
+
+    <div class="spec">
+      <div class="spec-title">5.1 工具步骤卡五态（运行中 / 完成 / 失败 / 超时 / 已中断，浅 ↔ 暗）<span class="tag">运行中帧 = 加载态一帧取证位（v1.4.10 B 条）</span></div>
+      <div class="cols">
+        <div>
+          <div class="frame-cap">浅色（卡 subtle-bg #FAFBFC；徽章 primary-l/surface+success/danger-l/warning-l/hover-bg）</div>
+          <div class="tk force-light" id="lock1L" style="padding:16px;display:flex;flex-direction:column;gap:8px;border:1px solid var(--c-border);border-radius:var(--r-lg);background:var(--c-surface);"></div>
+        </div>
+        <div>
+          <div class="frame-cap">暗色（卡 subtle-bg #24272E；徽章 #1D2740/#5C8DFF、#1E2026/#4CC38A、#361B18/#FF8073、#38290F/#EDA23B、#262930/#A2A9B6）</div>
+          <div class="tk force-dark" id="lock1D" style="padding:16px;display:flex;flex-direction:column;gap:8px;border:1px solid var(--c-border);border-radius:var(--r-lg);background:var(--c-surface);"></div>
+        </div>
+      </div>
+      <div class="ann">五态各一张卡（同一 DOM 结构仅状态类不同），运行中卡带 spinner（截图一帧留档 = 走查条 10/51「加载态一帧」）；结果块左缘语义色条同步对照。</div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">5.2 消息流：v1 文本 + v2 工具卡混排 + 回合级 pill（浅 ↔ 暗）</div>
+      <div class="cols">
+        <div>
+          <div class="frame-cap">浅色（用户气泡 #E8EBF2；工具卡 #FAFBFC；warning pill #FFF7E8）</div>
+          <div class="tk force-light" id="lock2L" style="padding:16px;border:1px solid var(--c-border);border-radius:var(--r-lg);background:var(--c-surface);"></div>
+        </div>
+        <div>
+          <div class="frame-cap">暗色（用户气泡 #33363E；工具卡 #24272E；warning pill #38290F）</div>
+          <div class="tk force-dark" id="lock2D" style="padding:16px;border:1px solid var(--c-border);border-radius:var(--r-lg);background:var(--c-surface);"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">6</span>适用性说明 + 令牌与组件使用（v1.4.4 口径）</h2>
+    <div class="spec">
+      <table>
+        <tr><th style="width:190px">项</th><th>结论</th><th>依据</th></tr>
+        <tr><td>移动端 ≤480px</td><td><b>不适用</b>：移动端主界面适配让位至 agent UI 形态稳定后（约 B1 后，可与 D2 搭班）——CHG-007 定序 CEO 已拍板；本稿维持桌面优先</td><td>CHG-007 暂缓池 / plans iter-13「本迭代不做」</td></tr>
+        <tr><td>输入区（ComposerBox）</td><td><b>不改版</b>：沿 CHG-003 定案（发送钮与首行文字对齐）；回合期间停止态为现状机制</td><td>plans 惯例（不翻案）</td></tr>
+        <tr><td>引用来源卡</td><td><b>不做</b>：A2 / design-iter-14（§2.5 占位说明）；admin 搜索开关入口同归 A2</td><td>CHG-007 4.8-6</td></tr>
+        <tr><td>侧栏 / 设置弹窗 / 管理后台</td><td><b>零改动引用</b>：iter-11/12 基线（本稿侧栏为静态衬景）</td><td>范围限定（REQ-032 涉及页面 = 消息流）</td></tr>
+        <tr><td>演示工具可见性</td><td>样件中工具对「猫南北」可见系演示设定；<b>产品口径随定夺④</b>（推荐仅 admin——普通用户无工具可调，消息流呈现与本稿完全一致的无工具形态）</td><td>CHG-007 4.8-4 / §8-④</td></tr>
+        <tr><td>样件数据</td><td>天气结果 = demo_weather <b>固定假数据</b>（CHG-007 4.6 原文）；耗时（412ms 等）/ tokens 数值均为虚构演示值；线上数值只由接口采集渲染（铁律 5）</td><td>铁律 5</td></tr>
+      </table>
+    </div>
+    <table>
+      <tr><th style="width:130px">项</th><th>结论</th></tr>
+      <tr>
+        <td>色值令牌</td>
+        <td>全部取自 tokens.md v1.3/v1.3.1（浅 + 暗 + 前景/实底拆分族），<b>本稿零新增令牌、零自造色值</b>（产品组件一律 <code>var()</code> 引用语义令牌，含 spinner/焦点环/滚动条；文档外壳沿惯例用浅色原值）。<b>无需 design-system 令牌变更</b>（§8-⑤ 评估结论）。</td>
+      </tr>
+      <tr>
+        <td>组件沉淀建议</td>
+        <td>随基线建议在 components.md 登记一项<b>新形态</b>（纯既有令牌组合，资产沉淀不涉令牌批准，沿 iter-7~12 惯例）：<b>工具步骤卡</b>（次级面板 subtle-bg/border/r-md + 头部行 + 四态徽章 + 折叠规则 R1~R3 + 结果卡左缘语义色条）。</td>
+      </tr>
+      <tr>
+        <td>字号/间距/圆角/阴影/动效</td>
+        <td>全部在 tokens 既定值域内（正文/气泡 15px、卡头部与徽章 12~13px、标签 12px、结果 13px；段间 8px、消息间 20px、卡内 4/6/8/12 栅格；r-sm/r-md/r-lg/r-full；spinner .8s、过渡 .15s ease、chevron 旋转 .15s）。</td>
+      </tr>
+    </table>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">7</span>T0 验收对照 + 走查清单（v1.4.4 硬要求，T1/T2 任务级门槛）</h2>
+    <div class="sec-desc">
+      7.1 对照 plans/iter-13.md T0 验收标准与 REQ-030/032/033 验收标准原文逐条落点；7.2 为本稿全部触点与状态组合的走查清单——
+      <b>T1/T2 实现时对照逐条自查留档（development.md / verify 文档），QA 审计取证</b>。
+      <b>本清单所有条目均须在浅色与暗色两个主题下逐条通过</b>（双主题承载口径，v1.4.10 B 条）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">7.1 T0 验收 + REQ 验收对照（原文）</div>
+      <table>
+        <tr><th style="width:46%">验收标准（原文）</th><th>本稿落点</th><th>状态</th></tr>
+        <tr><td>〔plans T0〕CEO 批准基线（tag design-iter-13）</td><td>本稿提交 CEO 评审——批准后打 tag（§9 声明；打 tag 由主会话执行）</td><td>☑ 已批准（2026-08-17「批准，全部按推荐」；tag 随统一提交补打）</td></tr>
+        <tr><td>〔plans T0〕定夺参数 9 项全部定死并随稿登记（含定夺④联动定案：自填档案「支持工具」开关 UI 是否随 A1 交付）</td><td>§8 九行（①~⑧ = 4.8 表 #1/2/3/4/5/7/8/9，⑨ = 旧端点注记行）；④ 附联动定案建议</td><td>☑ 已定案（CEO 2026-08-17 全按推荐，含④仅 admin / 开关 UI 随 A2）</td></tr>
+        <tr><td>〔plans T0〕走查清单随稿（工具步骤状态机、暗色、v1/v2 同流呈现、样件文案逐字断言面——v1.4.10 B 条）</td><td>7.2（<b>51 条</b>）；逐字断言面 = 条 15/25/29/30/45 + §2.4 登记表；加载态一帧 = 条 10/51；双主题承载 = 条 48</td><td>☑ 已覆盖</td></tr>
+        <tr><td>〔plans T0〕spec REQ-030/032「涉及页面」指针随基线同步回填（NCR-iter12-001 同型复发防线，v1.4.10 A 条）</td><td>§9 基线后动作清单第 2 项（主会话随基线执行）</td><td>☐ 随基线执行</td></tr>
+        <tr><td>〔REQ-032 验收 1〕老 string 会话（含 branches / 编辑 / 版本切换用例数据）在新前端逐字一致渲染（vitest + 真实 Chrome 走查留档）</td><td>§1 m1~m4（v1 消息 + 版本分支混流）+ §3.1/3.2 规则 + 条 2/4/8；vitest 与 Chrome 留档为 T2 交付</td><td>☑ 稿内覆盖</td></tr>
+        <tr><td>〔REQ-032 验收 2〕2 步回合渲染状态机：运行中徽章 → 终态徽章 + 可折叠结果卡，暗色同步（走查留档）</td><td>§1 重放（m16 单工具全状态机）+ m6 双工具回合 + §2.1/2.2 + 条 9~17</td><td>☑ 稿内覆盖</td></tr>
+        <tr><td>〔REQ-032 验收 3〕v2 客户端 PUT 的会话 JSON 顶层含 schema: 2（vitest 断言持久化载荷）</td><td>§4.3 契约 + 条 40；vitest 为 T2 交付</td><td>☑ 规格落点</td></tr>
+        <tr><td>〔REQ-033 验收 3〕回合端点请求体不含历史消息数组（vitest 断言请求载荷形状）</td><td>§4.2 请求体边界 + 条 42；vitest 为 T2 交付</td><td>☑ 规格落点</td></tr>
+        <tr><td>〔REQ-001 改写〕回合流式渲染：文本增量逐步显示（打字机不变）/ 工具步骤 / 回合结束气泡标记完成；既有验收零回退</td><td>§1 重放 + §4.1 turn.end 定型 + 条 5/35</td><td>☑ 稿内覆盖</td></tr>
+        <tr><td>〔REQ-030 验收 1 前端侧〕2 步工具回合事件序逐帧断言（帧序对照）</td><td>§1.2 事件观测面板（重放逐帧打印，含帧序目视对照）；帧级 pytest 为 T1（MockTransport）</td><td>☑ 稿内覆盖</td></tr>
+      </table>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">7.2 走查清单（design-iter-13，51 条；勾选框供 T1/T2 自查与 QA 取证）</div>
+      <table>
+        <tr><th style="width:26px">过</th><th style="width:36px">序号</th><th>需求</th><th>触点</th><th>状态组合</th><th>期望表现（= 验收口径；浅 = tokens 浅值 / 暗 = tokens 暗值）</th><th style="width:56px">样件</th></tr>
+        <tr><td><input type="checkbox"></td><td>1</td><td>REQ-032</td><td>消息流框架</td><td>基调零回退</td><td>消息列 712px 居中、AI 全宽无气泡、用户浅气泡（<code>--c-avatar-bg</code> #E8EBF2/#33363E）右对齐、操作栏悬停浮现——iter-11 基线零翻案</td><td>1.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>2</td><td>REQ-032</td><td>v1 消息</td><td>逐字零回退</td><td>老 string 消息（m1/m2、m4 分支 1）渲染逐字一致：字号 15px/1.75、Markdown 管线、无格式标记（REQ-032 验收 1 界面面；vitest + Chrome 留档为 T2）</td><td>1.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>3</td><td>REQ-032</td><td>v1/v2 同流</td><td>混排无差别</td><td>同会话 v1 与 v2 消息混排，文本部分视觉零差异（同字号/行高/间距/气泡规则）；「标注消息格式」仅为走查辅助件，产品无此 UI</td><td>1.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>4</td><td>REQ-032</td><td>branches 混流</td><td>版本切换</td><td>‹1/2› 分支 1（v1 纯文本）↔ 分支 2（v2 blocks 含工具卡）互换正常，各分支独立归一化渲染，切换交互零回退（m4 可验；REQ-019 口径）</td><td>1.1（可交互）</td></tr>
+        <tr><td><input type="checkbox"></td><td>5</td><td>REQ-011</td><td>文本段</td><td>Markdown 管线</td><td>仅 text 段进 markdown-it + DOMPurify（代码块沿 design-iter-3 基线）；工具参数/结果不进管线（卡内 mono/pre-wrap 直排）</td><td>1.1/3.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>6</td><td>REQ-032</td><td>blocks 排布</td><td>顺序与间距</td><td>文本段与工具卡按 blocks 顺序呈现不重排不合并；段间 8px、消息间 20px 沿用；工具卡不破消息间距</td><td>1.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>7</td><td>REQ-032</td><td>复制</td><td>口径</td><td>AI 消息复制 = 文本段空行拼接；工具参数/结果不入复制文本</td><td>1.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>8</td><td>REQ-032</td><td>操作栏</td><td>共存</td><td>hover 浮现复制/版本导航沿 iter-11 零回退；工具卡存在不遮挡操作栏、不产生滚动跳动</td><td>1.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>9</td><td>REQ-032</td><td>工具卡</td><td>tool.call 创建</td><td>按 tool_call_id 创建卡：运行中徽章 + 展开态（R1）；头部行 icon 14px text-3 + 名称 13px/500 + 参数摘要 mono 12px verbatim + chevron</td><td>1.1（重放）</td></tr>
+        <tr><td><input type="checkbox"></td><td>10</td><td>v1.4.10B</td><td>运行中帧</td><td>加载态一帧</td><td>运行中卡截图一帧留档：11px 双色环 spinner（currentColor .8s）+「运行中」逐字 + 结果占位「（等待结果…）」</td><td>1.1/5.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>11</td><td>REQ-032</td><td>徽章·完成</td><td>tool.result(ok)</td><td>徽章翻「完成」（surface 底 #FFFFFF/#1E2026 + success #1A9E5C/#4CC38A + border + ✓）；耗时 12px text-3 tabular「412ms」出现于头部行</td><td>1.1（重放）</td></tr>
+        <tr><td><input type="checkbox"></td><td>12</td><td>REQ-032</td><td>徽章·失败</td><td>tool.result(error)</td><td>徽章「失败」（danger-l #FDECEA/#361B18 + danger #D93025/#FF8073 + ✕）；错误原因文本原样渲染；回合继续降级直答</td><td>1.1（重放切失败）</td></tr>
+        <tr><td><input type="checkbox"></td><td>13</td><td>REQ-032</td><td>徽章·超时</td><td>tool.result(timeout)</td><td>徽章「超时」（warning-l #FFF7E8/#38290F + warning #B45309/#EDA23B + 时钟）；result 空串 → 结果占位「（无返回内容）」；回合继续降级直答</td><td>1.1（重放切超时）</td></tr>
+        <tr><td><input type="checkbox"></td><td>14</td><td>REQ-032</td><td>徽章·已中断</td><td>派生态</td><td>tool_call 无 tool_result（aborted/中断后落库）→ 徽章「已中断」（hover-bg #F2F3F5/#262930 + text-2，中性「—」icon）；<b>不以运行中徽章留存历史</b>（m10 可验）</td><td>1.1（m10）</td></tr>
+        <tr><td><input type="checkbox"></td><td>15</td><td>v1.4.10B</td><td>徽章文案</td><td>逐字断言</td><td>五串逐字：<b>运行中 / 完成 / 失败 / 超时 / 已中断</b>（§2.4 登记表为唯一来源，实现不得改写）</td><td>2.1/2.4</td></tr>
+        <tr><td><input type="checkbox"></td><td>16</td><td>REQ-032</td><td>2 步回合</td><td>多卡序</td><td>双工具回合（m6：echo → demo_weather）两卡按步骤顺序呈现、卡间不重排；各卡独立折叠态（REQ-032 验收 2 的多步面）</td><td>1.1（m6）</td></tr>
+        <tr><td><input type="checkbox"></td><td>17</td><td>REQ-032</td><td>状态机暗色</td><td>四态 + 中断</td><td>五态徽章暗色值对照 §5.1 锁定帧（#1D2740/#5C8DFF、#1E2026/#4CC38A、#361B18/#FF8073、#38290F/#EDA23B、#262930/#A2A9B6）——走查留档（= REQ-032 验收 2 暗色同步）</td><td>5.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>18</td><td>REQ-032</td><td>折叠 R1</td><td>创建即展开</td><td>tool.call 到达 → 卡创建即展开（运行中徽章与参数可见）——重放可验</td><td>1.1（重放）</td></tr>
+        <tr><td><input type="checkbox"></td><td>19</td><td>REQ-032</td><td>折叠 R2</td><td>终态自动折叠</td><td>tool.result 到达且用户未手动操作过该卡 → 自动折叠为头部行（终态徽章 + 耗时）——重放可验</td><td>1.1（重放）</td></tr>
+        <tr><td><input type="checkbox"></td><td>20</td><td>REQ-032</td><td>折叠 R2</td><td>尊重用户</td><td>运行中手动折叠/展开过的卡，终态到达<b>不再</b>自动折叠（保持用户当前态）</td><td>1.1（重放中点卡）</td></tr>
+        <tr><td><input type="checkbox"></td><td>21</td><td>REQ-032</td><td>折叠 R3</td><td>历史恒折叠</td><td>读库渲染的历史工具卡恒折叠（仅头部行；m4 分支 2/m6/m8/m12 全部折叠加载）</td><td>1.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>22</td><td>REQ-032</td><td>折叠交互</td><td>点击/键盘</td><td>头部行 button 点击切换；chevron 旋转 180°（.15s）；aria-expanded 同步；Enter/Space 原生触发；:focus-visible 内嵌 2px <code>--c-focus-ring</code>（rgba(51,112,255,.12)/rgba(92,141,255,.25)）</td><td>1.1（可交互）</td></tr>
+        <tr><td><input type="checkbox"></td><td>23</td><td>REQ-032</td><td>参数块</td><td>verbatim</td><td>label「参数」12px text-3 + surface 内面板 mono 12px；arguments JSON 字符串原样（不 pretty-print 零转换）；超长横向滚动不折行</td><td>1.1（展开任一卡）</td></tr>
+        <tr><td><input type="checkbox"></td><td>24</td><td>REQ-032</td><td>结果块</td><td>色条与内滚</td><td>label「结果」+ 13px/1.6 pre-wrap；左缘 3px 语义色条（ok success / error danger / timeout warning）；max-height 200px 内部滚动（细滚动条 --c-scrollbar）</td><td>1.1（m6/m8）</td></tr>
+        <tr><td><input type="checkbox"></td><td>25</td><td>v1.4.10B</td><td>占位文案</td><td>逐字断言</td><td>三串逐字：<b>（等待结果…）/（无返回内容）/（回合中断，未获得结果）</b>——运行中 / 空终态 / 中断派生态各对应一串（§2.4）</td><td>2.3/2.4</td></tr>
+        <tr><td><input type="checkbox"></td><td>26</td><td>REQ-031</td><td>长结果</td><td>截断呈现</td><td>结果超 max-height 内滚；网关截断标注（后端追加于 result 尾部，文案 T1 定）前端原样渲染——m8 为示意文案（非定稿文案，走查时以后端实现为准）</td><td>1.1（m8）</td></tr>
+        <tr><td><input type="checkbox"></td><td>27</td><td>REQ-032</td><td>超长参数</td><td>极端内容</td><td>折叠头部参数摘要 ellipsis 不撑破行；展开参数块横向滚动（m8 长文本 echo 可验）</td><td>1.1（m8）</td></tr>
+        <tr><td><input type="checkbox"></td><td>28</td><td>REQ-032</td><td>卡片容器</td><td>规格</td><td>subtle-bg #FAFBFC/#24272E + 1px border #E5E6EB/#33363E + r-md；头部行 ≥36px（padding 7px 12px）hover <code>--c-hover-bg</code></td><td>1.1/5.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>29</td><td>REQ-030</td><td>步数上限</td><td>max_steps</td><td>turn.end(max_steps) → 消息末尾 warning pill「<b>已到单回合步数上限</b>」逐字（warning-l/warning）；已生成内容保留并落库（m12；样件为呈现演示，不代表真实触发条件）</td><td>1.1（m12）</td></tr>
+        <tr><td><input type="checkbox"></td><td>30</td><td>REQ-030</td><td>生成中断</td><td>中断标注</td><td>upstream_interrupted / 断连 → 已收内容保留 + pill「<b>生成中断</b>」（存量逐字零回退）+ 运行中工具卡转「已中断」（m10）</td><td>1.1（m10）</td></tr>
+        <tr><td><input type="checkbox"></td><td>31</td><td>REQ-030</td><td>用户停止</td><td>aborted</td><td>点停止 → pill「<b>已停止生成</b>」（存量逐字零回退）；运行中工具卡同步转「已中断」派生态</td><td>2.4（T2 走查）</td></tr>
+        <tr><td><input type="checkbox"></td><td>32</td><td>REQ-030</td><td>上游错误</td><td>气泡共存</td><td>error 事件 → REQ-007 / design-iter-7 §3.1 十场景错误气泡复用（不新建映射）；本回合已生成文本与工具步骤保留（m14 共存形态）；可重试错误提供重试，重试发起新回合</td><td>1.1（m14）</td></tr>
+        <tr><td><input type="checkbox"></td><td>33</td><td>REQ-034</td><td>配额拦截</td><td>429</td><td>回合受理即 429（零上游调用、零工具卡）；提示沿现状 quota 口径（本稿不新增设计）</td><td>4.2（T2 走查）</td></tr>
+        <tr><td><input type="checkbox"></td><td>34</td><td>REQ-001</td><td>生成 hint</td><td>回合期间</td><td>「正在生成…」12px text-3 + 行内光标（存量逐字零回退）；turn.end 移除；工具执行期间 hint 持续（回合未结束）</td><td>1.1（重放）</td></tr>
+        <tr><td><input type="checkbox"></td><td>35</td><td>REQ-001</td><td>打字机</td><td>零回退</td><td>文本增量逐步显示（现状打字机效果不变）；工具卡出现不打断已有文本渲染</td><td>1.1（重放）</td></tr>
+        <tr><td><input type="checkbox"></td><td>36</td><td>REQ-030</td><td>turn.start</td><td>回合态建立</td><td>创建 assistant 消息（status=streaming）+ hint + 光标；事件观测面板帧序首位</td><td>1.2（重放）</td></tr>
+        <tr><td><input type="checkbox"></td><td>37</td><td>REQ-030</td><td>text.delta</td><td>段落规则</td><td>追加当前文本段；工具事件后首帧 text.delta 开新文本段（blocks 顺序 = 事件顺序）——重放中「先查一下」与最终回答为两段</td><td>1.2（重放）</td></tr>
+        <tr><td><input type="checkbox"></td><td>38</td><td>REQ-030</td><td>tool.call/result</td><td>id 匹配</td><td>按 tool_call_id 匹配创建/更新（多工具回合 m6 两卡各自正确落位，不串卡）</td><td>1.1（m6/重放）</td></tr>
+        <tr><td><input type="checkbox"></td><td>39</td><td>REQ-030</td><td>turn.step/usage</td><td>不渲染</td><td>两事件不产生任何界面变化（面板可见帧、界面无对应元素）</td><td>1.2（重放）</td></tr>
+        <tr><td><input type="checkbox"></td><td>40</td><td>REQ-032</td><td>turn.end</td><td>定型 + PUT</td><td>定型消息（status=done / 按 reason 标注）并触发会话 PUT（整档、顶层 <code>schema: 2</code>）——REQ-032 验收 3 vitest 断言载荷（T2）</td><td>4.3</td></tr>
+        <tr><td><input type="checkbox"></td><td>41</td><td>REQ-030</td><td>未知 type</td><td>静默跳过</td><td>未知事件帧不渲染、不抛错、不中断回合（面板含 <code>{"type":"future.event"}</code> 演示帧；沿 parseSse 前向兼容）</td><td>1.2（重放）</td></tr>
+        <tr><td><input type="checkbox"></td><td>42</td><td>REQ-033</td><td>请求体</td><td>无历史数组</td><td>POST /api/chat/turn 请求体 = { session_id, message } 两字段（发送/编辑重建/重新生成统一）；vitest 断言载荷形状（T2，REQ-033 验收 3）</td><td>4.2</td></tr>
+        <tr><td><input type="checkbox"></td><td>43</td><td>注记</td><td>旧端点</td><td>共存</td><td>POST /api/chat 透传端点零改动保留（老客户端可用、1 请求 = 1 回合计）；T1 复跑、UI 无感知——不得擅自移除（下线时点 B1 评估）</td><td>4.2</td></tr>
+        <tr><td><input type="checkbox"></td><td>44</td><td>REQ-022</td><td>409 防御</td><td>schema 冲突</td><td>新客户端遇 409 session_schema_conflict（理论不触发）→ REQ-007 体系提示 + detail.message 原样 + 引导刷新；不自动重试（vitest 注入用例，T2）</td><td>4.3</td></tr>
+        <tr><td><input type="checkbox"></td><td>45</td><td>REQ-013</td><td>导出</td><td>标记行逐字</td><td>v2 会话导出：文本段照旧 + 工具段一行 <code>&gt; [工具 name · 状态]</code>（状态词 = 完成/失败/超时/已中断）；v1 会话导出逐字不变（T2 用例）</td><td>2.4/3.2</td></tr>
+        <tr><td><input type="checkbox"></td><td>46</td><td>REQ-016</td><td>搜索</td><td>文本段索引</td><td>blocks 消息取文本段拼接参与索引；工具参数/结果不入索引；500ms 口径不变（T2 用例）</td><td>3.2</td></tr>
+        <tr><td><input type="checkbox"></td><td>47</td><td>REQ-015</td><td>编辑重建</td><td>回合化</td><td>编辑保存 → 删后消息 → 发起服务端回合（v2 响应）；编辑面板 UI 沿现状零回退（T2 走查）</td><td>3.2/4.2</td></tr>
+        <tr><td><input type="checkbox"></td><td>48</td><td>REQ-017</td><td>全局</td><td>双主题承载</td><td>全部条目浅/暗各过一遍；§5 两组锁定帧暗色无亮色残留；正文对比度 ≥4.5:1（tokens v1.3 计算值：徽章字浅 4.4~6.6:1 / 暗 4.7~7.4:1 按 12px/500 非正文口径，正文组合沿 v1.3 既有结论）</td><td>5.1/5.2</td></tr>
+        <tr><td><input type="checkbox"></td><td>49</td><td>铁律5</td><td>样件数据</td><td>虚构声明</td><td>天气结果 = demo_weather 固定假数据（CHG-007 4.6）；耗时/tokens 数值虚构；线上数值只由接口采集渲染，不手填不编造</td><td>6</td></tr>
+        <tr><td><input type="checkbox"></td><td>50</td><td>适用性</td><td>不适用项</td><td>注明：移动端不做（CHG-007 让位定序）；输入区沿 CHG-003 不翻案；引用来源卡 + admin 搜索开关 = A2/design-iter-14；侧栏/设置/后台零改动引用</td><td>6</td></tr>
+        <tr><td><input type="checkbox"></td><td>51</td><td>v1.4.10B</td><td>加载态取证</td><td>一帧汇总</td><td>三帧留档：运行中卡 spinner 帧（条 10）+「正在生成…」hint 帧（条 34）+ turn.start 后空消息首帧（重放起始）——iter-12 复盘 OBS-5 配套</td><td>1.1/1.2</td></tr>
+      </table>
+      <div class="ann">共 <b>51</b> 条（消息流与 v1/v2 同流 1~8 / 工具卡状态机 9~17 / 折叠与结果卡 18~28 / 回合异常与标注 29~35 / SSE 契约与边界 36~44 / 适配面 45~47 / 全局 48~51）。
+      逐字断言面（v1.4.10 B 条）= 条 15/25/29/30/45 + §2.4 登记表；行为类（vitest/pytest 用例）由 T1/T2 自动化或手工走查留档（条目内已注明交付时点）。
+      条 29/31/33/40/42/44/45/46/47 含 T2 断言项，走查时以实现对照本清单期望。<b>所有条目须在浅色与暗色双主题下各过一遍</b>（条 48 承载口径）。</div>
+    </div>
+  </section>
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">8</span>CEO 定夺项（9 项 —— CHG-007 4.8 表 A1 相关，待拍板）</h2>
+    <div class="sec-desc">
+      沿 iter-1~12 固化模式：设计师给推荐方案与理由 → CEO 拍板 → 固化为决策记录，T1/T2 按定案实现。
+      <b>本稿全部可交互样件已按「推荐」落形</b>（定夺若改选，改稿走评审修订，不默认套用）。
+      编号列括注 = CHG-007 4.8 表原编号（plans iter-13「T0 定夺参数清单」9 行同源）。
+    </div>
+
+    <div class="spec" style="border-color:#B45309;background:#FFF7E8;">
+      <div class="spec-title" style="color:#1F2329;">定夺区块（CEO 已拍板 2026-08-17 · 全按推荐定案速览）</div>
+      <div class="ann" style="color:#646A73;">
+        <b>①（4.8-1）最大步数</b>——推荐：<b>10</b>；<br>
+        <b>②（4.8-2）上游单步超时</b>——推荐：<b>120s</b>（工具超时按各工具声明，演示工具 2s）；<br>
+        <b>③（4.8-3）工具结果大小上限</b>——推荐：<b>32 KiB</b>（超限截断 + 后端追加标注）；<br>
+        <b>④（4.8-4）演示工具终端可见性</b>——推荐：<b>仅 admin</b>；<b>联动定案：档案「支持工具」开关 UI 随 A2（design-iter-14）交付，不并入本迭代 T2</b>；<br>
+        <b>⑤（4.8-5）工具步骤卡形态</b>——推荐：<b>按本稿 §2 基线</b>（四态徽章 + R1~R3 折叠规则 + 结果卡；「原型即需求」）；<br>
+        <b>⑥（4.8-7）usage_daily 回合语义落库</b>——推荐：<b>新增 turns 列（历史不回填）</b>，SQLite 迁移 v6；<br>
+        <b>⑦（4.8-8）v2 承载方式</b>——推荐：<b>独立端点 /api/chat/turn</b>（旧透传端点保留）；<br>
+        <b>⑧（4.8-9）断连取消计费口径</b>——推荐：<b>已抵上游则计</b>（tokens 计已发生部分）；<br>
+        <b>⑨（注记行）旧透传端点口径</b>——非定夺项，随稿登记防误排：窗口期保留零改动、1 请求 = 1 回合计、下线时点 B1 评估。
+      </div>
+    </div>
+
+    <table>
+      <tr><th style="width:60px">编号</th><th>问题</th><th>选项与推荐（样件已按推荐落形）</th><th>理由 / 备选（未采纳留档）</th></tr>
+      <tr>
+        <td>①<br><span style="color:#8F959E;font-size:11px;">4.8-1</span></td>
+        <td>最大步数（一回合内上游调用次数上限）</td>
+        <td><b>推荐：10</b>——ReAct 步数护栏生产值</td>
+        <td>候选中位数：演示工具场景 1~3 步即够，10 为 A2 搜索（查证类任务常 2~4 步）与 B/C 期留余量；每步 = 一次计费上游调用，过大推高单回合成本上限（回合计配额下 2000/日 熔断被架空），过小截断真实任务。验收用 max_steps=2 配置注入压测，不依赖生产值。<br>备选（未采纳）：8（多工具任务易触顶，B 期压缩/研究类任务更甚）/ 12（成本上限 +20%，护栏意义稀释）</td>
+      </tr>
+      <tr>
+        <td>②<br><span style="color:#8F959E;font-size:11px;">4.8-2</span></td>
+        <td>上游单步超时（每次上游流式调用）</td>
+        <td><b>推荐：120s</b>——上游调用级护栏；<b>工具执行超时按各工具声明</b>（演示工具 2s，CHG-007 4.6），两级独立不叠加误伤</td>
+        <td>LLM 长回答常态 30~90s，120s 覆盖长尾又不悬挂连接；断连取消（第三护栏）已兜底用户侧退出。<br>备选（未采纳）：60s（长文/深思模型易误杀，误杀即整回合降级）/ 180s（断连取消已兜底，加长无收益且占用服务端连接）</td>
+      </tr>
+      <tr>
+        <td>③<br><span style="color:#8F959E;font-size:11px;">4.8-3</span></td>
+        <td>工具结果大小上限（网关截断阈值）</td>
+        <td><b>推荐：32 KiB</b>——超限截断 + 后端于 result 尾部追加标注（文案 T1 定，前端原样渲染，§2.3）</td>
+        <td>演示工具结果极小（几十字节）；32 KiB ≈ 1~2 万字中文，为 A2 搜索「摘要 + 来源列表」的合理包络——结果要回填上下文继续消耗 token，上限即成本护栏；验收用 1 MiB 假结果压测（REQ-031 验收 3）。<br>备选（未采纳）：16 KiB（A2 多结果搜索易频繁触顶，截断伤回答质量）/ 64 KiB（上下文膨胀明显，20 轮窗口下成本上升）</td>
+      </tr>
+      <tr>
+        <td>④<br><span style="color:#8F959E;font-size:11px;">4.8-4</span></td>
+        <td>演示工具终端可见性（echo / demo_weather 对谁注册可见）<b>——须联动定案</b></td>
+        <td><b>推荐：仅 admin 可见</b>（工具注册表按当前用户身份过滤：非 admin 回合以无工具模式组装）<br><b>联动定案建议（随本项一并拍板）</b>：<b>档案「支持工具」开关 UI 随 A2（design-iter-14）交付</b>——仅 admin 定案下，普通用户无工具可调，开关对其无观测效果，UI 无意义；后端开关字段与无工具模式组装<b>恒在 T1</b>（REQ-030 异常分支要求，不随后续范围）；A2 随真实搜索工具一并交付开关 UI + admin 搜索总开关入口（REQ-025 改写预告）。A1 窗口期已知边界：admin 的自填端点若不支持 tools 触发 REQ-007 映射，提示降级为「可切换统一密钥（DeepSeek 恒支持）」，引导关闭开关的完整链路 A2 上线——影响面仅部署者本人，可接受</td>
+        <td>a) <b>产品诚信</b>：demo_weather 为固定假数据（CHG-007 4.6），对普通用户展示「查到的天气」= 误导；b) <b>验收不受损</b>：REQ-032 验收 2 的真实 Chrome 走查以 admin 账号执行，全部状态机可取证；c) <b>容量</b>：全员方案须把开关 UI 并入 T2，Σ10 已顶格（风险③预案首项即砍演示工具，反向证明其验证属性）；d) 备选「仅测试环境注册」使生产环境零工具，UI 状态机在生产不可验证，走查断言面反而受损。<br>备选（未采纳）：全员（假数据误导 + 推高 Σ10）/ 仅测试环境（环境分裂，生产无法走查取证）</td>
+      </tr>
+      <tr>
+        <td>⑤<br><span style="color:#8F959E;font-size:11px;">4.8-5</span></td>
+        <td>工具步骤卡形态（徽章 / 折叠默认 / 结果卡）——即本稿本体，「原型即需求」</td>
+        <td><b>推荐：按 §2 全规格基线</b>——四态徽章（运行中 primary / 完成 success / 失败 danger / 超时 warning）+ 派生中断态（中性）+ 折叠规则 R1~R3 + 结果卡（参数/结果标签块 + 左缘语义色条 + 200px 内滚 + 三占位串）+ 回合级 pill 标注</td>
+        <td>四态语义色沿全站 success/warning/danger 既有语言；「过程透明」（A1 北极星）由 R1 运行中展开承载，「历史密度」由 R2/R3 折叠承载；样件文案全部入 §2.4 逐字登记表（v1.4.10 B 断言面）。<br>备选（未采纳）：恒展开（历史浏览被大卡淹没）/ 恒折叠（运行中过程不可见，北极星受损）/ 无派生中断态（运行中徽章冻结留历史 = 误导）</td>
+      </tr>
+      <tr>
+        <td>⑥<br><span style="color:#8F959E;font-size:11px;">4.8-7</span></td>
+        <td>usage_daily 回合语义落库（REQ-034 回合计）</td>
+        <td><b>推荐：新增 turns 列</b>（迁移 v6，<code>PRAGMA user_version</code> 体系沿用）；<b>历史数据不回填</b>（旧行 turns 为 NULL = 该时段无回合计量）；requests 列保留原语义不清空</td>
+        <td>改 requests 列语义 = 历史请求数与新回合数混列不可辨，历史不可比且违背度量真值精神（旧值不可重算为回合数——回合与请求非 1:1）；新增列语义自描述，admin 用量列表口径（REQ-025 改写「回合数列表」）直读新列。<br>备选（未采纳）：改 requests 列语义（历史污染）/ 回填折算（铁律 5：禁止事后补造）</td>
+      </tr>
+      <tr>
+        <td>⑦<br><span style="color:#8F959E;font-size:11px;">4.8-8</span></td>
+        <td>v2 承载方式（回合端点）</td>
+        <td><b>推荐：独立端点 <code>POST /api/chat/turn</code></b>（请求体 = 本条消息 + session_id；响应 = SSE v2 事件流）</td>
+        <td>新旧协议差异大（请求体形状 / 事件流 / 回合计费点位）：独立端点天然隔离，旧 /api/chat 零改动保留（窗口期老客户端），新端点无兼容包袱、测试面不交叠；同端点头协商需在同一入口分支两套解析与计费路径，复杂度全加在兼容层而旧端点仍须保留（无净收益）。<b>端点名随本项定死</b>（§4.2 契约）。<br>备选（未采纳）：同端点头协商（双路径分支 + 两套用例，回归面翻倍）</td>
+      </tr>
+      <tr>
+        <td>⑧<br><span style="color:#8F959E;font-size:11px;">4.8-9</span></td>
+        <td>断连取消计费口径（REQ-034 异常分支）</td>
+        <td><b>推荐：已抵上游则计</b>——回合计数与 tokens 计已发生调用的如实值；未抵上游（受理前取消/配额拦截）不计</td>
+        <td>与「配额不足不抵达上游」的公平边界对称：计数锚点 = 是否发生真实上游成本；取消时 tokens 只计已落部分、缺失不补造（铁律 5；回合中途服务重启同口径）。<br>备选（未采纳）：零上游不计已由本推荐涵盖；「取消全不计」——已发生的上游成本被隐藏，全站 2000 熔断口径失真</td>
+      </tr>
+      <tr>
+        <td>⑨<br><span style="color:#8F959E;font-size:11px;">注记行</span></td>
+        <td>旧透传端点口径（关联 4.8-11，<b>非定夺项——随稿登记防误排</b>）</td>
+        <td><b>登记</b>：CHG-007 4.1 已定死——窗口期 <code>POST /api/chat</code> 零改动保留（老客户端可用、无工具能力）；1 请求 = 1 回合计、两入口配额同源同语义；下线时点 = B1 排期时评估（4.8-11）</td>
+        <td>plans iter-13 定夺清单注记行原文承载：T0/T1/T2 均不得擅自移除旧端点；走查条 43 为 T1 复跑门槛。</td>
+      </tr>
+    </table>
+    <div class="ann" style="margin-top:16px;">
+      <b>基线声明</b>：本稿为 iter-13 T0 交付物，<b>已基线（2026-08-17，CEO「批准，全部按推荐」）</b>——九项定夺全按推荐定案（含④仅 admin、档案「支持工具」开关 UI 随 A2）；tag <code>design-iter-13</code> 随统一提交时补打。
+      <b>定夺④联动定案若选「全员」</b>（开关 UI 并入本迭代 T2）属范围变更：Σ10 顶格下须同步评估砍范围预案（plans 风险③），报 CEO 批准后执行并登记。
+      基线后任何改动须先登记变更再改（不接受「顺手改」）。设计稿基线批准权限归 CEO，本稿不自行打 tag、不提交 git。
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">9</span>基线声明（已基线 2026-08-17）</h2>
+    <div class="sec-desc">
+      本稿为 <b>design-iter-13——已基线（2026-08-17，CEO「批准，全部按推荐」）</b>：blocks 展示层与 v1/v2 同流规则（§3）、工具步骤卡全规格（§2，REQ-032「原型即需求」本体）、
+      SSE 协议 v2 前端契约与回合边界（§4，REQ-030 事件面 / REQ-033 边界）、亮暗双主题锁定（§5）、走查清单 51 条（§7.2，v1.4.4）、定夺 9 项（§8）——
+      对应 plans/iter-13.md T0 全部交付点。全部色值取自公司 design-system tokens.md v1.3/v1.3.1，零新增令牌、零自造色值；
+      文档结构与 .tk 作用域沿 design-iter-11/12 范本；消息流基线引用 iter-11 零翻案，上游错误映射引用 design-iter-7 §3.1 复用不新建。
+    </div>
+    <div class="spec">
+      <div class="spec-title">基线后动作清单（批准 = 触发，主会话统筹执行）</div>
+      <table>
+        <tr><th style="width:40px">#</th><th>动作</th><th>依据</th></tr>
+        <tr><td>1</td><td>打 tag <code>design-iter-13</code>（项目仓库内，主会话执行——设计师不自行打 tag）</td><td>plans T0 验收原文</td></tr>
+        <tr><td>2</td><td>spec REQ-030/032「涉及设计稿」字段回填「design-iter-13（已基线）」——NCR-iter12-001 同型复发防线</td><td>v1.4.10 A 条</td></tr>
+        <tr><td>3</td><td>§8 定夺结论回填本节（含④联动定案）；components.md 登记「工具步骤卡」新形态（CEO 随基线批准）</td><td>资产沉淀惯例</td></tr>
+        <tr><td>4</td><td>若定夺④改选「全员」：开关 UI 并入 T2 的范围变更登记 + Σ 容量复核（plans 风险③预案联动）</td><td>本稿 §8-④</td></tr>
+        <tr><td>5</td><td>基线后改动先登记变更再改（design 稿变更记录），不接受「顺手改」</td><td>沿 iter-12 基线声明口径</td></tr>
+      </table>
+    </div>
+  </section>
+
+</div>
+<script>
+/* ============================================================
+   演示交互（文档功能件）：主题 / v1v2 标注 / 工具卡工厂 / §1 消息流构建 /
+   m4 版本分支混流 / m16 回合重放引擎（SSE 事件时序）/ §5 锁定帧
+   —— 样件数据均为演示数据（demo_weather = CHG-007 4.6 固定假数据；耗时虚构，铁律 5）
+   ============================================================ */
+(function () {
+'use strict';
+var $ = function (id) { return document.getElementById(id); };
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+/* ---------- 主题（写 localStorage；锁定帧 force-* 不随动） ---------- */
+var TKEY = 'mm-demo-theme';
+var btnLight = $('btnLight'), btnDark = $('btnDark');
+function applyTheme(t) {
+  document.querySelectorAll('.tk:not(.force-light):not(.force-dark)').forEach(function (f) { f.classList.toggle('dark', t === 'dark'); });
+  btnLight.classList.toggle('on', t === 'light');
+  btnDark.classList.toggle('on', t === 'dark');
+}
+btnLight.addEventListener('click', function () { applyTheme('light'); try { localStorage.setItem(TKEY, 'light'); } catch (e) {} });
+btnDark.addEventListener('click', function () { applyTheme('dark'); try { localStorage.setItem(TKEY, 'dark'); } catch (e) {} });
+var savedTheme = 'light';
+try { savedTheme = localStorage.getItem(TKEY) || 'light'; } catch (e) {}
+applyTheme(savedTheme);
+
+/* ---------- v1/v2 格式标注（走查辅助件，非产品 UI） ---------- */
+$('fmtToggle').addEventListener('change', function () { $('mfStage').classList.toggle('fmt-mode', this.checked); });
+
+/* ---------- 共用 SVG ---------- */
+var WRENCH = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M14.7 6.3a4.5 4.5 0 0 0-6.05 5.93L3.6 17.3a1.5 1.5 0 0 0 0 2.12l.98.98a1.5 1.5 0 0 0 2.12 0l5.07-5.05A4.5 4.5 0 0 0 17.7 9.3l-2.6 2.6-2.12-.48-.48-2.12 2.2-2.99z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>';
+var CHK = '<svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M2.5 7.5l3 3 6-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+var XING = '<svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+var CLK = '<svg width="11" height="11" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.2" stroke="currentColor" stroke-width="1.5"/><path d="M7 4.2V7l2 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+var DASHI = '<svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M4 7h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+var CHEV = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+var COPY = '<svg width="13" height="13" viewBox="0 0 24 24"><path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/></svg>';
+var PREV = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>';
+var NEXT = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8.59 16.59 10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>';
+
+/* ---------- demo_weather 固定假数据（CHG-007 4.6） + 演示文案 ---------- */
+var W = {
+  '北京': '北京：晴，最高 32°C',
+  '上海': '上海：阴，最高 29°C',
+  '广州': '广州：雷阵雨，最高 31°C',
+  '深圳': '深圳：多云，最高 33°C',
+  '杭州': '杭州：多云转晴，最高 34°C，夜间 26°C，降水概率 10%'
+};
+var LONG_IN = '喵喵是一人 AI 公司的组织操作系统：以 AI 为员工，以流程为资产，可复制地交付产品。铁律一：需求变更必须有记录——没有写进变更记录的需求改动视为未发生。铁律二：测试不过不提交，checklist 不全绿不发布，由 hook 强制不许绕过。铁律三：每个迭代结束必须复盘，复盘产出的流程改进必须落到 process 并记入变更记录。铁律四：任何偏离标准流程的行为必须写入项目 tailoring，没有记录的偏离就是违规。铁律五：度量数据只允许机器采集，禁止手工填写、编造、事后补数。补充段落：本句仅用于把结果撑过 max-height 以演示内部滚动条的呈现，走查时确认滚动条为细滚动条且不撑破卡片。';
+var LONG_RES = LONG_IN + '……[结果超过 32 KiB 上限，已截断]（示意：截断标注由网关追加于 result 尾部，文案 T1 定，前端原样渲染）';
+
+/* ---------- 工具卡工厂（§2 规格的实现样；状态 = run|ok|err|tmo|cut） ---------- */
+function badgeHtml(st) {
+  if (st === 'run') return '<span class="tbadge tb-run"><span class="b-spin"></span>运行中</span>';
+  if (st === 'ok') return '<span class="tbadge tb-ok">' + CHK + '完成</span>';
+  if (st === 'err') return '<span class="tbadge tb-err">' + XING + '失败</span>';
+  if (st === 'tmo') return '<span class="tbadge tb-tmo">' + CLK + '超时</span>';
+  return '<span class="tbadge tb-cut">' + DASHI + '已中断</span>';
+}
+function resHtml(st, result) {
+  if (st === 'run') return '<div class="t-res"><span class="t-ph">（等待结果…）</span></div>';
+  if (st === 'cut') return '<div class="t-res"><span class="t-ph">（回合中断，未获得结果）</span></div>';
+  var cls = st === 'ok' ? 'ok' : (st === 'err' ? 'err' : 'tmo');
+  var txt = result ? esc(result) : '<span class="t-ph">（无返回内容）</span>';
+  return '<div class="t-res ' + cls + '">' + txt + '</div>';
+}
+function makeCard(o) {
+  var card = document.createElement('div');
+  card.className = 'tcard' + (o.open ? ' open' : '');
+  card.innerHTML =
+    '<button type="button" class="tcard-h" aria-expanded="' + (o.open ? 'true' : 'false') + '" aria-label="工具步骤 ' + esc(o.name) + '，展开或折叠">' +
+      '<span class="t-ico">' + WRENCH + '</span>' +
+      '<span class="t-name" title="' + esc(o.name) + '">' + esc(o.name) + '</span>' +
+      '<span class="t-args" title="' + esc(o.args) + '">' + esc(o.args) + '</span>' +
+      '<span class="t-dur"></span>' +
+      '<span class="tbadge-slot"></span>' +
+      '<span class="t-chev">' + CHEV + '</span>' +
+    '</button>' +
+    '<div class="t-body">' +
+      '<div class="t-sec"><div class="t-lab">参数</div><pre class="t-pre">' + esc(o.args) + '</pre></div>' +
+      '<div class="t-sec"><div class="t-lab">结果</div><div class="t-res-slot"></div></div>' +
+    '</div>';
+  card.touched = false;
+  var h = card.querySelector('.tcard-h');
+  h.addEventListener('click', function () {           /* 用户手动操作标记 = R2 依据 */
+    card.touched = true;
+    var open = card.classList.toggle('open');
+    h.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+  card.setToolState = function (st, result, dur) {
+    card.querySelector('.tbadge-slot').innerHTML = badgeHtml(st);
+    card.querySelector('.t-dur').textContent = (dur != null && st !== 'run' && st !== 'cut') ? dur + 'ms' : '';
+    card.querySelector('.t-res-slot').innerHTML = resHtml(st, result);
+  };
+  card.setToolState(o.state, o.result, o.dur);
+  return card;
+}
+
+/* ---------- 消息构建件（消息流骨架沿 iter-11 基线引用） ---------- */
+function tagEl(fmt) { var s = document.createElement('span'); s.className = 'fmt-tag'; s.textContent = fmt; return s; }
+function userMsg(fmt, text) {
+  var row = document.createElement('div'); row.className = 'm-row user';
+  var col = document.createElement('div'); col.className = 'm-col user';
+  col.appendChild(tagEl(fmt));
+  var b = document.createElement('div'); b.className = 'ububble'; b.textContent = text;
+  col.appendChild(b); row.appendChild(col); return row;
+}
+function buildBlocks(parts, pill) {
+  var box = document.createElement('div'); box.className = 'blocks';
+  parts.forEach(function (p) {
+    if (p.md) { var d = document.createElement('div'); d.className = 'md'; d.innerHTML = p.md; box.appendChild(d); }
+    if (p.tool) { box.appendChild(makeCard(p.tool)); }
+  });
+  if (pill) { var s = document.createElement('span'); s.className = 'pill cut'; s.textContent = pill; box.appendChild(s); }
+  return box;
+}
+function actRow(withVer) {
+  var a = document.createElement('div'); a.className = 'act-row';
+  a.innerHTML = '<button type="button" class="abtn" title="复制" aria-label="复制">' + COPY + '</button>' +
+    (withVer ? '<div class="ver-nav"><button type="button" class="abtn vprev" title="上一版本" aria-label="上一版本">' + PREV + '</button><span class="vcount">1/2</span><button type="button" class="abtn vnext" title="下一版本" aria-label="下一版本">' + NEXT + '</button></div>' : '');
+  var cb = a.querySelector('.abtn');
+  cb.addEventListener('click', function () { cb.textContent = '✓'; setTimeout(function () { cb.innerHTML = COPY; }, 1200); });
+  return a;
+}
+function errMsg() {
+  var d = document.createElement('div'); d.className = 'err-bubble'; d.setAttribute('role', 'alert');
+  d.innerHTML = '<div class="eb-head"><span class="eb-dot"></span><strong>密钥未授权</strong></div>' +
+    '<div class="eb-msg">服务端密钥校验失败（401）。请在高级设置中检查自有密钥，或回退统一密钥模式。（演示文案；真实文案沿 REQ-007 / design-iter-7 §3.1 十场景映射，不新建）</div>' +
+    '<div class="eb-acts"><button type="button" class="btn-p" style="height:32px;padding:0 14px;">前往高级设置</button></div>';
+  return d;
+}
+
+/* ---------- §1 消息流（m1~m16） ---------- */
+var mfCol, rpHost = { row: null };
+function aiShell(fmt) {
+  var row = document.createElement('div'); row.className = 'm-row ai';
+  var col = document.createElement('div'); col.className = 'm-col ai';
+  col.appendChild(tagEl(fmt)); row.appendChild(col);
+  return { row: row, col: col };
+}
+function buildStream() {
+  mfCol = $('mfCol'); mfCol.innerHTML = '';
+  /* m1/m2 —— v1 旧消息（读时归一化 = 单文本段，逐字零回退） */
+  mfCol.appendChild(userMsg('v1', '上周的迭代进展简单总结一下'));
+  var a2 = aiShell('v1');
+  a2.col.appendChild(buildBlocks([{ md: '<p>上周完成三件事：</p><p>1. iter-11 主界面体验对齐基线（侧栏重构 / 消息流 / 设置弹窗）；</p><p>2. iter-12 管理后台体验重构交付（统计卡 / 搜索 / 分页）；</p><p>3. 架构升级方向定档：七期路线 A1→A2→B1→B2→C→D1→D2（CHG-007）。</p>' }]));
+  a2.col.appendChild(actRow(false)); mfCol.appendChild(a2.row);
+  /* m3/m4 —— 版本分支混流：分支 1 = v1 旧回答，分支 2 = v2 blocks（重新生成后） */
+  mfCol.appendChild(userMsg('v1', '杭州这周末天气怎么样？适合出行吗'));
+  var a4 = aiShell('v1');
+  var b1 = buildBlocks([{ md: '<p>抱歉，我拿不到实时天气数据。基于常识：杭州八月通常炎热，周末多有午后雷阵雨，出行建议带伞并关注临近预报。</p>' }]);
+  var b2 = buildBlocks([
+    { md: '<p>我查一下杭州的天气。</p>' },
+    { tool: { name: 'demo_weather', args: '{"city":"杭州"}', state: 'ok', result: W['杭州'], dur: 452 } },
+    { md: '<p>杭州这周末多云转晴，最高 34°C，降水概率只有 10%，适合出行；早晚温差约 8°C，备一件薄外套。</p>' }
+  ]);
+  b2.style.display = 'none';
+  a4.col.appendChild(b1); a4.col.appendChild(b2);
+  var ar4 = actRow(true); a4.col.appendChild(ar4); mfCol.appendChild(a4.row);
+  var cur = 1;
+  function sw(n) {
+    cur = n; b1.style.display = n === 1 ? '' : 'none'; b2.style.display = n === 2 ? '' : 'none';
+    ar4.querySelector('.vcount').textContent = n + '/2';
+  }
+  ar4.querySelector('.vprev').addEventListener('click', function () { sw(cur === 1 ? 2 : 1); });
+  ar4.querySelector('.vnext').addEventListener('click', function () { sw(cur === 1 ? 2 : 1); });
+  /* m5/m6 —— 双工具回合（2 步：echo → demo_weather，历史恒折叠 R3） */
+  mfCol.appendChild(userMsg('v2', '先用 echo 把「喵喵 ai-chat，让 AI 员工可复制地交付产品」复读一遍，再查一下上海的天气'));
+  var a6 = aiShell('v2');
+  a6.col.appendChild(buildBlocks([
+    { md: '<p>好的，两步依次执行。</p>' },
+    { tool: { name: 'echo', args: '{"text":"喵喵 ai-chat，让 AI 员工可复制地交付产品"}', state: 'ok', result: '喵喵 ai-chat，让 AI 员工可复制地交付产品', dur: 6 } },
+    { tool: { name: 'demo_weather', args: '{"city":"上海"}', state: 'ok', result: W['上海'], dur: 452 } },
+    { md: '<p>复读结果与原文一致。上海今天阴，最高 29°C，出门可以不带伞。</p>' }
+  ]));
+  a6.col.appendChild(actRow(false)); mfCol.appendChild(a6.row);
+  /* m7/m8 —— echo 长文本：超长参数 ellipsis + 长结果内滚 + 截断标注示意 */
+  mfCol.appendChild(userMsg('v2', '用 echo 验证一段长文本的回显（看看超长结果怎么显示）'));
+  var a8 = aiShell('v2');
+  a8.col.appendChild(buildBlocks([
+    { md: '<p>好的，回显这段较长的文本。</p>' },
+    { tool: { name: 'echo', args: '{"text":"' + LONG_IN + '"}', state: 'ok', result: LONG_RES, dur: 11 } }
+  ]));
+  a8.col.appendChild(actRow(false)); mfCol.appendChild(a8.row);
+  /* m9/m10 —— 生成中断：运行中工具卡转「已中断」派生态 */
+  mfCol.appendChild(userMsg('v2', '再查一下广州的天气'));
+  var a10 = aiShell('v2');
+  a10.col.appendChild(buildBlocks([
+    { md: '<p>我先查一下。</p>' },
+    { tool: { name: 'demo_weather', args: '{"city":"广州"}', state: 'cut' } }
+  ], '生成中断'));
+  a10.col.appendChild(actRow(false)); mfCol.appendChild(a10.row);
+  /* m11/m12 —— 步数上限标注（演示呈现形态，不代表真实触发条件） */
+  mfCol.appendChild(userMsg('v2', '刚才广州没查成，把深圳和广州都查一下，做个对比'));
+  var a12 = aiShell('v2');
+  a12.col.appendChild(buildBlocks([
+    { md: '<p>好的，我分别查询两个城市的天气。</p>' },
+    { tool: { name: 'demo_weather', args: '{"city":"深圳"}', state: 'ok', result: W['深圳'], dur: 467 } },
+    { tool: { name: 'demo_weather', args: '{"city":"广州"}', state: 'ok', result: W['广州'], dur: 481 } },
+    { md: '<p>两地对比：深圳多云（33°C）偏闷热，广州雷阵雨（31°C）需带伞——</p>' }
+  ], '已到单回合步数上限'));
+  a12.col.appendChild(actRow(false)); mfCol.appendChild(a12.row);
+  /* m13/m14 —— 上游错误气泡共存（REQ-007 复用，不新建映射） */
+  mfCol.appendChild(userMsg('v2', '好，换个问题：我们项目的下一步计划是什么？'));
+  mfCol.appendChild(errMsg());
+  /* m15 —— 重放回合的用户消息（固定） */
+  mfCol.appendChild(userMsg('v2', '北京今天天气怎么样？'));
+  /* m16 —— 重放宿主（初始 = 完成结局的定型态；重放时重建） */
+  rpHost.row = null;
+  renderReplayFinal(confOf('ok'));
+}
+function renderReplayFinal(c) {
+  if (rpHost.row && rpHost.row.parentNode) rpHost.row.remove();
+  var a = aiShell('v2');
+  a.col.appendChild(buildBlocks([
+    { md: '<p>' + c.t1 + '</p>' },
+    { tool: { name: 'demo_weather', args: c.args, state: c.state, result: c.result, dur: c.dur } },
+    { md: '<p>' + c.t2plain + '</p>' }
+  ]));
+  a.col.appendChild(actRow(false));
+  rpHost.row = a.row; mfCol.appendChild(a.row);
+}
+
+/* ---------- SSE 事件观测面板（文档辅助件） ---------- */
+var sseBody;
+function sse(frame) {
+  var t = frame.type || '';
+  var cls = t.indexOf('tool.') === 0 ? 'f-tool' : (t === 'error' ? 'f-err' : (t === 'turn.end' ? 'f-end' : ((t === 'text.delta' || t === 'usage') ? 'f-dim' : '')));
+  var line = document.createElement('div');
+  line.className = cls;
+  line.textContent = 'data: ' + JSON.stringify(frame);
+  sseBody.appendChild(line);
+  sseBody.scrollTop = sseBody.scrollHeight;
+}
+
+/* ---------- m16 回合重放引擎（A1 北极星演示：SSE v2 事件时序） ---------- */
+var RP = { playing: false, timers: [] };
+function T(ms, fn) { RP.timers.push(setTimeout(fn, ms)); }
+function confOf(v) {
+  if (v === 'ok') return {
+    args: '{"city":"北京"}', wait: 1100, state: 'ok', result: W['北京'], dur: 438,
+    t1: '我先查一下北京现在的天气。',
+    t2plain: '北京今天晴，最高 32°C。紫外线较强，正午出行建议防晒；傍晚气温回落后再安排户外活动更舒适。'
+  };
+  if (v === 'err') return {
+    args: '{"city":"北京市"}', wait: 350, state: 'err',
+    result: '参数校验失败：city 必须是 北京/上海/广州/深圳/杭州 之一（收到："北京市"）', dur: 9,
+    t1: '我先查一下北京现在的天气。',
+    t2plain: '（这次工具调用没有成功——参数被网关校验拒绝了，我按已有知识回答。）北京此刻的天气我无法实时确认；夏季北京以晴为主，出行前建议看一眼临近预报。'
+  };
+  return {
+    args: '{"city":"北京"}', wait: 2100, state: 'tmo', result: '', dur: 2000,
+    t1: '我先查一下北京现在的天气。',
+    t2plain: '（天气工具执行超时了，我按已有知识回答。）北京此刻的天气我无法实时确认；出行安排建议以临近预报为准。'
+  };
+}
+function setCtl(dis) {
+  RP.playing = dis;
+  $('btnReplay').disabled = dis; $('btnReplay').style.opacity = dis ? .5 : 1; $('btnReplay').style.cursor = dis ? 'not-allowed' : 'pointer';
+  document.querySelectorAll('input[name=toolOutcome]').forEach(function (r) { r.disabled = dis; });
+}
+function replay() {
+  if (RP.playing) return;
+  RP.timers.forEach(clearTimeout); RP.timers = [];
+  var v = document.querySelector('input[name=toolOutcome]:checked').value;
+  var c = confOf(v);
+  sseBody.innerHTML = '';
+  setCtl(true);
+  if (rpHost.row && rpHost.row.parentNode) rpHost.row.remove();
+  /* turn.start —— 建立回合态（消息 status=streaming + hint + 光标） */
+  var a = aiShell('v2'); rpHost.row = a.row; mfCol.appendChild(a.row);
+  var box = document.createElement('div'); box.className = 'blocks'; a.col.appendChild(box);
+  var hint = document.createElement('span'); hint.className = 'status-hint'; hint.textContent = '正在生成…'; a.col.appendChild(hint);
+  var mrow = a.row.closest('.msg-scroll'); if (mrow) mrow.scrollTop = mrow.scrollHeight;
+  sse({ type: 'turn.start', session_id: 's_wkd23', turn_id: 't_01HX' });
+  /* 未知 type 演示帧 —— 静默跳过（不渲染不抛错） */
+  T(300, function () { sse({ type: 'future.event', x: 1 }); });
+  /* 首段文本（打字机，逐块 log text.delta） */
+  T(600, function () {
+    var md = document.createElement('div'); md.className = 'md'; box.appendChild(md);
+    var chunks = c.t1.match(/[\s\S]{1,3}/g) || [];
+    var i = 0;
+    var p = document.createElement('p'); md.appendChild(p);
+    var cur = document.createElement('span'); cur.className = 'cursor';
+    function step() {
+      p.textContent = c.t1.slice(0, (i + 1) * 3);
+      p.appendChild(cur);
+      sse({ type: 'text.delta', text: chunks[i] });
+      i++;
+      if (i < chunks.length) T(70, step); else { cur.remove(); phase2(); }
+    }
+    T(70, step);
+  });
+  function phase2() {
+    /* tool.call —— 开工具步骤卡（运行中徽章 + 展开态 R1） */
+    T(450, function () {
+      sse({ type: 'tool.call', tool_call_id: 'c_1', name: 'demo_weather', arguments: c.args });
+      var card = makeCard({ name: 'demo_weather', args: c.args, state: 'run', open: true });
+      box.appendChild(card);
+      /* 工具执行等待（受单工具超时约束：演示工具 2s；超时结局等待更久以体现） */
+      T(c.wait, function () {
+        sse({ type: 'tool.result', tool_call_id: 'c_1', status: c.state, result: c.result, duration_ms: c.dur });
+        card.setToolState(c.state, c.result, c.dur);
+        if (!card.touched) {                       /* R2：未被手动操作过 → 自动折叠 */
+          card.classList.remove('open');
+          card.querySelector('.tcard-h').setAttribute('aria-expanded', 'false');
+        }
+        T(250, function () { sse({ type: 'turn.step', step: 2, max_steps: 10 }); phase3(); });
+      });
+    });
+  }
+  function phase3() {
+    /* 工具事件后首帧 text.delta 开新文本段 */
+    T(250, function () {
+      var md = document.createElement('div'); md.className = 'md'; box.appendChild(md);
+      var chunks = c.t2plain.match(/[\s\S]{1,3}/g) || [];
+      var i = 0;
+      var p = document.createElement('p'); md.appendChild(p);
+      var cur = document.createElement('span'); cur.className = 'cursor';
+      function step() {
+        p.textContent = c.t2plain.slice(0, (i + 1) * 3);
+        p.appendChild(cur);
+        sse({ type: 'text.delta', text: chunks[i] });
+        i++;
+        if (i < chunks.length) T(55, step); else { cur.remove(); phase4(); }
+      }
+      T(55, step);
+    });
+  }
+  function phase4() {
+    T(220, function () { sse({ type: 'usage', requests: 2, tokens: 2100 }); });
+    /* turn.end(reason=done) —— 定型：移除 hint，触发会话 PUT（顶层 schema:2） */
+    T(450, function () {
+      sse({ type: 'turn.end', reason: 'done' });
+      hint.remove();
+      a.col.appendChild(actRow(false));
+      try { console.log('[demo] turn.end → 会话 PUT（整档，顶层 "schema": 2）'); } catch (e) {}
+      setCtl(false);
+    });
+  }
+}
+$('btnReplay').addEventListener('click', replay);
+$('aReset').addEventListener('click', function () {
+  if (RP.playing) { RP.timers.forEach(clearTimeout); RP.timers = []; setCtl(false); }
+  var ck = document.querySelector('input[name=toolOutcome][value=ok]'); if (ck) ck.checked = true;
+  sseBody.innerHTML = '<span style="color:var(--c-text-3);">（待重放——点上方「▶ 重放回合」后逐帧打印）</span>';
+  buildStream();
+});
+
+/* ---------- §5 锁定帧构建（同一 DOM 仅根节点令牌覆盖） ---------- */
+function lockCards(el) {
+  [
+    { name: 'demo_weather', args: '{"city":"北京"}', state: 'run', open: true },
+    { name: 'demo_weather', args: '{"city":"北京"}', state: 'ok', result: W['北京'], dur: 412, open: true },
+    { name: 'demo_weather', args: '{"city":"北京市"}', state: 'err', result: '参数校验失败：city 必须是 北京/上海/广州/深圳/杭州 之一', dur: 9, open: true },
+    { name: 'demo_weather', args: '{"city":"北京"}', state: 'tmo', result: '', dur: 2000, open: true },
+    { name: 'demo_weather', args: '{"city":"广州"}', state: 'cut', open: true }
+  ].forEach(function (o) { el.appendChild(makeCard(o)); });
+}
+function lockStream(el) {
+  var u = document.createElement('div'); u.className = 'm-row user';
+  u.innerHTML = '<div class="m-col user"><div class="ububble" style="max-width:420px;">深圳今天天气怎么样？</div></div>';
+  el.appendChild(u);
+  var b = buildBlocks([
+    { md: '<p>我查一下深圳的天气。</p>' },
+    { tool: { name: 'demo_weather', args: '{"city":"深圳"}', state: 'ok', result: W['深圳'], dur: 467 } },
+    { md: '<p>深圳今天多云，最高 33°C。</p>' }
+  ], '生成中断');
+  el.appendChild(b);
+}
+
+/* ---------- 初始化 ---------- */
+sseBody = $('sseBody');
+buildStream();
+lockCards($('lock1L')); lockCards($('lock1D'));
+lockStream($('lock2L')); lockStream($('lock2D'));
+})();
+</script>
+</body>
+</html>
