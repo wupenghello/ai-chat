@@ -39,6 +39,31 @@ def save_session(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "会话 id 与路径不一致")
     if not isinstance(payload.get("messages"), list):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "会话数据不合法（缺少 messages）")
+    # schema:2 写侧守卫（CHG-007 定夺②，iter-13 T1）：存量已带 schema:2 而来件为无标记
+    # 旧格式（升级窗口期旧客户端陈旧副本）→ 409 拒绝、存量逐字不动；其余（v2 覆 v2 /
+    # v2 覆 v1 / v1 覆 v1 / 新建）照常 LWW upsert。老客户端 4xx 非临时性：不入暂存队列、
+    # 重放按毒丸丢弃（前端 persistence 取证，CHG-007 4.3），无无限重试。
+    existing = conn.execute(
+        "SELECT data FROM chat_sessions WHERE user_id = ? AND id = ?",
+        (user.id, session_id),
+    ).fetchone()
+    if existing is not None:
+        try:
+            existing_doc = json.loads(existing["data"])
+        except (json.JSONDecodeError, TypeError):
+            existing_doc = None
+        if (
+            isinstance(existing_doc, dict)
+            and existing_doc.get("schema") == 2
+            and payload.get("schema") != 2
+        ):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "session_schema_conflict",
+                    "message": "该会话已升级为新格式，请刷新页面获取最新版本后再编辑",
+                },
+            )
     updated_at = payload.get("updatedAt")
     if not isinstance(updated_at, (int, float)):
         updated_at = time.time()

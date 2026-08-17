@@ -193,7 +193,10 @@ def usage(
     """
     base = (
         "SELECT d.day, d.user_id, u.username, "
-        "SUM(d.requests) AS requests, SUM(d.tokens) AS tokens "
+        "SUM(d.requests) AS requests, SUM(d.tokens) AS tokens, "
+        # CHG-007 REQ-034/025（iter-13 T1）：回合数——turns 列随回合递增；历史行 turns=0 而
+        # requests 即历史回合数（1 请求 = 1 回合，定夺⑥不回填），以 COALESCE 折算展示
+        "SUM(CASE WHEN d.turns > 0 THEN d.turns ELSE d.requests END) AS turns "
         "FROM usage_daily d JOIN users u ON u.id = d.user_id "
         "WHERE (:user_id IS NULL OR d.user_id = :user_id) "
         "AND (:date_from IS NULL OR d.day >= :date_from) "
@@ -235,6 +238,8 @@ def _usage_row(r) -> dict:
         "username": r["username"],
         "requests": r["requests"],
         "tokens": r["tokens"],
+        # CHG-007 REQ-025 改写：用量列表口径 = 回合数与 token 数（加法扩展，形状零回退）
+        "turns": r["turns"],
     }
 
 

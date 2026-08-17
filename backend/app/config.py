@@ -21,9 +21,14 @@ class Settings(BaseSettings):
     # REQ-024（iter-8 T1）配额初始默认值——CEO 拍板 2026-08-16 随 iter-8 计划定案；
     # 管理员按用户覆盖随 REQ-025（iter-8 T2）落地，本层为默认档；0 = 该项不限
     register_ip_daily_limit: int = 3  # 每 IP 每自然日注册数上限
-    quota_free_daily: int = 30  # 免费档（统一 key 模式）每用户每日对话请求数
-    quota_self_daily: int = 500  # 自填 key 档每用户每日对话请求数
-    unified_daily_total: int = 2000  # 统一 key 全站每日总量（熔断，次日恢复）
+    quota_free_daily: int = 30  # 免费档（统一 key 模式）每用户每日对话回合数（CHG-007 REQ-034）
+    quota_self_daily: int = 500  # 自填 key 档每用户每日对话回合数
+    unified_daily_total: int = 2000  # 统一 key 全站每日回合总量（熔断，次日恢复）
+    # iter-13 T1（CHG-007 REQ-030/031）：agent 回合三护栏与工具网关参数——
+    # 定夺值随 design-iter-13 基线定案（2026-08-17 CEO「全部按推荐」）：步数 10 / 单步 120s / 32 KiB
+    agent_max_steps: int = 10  # 单回合最大上游调用步数（验收用例以小值注入压测）
+    agent_step_timeout: float = 120.0  # 上游单步超时（秒）；工具超时按各工具声明（演示工具 2s）
+    tool_result_limit: int = 32 * 1024  # 工具结果大小上限（字节），超限截断并追加标注
 
 
 @lru_cache

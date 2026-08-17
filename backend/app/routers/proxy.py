@@ -10,6 +10,7 @@
 """
 
 import asyncio
+import json
 import logging
 from collections.abc import AsyncIterator
 from typing import Annotated, Literal
@@ -17,12 +18,13 @@ from typing import Annotated, Literal
 import httpx
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from app import quota
+from app import agent, quota
 from app.config import Settings, get_settings
 from app.db import DatabaseDep
 from app.routers.auth import CurrentUser
+from app.tools import tools_for_user
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -39,6 +41,37 @@ class ChatMessage(BaseModel):
 class ChatCompletionRequest(BaseModel):
     messages: list[ChatMessage]
     stream: bool = True  # 本端点只支持流式（spec 主流程）；字段保留兼容显式 stream=true
+
+
+class TurnRequest(BaseModel):
+    """回合端点请求体（CHG-007 REQ-033 / design-iter-13 §4.2）：无历史数组。
+
+    system_prompt 为可选第三字段（REQ-008 的全局系统提示词存前端 localStorage，
+    服务端组装需随回合上传——design-iter-13 基线后补注，随 verify 文档登记）。
+    """
+    session_id: str = Field(min_length=1, max_length=64)
+    message: str = Field(min_length=1, max_length=32768)
+    system_prompt: str | None = Field(default=None, max_length=8000)
+
+
+def _resolve_upstream(
+    conn, user, settings: Settings
+) -> tuple[object | None, str, str, str] | None:
+    """双模式上游解析（REQ-018）：返回 (profile_row | None, base_url, api_key, model)。
+
+    profile_row 非 None = 自填模式（含 tools_enabled，回合端点判定工具可用性）；
+    返回 None = 统一 key 未配置（调用方回 503 unified_key_missing）。
+    """
+    profile = conn.execute(
+        "SELECT base_url, model, api_key, tools_enabled FROM profiles"
+        " WHERE user_id = ? AND is_active = 1",
+        (user.id,),
+    ).fetchone()
+    if profile is not None:  # 自填模式：当前生效档案三要素（REQ-018）
+        return profile, profile["base_url"], profile["api_key"], profile["model"]
+    if settings.unified_key:  # 统一 key 模式：.env 三变量（零配置）
+        return None, settings.unified_base_url, settings.unified_key, settings.unified_model
+    return None, "", "", ""
 
 
 def _error(
@@ -60,20 +93,10 @@ async def chat_completions(
 ) -> Response:
     # REQ-024（iter-8 T1）配额检查位：按用户当前密钥模式档位校验，不足时在此直接拒绝（不调用上游）；
     # 档位联动口径见 app/quota.py（同日总消耗对当前档位限额判定）
-    profile = conn.execute(
-        "SELECT base_url, model, api_key FROM profiles WHERE user_id = ? AND is_active = 1",
-        (user.id,),
-    ).fetchone()
-    if profile is not None:  # 自填模式：当前生效档案三要素（REQ-018）
-        base_url = profile["base_url"]
-        api_key = profile["api_key"]
-        model = profile["model"]
-    elif settings.unified_key:  # 统一 key 模式：.env 三变量（零配置）
-        base_url = settings.unified_base_url
-        api_key = settings.unified_key
-        model = settings.unified_model
-    else:
+    resolved = _resolve_upstream(conn, user, settings)
+    if resolved is None or (resolved[0] is None and not resolved[2]):
         return _error(503, "unified_key_missing", "服务端未配置统一密钥，请联系管理员")
+    profile, base_url, api_key, model = resolved
 
     mode = quota.MODE_SELF if profile is not None else quota.MODE_UNIFIED
     day, blocked = quota.check_and_consume(conn, user.id, mode, settings)
@@ -141,6 +164,78 @@ async def chat_completions(
             quota.record_tokens(request.app.state.db_path, user.id, mode, tokens, day)
 
     return StreamingResponse(relay(), media_type="text/event-stream")
+
+
+@router.post("/chat/turn")
+async def chat_turn(
+    body: TurnRequest,
+    user: CurrentUser,
+    request: Request,
+    conn: DatabaseDep,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Response:
+    """回合端点（CHG-007 REQ-030~034，iter-13 T1，design-iter-13 定夺⑦：独立端点）。
+
+    服务端组装上下文（自库取会话消息归一化，无历史数组上传）→ ReAct 循环 → SSE v2 事件流。
+    配额按回合：回合受理即计（429 时零上游调用、零事件流，JSON 直返——design-iter-13 §4.2）。
+    """
+    row = conn.execute(
+        "SELECT data FROM chat_sessions WHERE user_id = ? AND id = ?",
+        (user.id, body.session_id),
+    ).fetchone()
+    if row is None:
+        return _error(404, "session_not_found", "会话不存在或已删除")
+
+    resolved = _resolve_upstream(conn, user, settings)
+    if resolved is None or (resolved[0] is None and not resolved[2]):
+        return _error(503, "unified_key_missing", "服务端未配置统一密钥，请联系管理员")
+    profile, base_url, api_key, model = resolved
+
+    mode = quota.MODE_SELF if profile is not None else quota.MODE_UNIFIED
+    day, blocked = quota.check_and_consume(conn, user.id, mode, settings)
+    if blocked is not None:
+        status_code, code, detail = blocked
+        logger.info("turn blocked user_id=%s mode=%s code=%s", user.id, mode, code)
+        return _error(status_code, code, detail)
+
+    try:
+        doc = json.loads(row["data"])
+        if not isinstance(doc, dict):
+            raise ValueError("session doc not an object")
+    except (json.JSONDecodeError, ValueError):
+        doc = {"messages": []}  # 沿现有「无法读取」容错口径，空历史参与组装
+    history = agent.wire_messages_from_doc(doc)
+    messages = agent.assemble_context(history, body.message, body.system_prompt or None)
+
+    # 工具可用性：自填档案「支持工具」开关（定夺①，默认开）+ 演示工具仅 admin（定夺④）
+    tools_allowed = profile is None or bool(profile["tools_enabled"])
+    tool_defs = tools_for_user(is_admin=user.is_admin) if tools_allowed else []
+
+    def record_usage(calls: int, tokens: int) -> None:
+        # 回合结束/断连后落账 tokens（定夺⑧：已抵上游则回合已计，tokens 记已发生部分）
+        quota.record_tokens(request.app.state.db_path, user.id, mode, tokens, day)
+
+    upstream: httpx.AsyncClient = request.app.state.http
+    logger.info("turn accepted user_id=%s mode=%s session_id=%s tools=%s",
+                user.id, mode, body.session_id, len(tool_defs))
+
+    async def stream() -> AsyncIterator[bytes]:
+        async for ev in agent.run_turn(
+            client=upstream,
+            base_url=base_url,
+            api_key=api_key,
+            model=model,
+            session_id=body.session_id,
+            messages=messages,
+            tool_defs=tool_defs,
+            max_steps=settings.agent_max_steps,
+            step_timeout=settings.agent_step_timeout,
+            tool_result_limit=settings.tool_result_limit,
+            on_finish=record_usage,
+        ):
+            yield ("data: " + json.dumps(ev, ensure_ascii=False) + "\n\n").encode()
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
 
 
 @router.get("/quota")

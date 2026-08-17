@@ -103,9 +103,14 @@ def check_and_consume(
         if site_unified_used(conn, day) >= settings.unified_daily_total:
             return (day, (503, "unified_daily_exceeded", UNIFIED_PAUSED))
     with conn:
+        # CHG-007 REQ-034（iter-13 T1）：turns 列随 requests 同步递增——历史行 turns=0 而
+        # requests 即历史回合数（1 请求 = 1 回合），SUM(requests) 口径对新旧数据恒等；
+        # 旧透传端点与本回合端点共用此检查位（两入口配额同源同语义）
         conn.execute(
-            "INSERT INTO usage_daily (day, user_id, mode, requests) VALUES (?, ?, ?, 1) "
-            "ON CONFLICT (day, user_id, mode) DO UPDATE SET requests = requests + 1",
+            "INSERT INTO usage_daily (day, user_id, mode, requests, turns)"
+            " VALUES (?, ?, ?, 1, 1) "
+            "ON CONFLICT (day, user_id, mode)"
+            " DO UPDATE SET requests = requests + 1, turns = turns + 1",
             (day, user_id, mode),
         )
     return (day, None)

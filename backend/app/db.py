@@ -12,7 +12,7 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 MIGRATIONS: dict[int, str] = {
     1: """
@@ -92,6 +92,14 @@ MIGRATIONS: dict[int, str] = {
     UPDATE users SET is_admin = 1
     WHERE NOT EXISTS (SELECT 1 FROM users WHERE is_admin = 1)
       AND id = (SELECT MIN(id) FROM users);
+    """,
+    # iter-13 T1（CHG-007）：usage_daily 新增 turns 列——配额语义改「按回合」（REQ-034，
+    # design-iter-13 定夺⑥：历史数据不回填；历史 1 请求 = 1 回合，requests 列继续同计数，
+    # 两列同步递增故 SUM(requests) 口径对新旧数据恒等）；profiles 新增 tools_enabled——
+    # 自填档案「支持工具」能力开关（定夺①：默认开；UI 随 A2，后端机制本迭代落地）
+    6: """
+    ALTER TABLE usage_daily ADD COLUMN turns INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE profiles ADD COLUMN tools_enabled INTEGER NOT NULL DEFAULT 1;
     """,
 }
 
