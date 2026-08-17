@@ -1,0 +1,1445 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-chat · iter-14 设计稿草案（A2 联网搜索：引用来源卡与开关入口，待基线）</title>
+<!--
+  ============================================================
+  ai-chat 迭代 14 T1 设计稿草案（设计稿即页面骨架，开发对照实现）
+  依据（逐条登记）：
+  1. projects/ai-chat/plans/iter-14.md T1（2026-08-18 CEO 批准 Σ8=S1+M2+L3+M2）：
+     ① 引用来源卡形态（4.8-6「原型即需求」——本稿 §1/§2 本体）② 搜索降级与空结果文案定稿
+     （逐字，v1.4.10 B 断言面）③ admin 搜索开关入口 + API 口径章节 ④ 自填档案「支持工具」
+     开关 UI（design-iter-13 定夺④联动定案兑现）⑤ 4.8-10 定夺值（Tavily + backend/.env
+     AI_CHAT_SEARCH_KEY）与微参数三项（search 单工具超时 8~15s / 结果条数量级 5 / 折叠默认）
+     随稿登记；卫生项 = spec REQ-035/032 指针随基线回填 + REQ-033 措辞注记（QA OBS-3）
+  2. requirements/spec.md（req-baseline-v5）：REQ-035（联网搜索工具：主流程 4 引用卡渲染、
+     异常分支用户所见三类、验收 1~5）、REQ-032（验收 4 = 引用卡 design-iter-14 走查留档）、
+     REQ-025（A2 增搜索整体开关句）、REQ-014（『支持工具』开关字段默认开 + REQ-007 映射引导 +
+     统一 key 恒开；后端 profiles.tools_enabled DEFAULT 1 已在位）
+  3. requirements/changes.md CHG-007：内容 4.5（网关六项校验 A2 相关）、4.7（Tavily/博查选型
+     对比——两家返回字段不同：Tavily 结构化 content 长摘要、博查 siteName/datePublished 富元数据，
+     引用卡字段集合须两家优雅承载、缺字段不塌）、4.8 表 #6/#10、定夺①（档案开关方案 A）
+  4. 公司设计规范 design-system/tokens.md v1.3/v1.3.1 + components.md v1.2：零新增令牌、
+     零自造色值；唯一新增组件形态 = toggle switch（随基线登记 components.md，§4.2）
+  5. design/iter-13（已基线）：消息流/工具步骤卡/文档外壳与 .tk 作用域/走查清单体例全部引用
+     ——引用来源卡容器语言沿其次级面板家族（§3.5 预留契约兑现；位置由「挂回答末尾」修订为
+     「回答之前」，理由随稿登记 §2.1）；tool.result 事件消费规则扩展 sources 字段（§6.3）
+  6. design/iter-12（已基线）：§4 API 口径章节写法（加法扩展 + 既有用例零改动门槛）；
+     AdminView 灰底白卡 1080px / 统计卡 / 控件语言零翻案，本轮仅增开关行一处
+  7. 现状实现核对：src/components/ToolStepCard.vue（四态徽章 + R1~R3 + 结果卡 200px 内滚 +
+     10px 圆角家族）、src/views/AdminView.vue（iter-12 重构形态）、src/components/SettingsForm.vue
+     （五分区 + 档案模态四字段——开关为第五字段）、src/components/MessageBubble.vue（blocks
+     渲染：tool_result 段不独立渲染、按 tool_call_id 配对挂卡）、backend/app/tools.py（注册表/
+     tools_for_user 过滤挂点/「工具执行超时」固定文案）、backend/app/db.py（tools_enabled 列）
+  视觉基调（CEO 已定，不得偏离）：chat 正文白底 --c-surface（iter-9 起）；admin 灰底白卡 1080px
+     （iter-12 起）；消息列 712px 居中；主色飞书蓝 #3370FF（暗色前景 #5C8DFF）；次级面板家族
+     subtle-bg + border + 10px 圆角（components.md v1.2 工具步骤卡先例）。
+  硬约束落实：天气工具 UI 零涉及（已定案不纳入本迭代，B1 再议）；双主题全覆盖（引用卡/降级条/
+     开关全部 var() + §3 锁定帧亮暗并置）；v1.4.10 B 三件套（样件文案逐字 §2.3 登记表 + 加载态
+     一帧走查条 39 + 双主题承载条 37）；v1.4.11 B 几何断言（走查条 2/3/7/9/10/19/26/40）。
+  状态：草案（待 CEO 批准基线；批准后打 tag design-iter-14，spec 指针回填 + components.md
+     登记 toggle switch 为基线后动作 §9）。
+  可交互：右上「演示控制」一键亮/暗（写 localStorage）；§1 主样件可真实操作——
+     ▶ 重放回合（四结局：成功 / 失败 / 超时 / 空结果——SSE 事件时序逐帧打印，tool.result 帧
+     含 sources 字段演示）、搜索数据源切换（Tavily 型长片段无 siteName / 博查型富元数据——
+     引用卡缺字段不塌对照）、引用卡点击折叠/展开；§4 admin 开关行可点击（toast 演示 + key
+     缺失态切换）；§5 档案模态可打开、开关可切换。
+     演示数据全为虚构（来源标题/URL/片段/耗时数值虚构，URL 用 example.com 保留域；铁律 5）。
+     零外部依赖，双击即开。
+  ============================================================
+-->
+<style>
+/* ============================================================
+   一、文档外壳（说明页自身，浅色固定，不随演示切换；色值 = tokens 浅色原值，沿 iter-5~13 惯例）
+   ============================================================ */
+:root { --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-full: 999px; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-size: 14px; line-height: 1.6; color: #1F2329; background: #F5F6F7; padding: 40px 32px 80px;
+}
+.page { max-width: 1160px; margin: 0 auto; }
+h1 { font-size: 20px; font-weight: 600; }
+.sub { font-size: 13px; color: #8F959E; margin: 4px 0 8px; }
+.sub b { color: #646A73; }
+.badge {
+  display: inline-block; padding: 1px 10px; border-radius: var(--r-full);
+  font-size: 12px; font-weight: 500; background: #FFF7E8; color: #B45309; margin-bottom: 24px;
+}
+section { margin-bottom: 48px; }
+h2 { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+h2 .no { color: #3370FF; margin-right: 4px; }
+.sec-desc { font-size: 13px; color: #8F959E; margin-bottom: 16px; }
+.sec-desc b { color: #646A73; }
+table { width: 100%; border-collapse: collapse; background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-md); overflow: hidden; font-size: 13px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #E5E6EB; vertical-align: top; }
+th { color: #8F959E; font-weight: 500; background: #FAFBFC; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+td code, li code, .ann code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; background: #F2F3F5; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
+pre { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; background: #F2F3F5; border: 1px solid #E5E6EB; border-radius: var(--r-md); padding: 10px 14px; overflow: auto; line-height: 1.7; color: #1F2329; margin: 8px 0 0; }
+pre code { background: none; padding: 0; white-space: pre; }
+.spec { background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-lg); padding: 24px; box-shadow: 0 1px 2px rgba(31,35,41,.06); margin-bottom: 16px; }
+.spec-title { font-size: 13px; font-weight: 600; color: #646A73; margin-bottom: 12px; }
+.spec-title .tag { font-weight: 400; color: #8F959E; margin-left: 8px; }
+.stage { border: 1px dashed #E5E6EB; border-radius: var(--r-md); padding: 16px; background: #F5F6F7; }
+.ann { font-size: 12px; color: #8F959E; margin-top: 8px; line-height: 1.8; }
+.ann b { color: #646A73; font-weight: 600; }
+.sim-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; font-size: 12px; color: #646A73; margin-bottom: 12px; }
+.sim-row label { cursor: pointer; white-space: nowrap; }
+.lnk-reset { display: inline-block; margin-top: 8px; font-size: 12px; color: #3370FF; cursor: pointer; }
+.lnk-reset:hover { text-decoration: underline; color: #2E5FDF; }
+.frame-cap { text-align: center; font-size: 12px; color: #8F959E; margin-bottom: 8px; }
+.cols { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+.cols > div { flex: 1; min-width: 380px; max-width: 580px; }
+/* ---- 演示控制条（文档功能件，非产品组件） ---- */
+.demo-ctl {
+  position: sticky; top: 0; z-index: 500; display: flex; align-items: center; gap: 12px;
+  background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-md);
+  padding: 10px 16px; margin-bottom: 32px; box-shadow: 0 1px 2px rgba(31,35,41,.06);
+  font-size: 13px; color: #646A73; flex-wrap: wrap;
+}
+.demo-ctl .seg { display: inline-flex; border: 1px solid #E5E6EB; border-radius: var(--r-md); overflow: hidden; }
+.demo-ctl .seg button {
+  height: 30px; padding: 0 14px; border: none; background: #FFFFFF; color: #646A73;
+  font-size: 13px; cursor: pointer; transition: background .15s ease, color .15s ease;
+}
+.demo-ctl .seg button.on { background: #3370FF; color: #fff; font-weight: 600; }
+.demo-ctl .note { font-size: 12px; color: #8F959E; }
+
+/* ============================================================
+   二、演示令牌作用域 .tk（组件全部引用 var()，同 src 范式；浅 = tokens v1.3 浅值，暗 = v1.3 暗值，零自造）
+   ============================================================ */
+.tk {
+  --c-bg: #F5F6F7; --c-surface: #FFFFFF; --c-border: #E5E6EB;
+  --c-text-1: #1F2329; --c-text-2: #646A73; --c-text-3: #8F959E;
+  --c-primary: #3370FF; --c-primary-h: #2E5FDF; --c-primary-a: #2860D8; --c-primary-l: #F0F4FF;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #2E5FDF; --c-primary-solid-a: #2860D8;
+  --c-danger: #D93025; --c-danger-l: #FDECEA; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #1A9E5C; --c-success-on-dark: #4CC38A;
+  --c-warning: #B45309; --c-warning-l: #FFF7E8;
+  --c-hover-bg: #F2F3F5; --c-disabled-bg: #C9CFDB; --c-subtle-bg: #FAFBFC;
+  --c-avatar-bg: #E8EBF2; --c-scrollbar: #D5D9E0;
+  --c-toast-bg: #23272E; --c-toast-border: #23272E; --c-primary-on-dark: #A3BCFF;
+  --c-code-head: #23272E; --c-code-bg: #2B303A; --c-code-head-text: #9AA4B2; --c-code-text: #E6EAF0;
+  --c-mask: rgba(31,35,41,.4); --c-focus-ring: rgba(51,112,255,.12);
+  --shadow-1: 0 1px 2px rgba(31,35,41,.06);
+  --shadow-2: 0 4px 16px rgba(31,35,41,.10);
+  --shadow-3: 0 12px 40px rgba(31,35,41,.16);
+  color: var(--c-text-1);
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+.tk.dark, .tk.force-dark {
+  --c-bg: #131417; --c-surface: #1E2026; --c-border: #33363E;
+  --c-text-1: #E6EAF0; --c-text-2: #A2A9B6; --c-text-3: #808896;
+  --c-primary: #5C8DFF; --c-primary-h: #7AA4FF; --c-primary-a: #4C84FF; --c-primary-l: #1D2740;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #4C84FF; --c-primary-solid-a: #3D78FF;
+  --c-danger: #FF8073; --c-danger-l: #361B18; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #4CC38A;
+  --c-warning: #EDA23B; --c-warning-l: #38290F;
+  --c-hover-bg: #262930; --c-disabled-bg: #3D414A; --c-subtle-bg: #24272E;
+  --c-avatar-bg: #33363E; --c-scrollbar: #3A3E46;
+  --c-toast-bg: #2A2D34; --c-toast-border: #33363E; --c-primary-on-dark: #A3BCFF;
+  --c-code-head: #141518; --c-code-bg: #191B20; --c-code-head-text: #9AA4B2; --c-code-text: #E6EAF0;
+  --c-mask: rgba(0,0,0,.55); --c-focus-ring: rgba(92,141,255,.25);
+  --shadow-1: 0 1px 2px rgba(0,0,0,.4);
+  --shadow-2: 0 4px 16px rgba(0,0,0,.45);
+  --shadow-3: 0 12px 40px rgba(0,0,0,.6);
+}
+/* ============================================================
+   三、产品组件样式（全部 var() 引用，零裸色值——switch 滑块 #fff 为实体反白先例）
+   3a. 消息流外壳（iter-11/13 基线引用零翻案）
+   3b. 工具步骤卡（iter-13 基线引用——本稿 §1 消费，规格不变）
+   3c. 引用来源卡 + 降级引导条（REQ-035 本稿新增）
+   3d. toggle switch（本稿唯一新增组件形态）+ admin 开关行
+   3e. 设置弹窗 / 档案模态缩样（iter-11/7 基线引用 + 第五字段）
+   3f. 文档辅助件（SSE 面板 / toast 演示）
+   ============================================================ */
+
+/* ---- 3a. 消息流外壳（iter-11/13 基线引用） ---- */
+.app-stage { position: relative; overflow: hidden; background: var(--c-bg); }
+.app-shell { display: flex; height: 100%; }
+.side { flex: none; display: flex; flex-direction: column; background: var(--c-bg); border-right: 1px solid var(--c-border); width: 264px; padding: 12px; gap: 8px; }
+.sp { flex: 1; }
+.brand-row { flex: none; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 2px; }
+.brand-name { font-size: 15px; font-weight: 600; color: var(--c-text-1); }
+.new-btn {
+  flex: none; height: 36px; border: none; border-radius: var(--r-md); background: var(--c-primary-solid);
+  color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px;
+  justify-content: center; transition: background .15s ease, transform .1s ease; font-family: inherit;
+}
+.s-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding: 2px; scrollbar-width: thin; scrollbar-color: var(--c-scrollbar) transparent; }
+.s-group { flex: none; font-size: 12px; color: var(--c-text-3); padding: 12px 10px 4px; }
+.s-item { flex: none; display: flex; align-items: center; min-height: 34px; padding: 6px 10px; border-radius: var(--r-md); cursor: pointer; }
+.s-item:hover { background: var(--c-hover-bg); }
+.s-item.on { background: var(--c-primary-l); }
+.s-title { min-width: 0; font-size: 13px; color: var(--c-text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.s-item.on .s-title { color: var(--c-primary); font-weight: 500; }
+.acct { flex: none; display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--c-border); padding-top: 10px; min-height: 44px; }
+.acct-avatar { flex: none; width: 24px; height: 24px; border-radius: var(--r-full); background: var(--c-avatar-bg); color: var(--c-text-2); font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; }
+.acct-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; color: var(--c-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--c-surface); }
+.msg-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 24px 12px; scrollbar-width: thin; scrollbar-color: var(--c-scrollbar) transparent; }
+.msg-col { max-width: 712px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+.m-row { display: flex; }
+.m-row.user { justify-content: flex-end; }
+.m-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; max-width: 80%; }
+.m-col.ai { flex: 1; max-width: 100%; }
+.m-col.user { align-items: flex-end; }
+.ububble {
+  max-width: 100%; background: var(--c-avatar-bg); color: var(--c-text-1); font-size: 15px; line-height: 1.75;
+  padding: 10px 14px; border-radius: var(--r-lg) var(--r-lg) 4px var(--r-lg);
+  white-space: pre-wrap; word-break: break-word;
+}
+.md { font-size: 15px; line-height: 1.75; color: var(--c-text-1); }
+.md p { margin: 0 0 8px; }
+.md p:last-child { margin-bottom: 0; }
+.md b { font-weight: 600; }
+.md ul { margin: 0 0 8px; padding-left: 24px; }
+.md li { margin: 2px 0; }
+.blocks { display: flex; flex-direction: column; gap: 8px; }
+.act-row { display: flex; align-items: center; gap: 4px; min-height: 24px; }
+.abtn {
+  width: 24px; height: 24px; border: none; border-radius: var(--r-sm); background: transparent; color: var(--c-text-3);
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; padding: 0;
+  transition: opacity .15s ease, background .15s ease, color .15s ease;
+}
+.m-col:hover .abtn { opacity: 1; }
+.abtn:hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+.abtn:focus-visible { opacity: 1; box-shadow: 0 0 0 3px var(--c-focus-ring); }
+.cursor { display: inline-block; width: 2px; height: 1em; background: var(--c-primary-solid); margin-left: 2px; vertical-align: text-bottom; animation: blink .9s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.status-hint { font-size: 12px; color: var(--c-text-3); }
+.composer { flex: none; padding: 12px 24px 20px; }
+.composer-col { max-width: 712px; margin: 0 auto; }
+.comp-box { border: 1px solid var(--c-border); border-radius: var(--r-lg); padding: 10px 12px; background: var(--c-surface); }
+.comp-box textarea { width: 100%; border: none; outline: none; resize: none; background: transparent; font-size: 15px; color: var(--c-text-1); font-family: inherit; }
+.comp-box textarea::placeholder { color: var(--c-text-3); }
+.comp-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.comp-hint { font-size: 12px; color: var(--c-text-3); }
+.send-btn {
+  flex: none; width: 28px; height: 28px; border: none; border-radius: var(--r-sm); background: var(--c-primary-solid);
+  color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  transition: background .15s ease, transform .1s ease;
+}
+.btn-p { height: 32px; padding: 0 16px; background: var(--c-primary-solid); color: #fff; border: none; border-radius: var(--r-md); font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; transition: background .15s ease, transform .1s ease; }
+.btn-p:hover { background: var(--c-primary-solid-h); }
+.btn-p:active { background: var(--c-primary-solid-a); transform: scale(.98); }
+.btn-p:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ---- 3b. 工具步骤卡（iter-13 基线引用，规格零变化——components.md v1.2） ---- */
+.tcard { background: var(--c-subtle-bg); border: 1px solid var(--c-border); border-radius: 10px; overflow: hidden; }
+.tcard-h {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; padding: 7px 12px;
+  background: transparent; border: none; cursor: pointer; font-family: inherit; text-align: left;
+  transition: background .15s ease; border-radius: inherit;
+}
+.tcard-h:hover { background: var(--c-hover-bg); }
+.tcard-h:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--c-focus-ring); }
+.t-ico { flex: none; color: var(--c-text-3); display: inline-flex; }
+.t-name { flex: none; font-size: 13px; font-weight: 500; color: var(--c-text-1); max-width: 34%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.t-args { flex: 1; min-width: 0; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; color: var(--c-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.t-dur { flex: none; font-size: 12px; color: var(--c-text-3); font-variant-numeric: tabular-nums; }
+.tbadge { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 8px; border-radius: var(--r-full); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.tb-run { background: var(--c-primary-l); color: var(--c-primary); }
+.tb-ok { background: var(--c-surface); color: var(--c-success); border: 1px solid var(--c-border); }
+.tb-err { background: var(--c-danger-l); color: var(--c-danger); }
+.tb-tmo { background: var(--c-warning-l); color: var(--c-warning); }
+.b-spin { flex: none; width: 11px; height: 11px; border-radius: 50%; border: 2px solid transparent; border-top-color: currentColor; border-right-color: currentColor; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.t-chev { flex: none; color: var(--c-text-3); display: inline-flex; transition: transform .15s ease; }
+.tcard.open .t-chev { transform: rotate(180deg); }
+.t-body { display: none; padding: 0 12px 12px; }
+.tcard.open .t-body { display: block; }
+.t-sec { margin-top: 8px; }
+.t-lab { font-size: 12px; color: var(--c-text-3); margin-bottom: 4px; }
+.t-pre {
+  margin: 0; background: var(--c-surface); border-radius: var(--r-sm); padding: 8px 10px;
+  font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; line-height: 1.6; color: var(--c-text-1);
+  white-space: pre; overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--c-scrollbar) transparent;
+}
+.t-res {
+  background: var(--c-surface); border-radius: var(--r-sm); padding: 8px 10px;
+  font-size: 13px; line-height: 1.6; color: var(--c-text-1); white-space: pre-wrap; word-break: break-word;
+  max-height: 200px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--c-scrollbar) transparent;
+}
+.t-res.ok { border-left: 3px solid var(--c-success); }
+.t-res.err { border-left: 3px solid var(--c-danger); }
+.t-res.tmo { border-left: 3px solid var(--c-warning); }
+.t-ph { color: var(--c-text-3); }
+
+/* ---- 3c. 引用来源卡 + 降级引导条（REQ-035 本稿新增，定夺①②载体） ----
+   容器沿次级面板家族：subtle-bg + 1px border + 圆角 10px（components.md v1.2 工具卡同族值）；
+   无状态机：卡只在 tool.result(sources) 到达时出现，出生即终态（默认折叠）；
+   头部行（逐字断言面）：「引用来源 · N 条」= 名称 13px/500 text-1 + count 12px text-3 tabular；
+   展开区：条目列表（title 链接 13px/500 primary + meta 12px text-3 + snippet 12px/1.5 text-2 两行 clamp），
+   条目间 1px border 分隔（首条无），不限高（5 条封顶全展示）。 */
+.scard { background: var(--c-subtle-bg); border: 1px solid var(--c-border); border-radius: 10px; overflow: hidden; }
+.scard-h {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; padding: 7px 12px;
+  background: transparent; border: none; cursor: pointer; font-family: inherit; text-align: left;
+  transition: background .15s ease; border-radius: inherit;
+}
+.scard-h:hover { background: var(--c-hover-bg); }
+.scard-h:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--c-focus-ring); }
+.sc-ico { flex: none; color: var(--c-text-3); display: inline-flex; }
+.sc-name { flex: none; font-size: 13px; font-weight: 500; color: var(--c-text-1); }
+.sc-count { flex: none; font-size: 12px; color: var(--c-text-3); font-variant-numeric: tabular-nums; }
+.sc-chev { flex: none; color: var(--c-text-3); display: inline-flex; transition: transform .15s ease; margin-left: auto; }
+.scard.open .sc-chev { transform: rotate(180deg); }
+.sc-body { display: none; padding: 0 12px 12px; }
+.scard.open .sc-body { display: block; }
+.src-item { padding: 8px 0; }
+.src-item + .src-item { border-top: 1px solid var(--c-border); }
+.src-title { font-size: 13px; font-weight: 500; }
+.src-title a { color: var(--c-primary); text-decoration: none; }
+.src-title a:hover { color: var(--c-primary-h); text-decoration: underline; }
+.src-title a:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--c-focus-ring); border-radius: 4px; }
+.src-meta { margin-top: 2px; font-size: 12px; color: var(--c-text-3); }
+.src-snip {
+  margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--c-text-2);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+/* 降级引导条（D1 逐字）：warning-l 底 + 左缘 3px warning + 13px warning 字 + padding 8px 12px + r-md；
+   位置 = 失败 search 卡之后、直答首段之前；渲染层派生不落库 */
+.degrade {
+  border-left: 3px solid var(--c-warning); background: var(--c-warning-l); color: var(--c-warning);
+  font-size: 13px; padding: 8px 12px; border-radius: var(--r-md); width: fit-content; max-width: 100%;
+}
+
+/* ---- 3d. toggle switch（本稿唯一新增组件形态，定夺⑤载体）+ admin 开关行（定夺⑥载体） ----
+   track 36×20 r-full：开 --c-primary-solid（实底语义族）/ 关 --c-hover-bg；
+   knob 16px #FFFFFF 固定反白实体（同发送按钮白字先例——不引用 --c-surface，暗色关态下会同色不可辨）
+   + 1px --c-border 描边 + shadow-1；开态 transform 右移 16px；.15s ease；
+   button + role="switch" + aria-checked + :focus-visible 3px focus-ring。 */
+.sw {
+  position: relative; flex: none; width: 36px; height: 20px; padding: 0; border: none;
+  border-radius: var(--r-full); background: var(--c-hover-bg); cursor: pointer;
+  transition: background .15s ease; font-family: inherit;
+}
+.sw::after {
+  content: ""; position: absolute; top: 1.5px; left: 1.5px; width: 16px; height: 16px;
+  border-radius: 50%; background: #fff; border: 1px solid var(--c-border);
+  box-shadow: var(--shadow-1); transition: transform .15s ease; box-sizing: border-box;
+}
+.sw.on { background: var(--c-primary-solid); }
+.sw.on::after { transform: translateX(16px); }
+.sw:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--c-focus-ring); }
+/* admin 开关行：统计卡区后、tabs 前；surface 白卡 + border + r-lg + padding 12px 16px（AdminView 唯一新增区） */
+.sw-row {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); padding: 12px 16px;
+}
+.sw-row .row-ico { flex: none; color: var(--c-text-3); display: inline-flex; }
+.sw-title { flex: none; font-size: 13px; font-weight: 500; color: var(--c-text-1); }
+.sw-desc { flex: 1; min-width: 0; font-size: 12px; color: var(--c-text-3); line-height: 1.6; }
+.sw-desc.miss { color: var(--c-warning); }
+
+/* ---- 3e. admin 缩样 / 设置弹窗 / 档案模态（iter-12/11/7 基线引用 + 本稿新增位） ---- */
+.adm-stage { background: var(--c-bg); border: 1px solid var(--c-border); border-radius: var(--r-lg); overflow: hidden; }
+.adm-top {
+  height: 52px; display: flex; align-items: center; gap: 8px; padding: 0 20px;
+  background: var(--c-surface); border-bottom: 1px solid var(--c-border);
+}
+.adm-tag { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--c-primary-l); color: var(--c-primary); }
+.btn-ghost {
+  height: 30px; display: inline-flex; align-items: center; gap: 4px; padding: 0 12px;
+  border: 1px solid var(--c-border); border-radius: 8px; background: var(--c-surface);
+  color: var(--c-text-2); font-size: 13px; cursor: pointer; font-family: inherit;
+}
+.btn-ghost:hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+.adm-body2 { display: flex; flex-direction: column; gap: 16px; padding: 20px; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+.stat-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
+.s-label { font-size: 13px; color: var(--c-text-2); }
+.s-value { font-size: 20px; font-weight: 600; color: var(--c-text-1); font-variant-numeric: tabular-nums; }
+.s-sub { font-size: 12px; color: var(--c-text-3); }
+.adm-tabs { display: inline-flex; border: 1px solid var(--c-border); border-radius: 8px; background: var(--c-surface); padding: 3px; gap: 2px; width: fit-content; }
+.adm-tabs button { height: 32px; padding: 0 16px; border: none; border-radius: 6px; background: none; font-size: 13px; color: var(--c-text-2); cursor: pointer; font-family: inherit; }
+.adm-tabs button.on { background: var(--c-primary-l); color: var(--c-primary); font-weight: 500; }
+/* 设置弹窗缩样（iter-11 形态引用：720px 左右分栏，高级设置选中） */
+.set-mask { position: relative; background: var(--c-mask); border-radius: var(--r-lg); padding: 28px; display: flex; align-items: center; justify-content: center; }
+.set-modal { width: 720px; max-width: 100%; height: 480px; display: flex; flex-direction: column; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px; box-shadow: var(--shadow-3); overflow: hidden; }
+.sm-head { flex: none; display: flex; align-items: center; padding: 14px 16px 14px 24px; border-bottom: 1px solid var(--c-border); }
+.sm-title { font-size: 17px; font-weight: 600; color: var(--c-text-1); }
+.sm-body2 { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+.sm-nav { flex: none; width: 168px; border-right: 1px solid var(--c-border); background: var(--c-subtle-bg); padding: 12px 8px; display: flex; flex-direction: column; gap: 2px; }
+.sm-nav button { display: flex; align-items: center; height: 36px; padding: 0 12px; border: none; border-radius: 8px; background: none; font-size: 13px; font-family: inherit; color: var(--c-text-2); cursor: pointer; text-align: left; }
+.sm-nav button.on { background: var(--c-primary-l); color: var(--c-primary); font-weight: 500; }
+.sm-pane { flex: 1; min-width: 0; overflow-y: auto; padding: 16px 24px 24px; }
+.pane-label { font-size: 14px; font-weight: 600; color: var(--c-text-1); margin: 0 0 12px; }
+.adv-intro { margin: 0 0 12px; font-size: 12px; line-height: 1.7; color: var(--c-text-3); }
+.profile-list { display: flex; flex-direction: column; gap: 8px; }
+.profile-item { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--c-border); border-radius: 8px; background: var(--c-surface); }
+.profile-item.current { border-color: var(--c-primary); background: var(--c-primary-l); }
+.p-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.p-name { font-size: 13px; font-weight: 500; color: var(--c-text-1); }
+.p-sub { font-size: 12px; color: var(--c-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.p-current { flex: none; font-size: 12px; color: var(--c-primary); font-weight: 500; }
+.p-icon { flex: none; width: 26px; height: 26px; border: none; border-radius: 6px; background: transparent; color: var(--c-text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.p-icon:hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+.p-btn2 { flex: none; height: 26px; padding: 0 10px; border: 1px solid var(--c-border); border-radius: 6px; background: transparent; color: var(--c-text-2); font-size: 12px; cursor: pointer; font-family: inherit; }
+.p-btn2:hover { border-color: var(--c-primary); color: var(--c-primary); }
+/* 档案添加/编辑模态（iter-7 形态 + 本稿第五字段「支持工具」） */
+.modal-mask { position: absolute; inset: 0; background: var(--c-mask); display: flex; align-items: center; justify-content: center; z-index: 10; border-radius: var(--r-lg); }
+.modal2 { width: 440px; max-width: calc(100% - 32px); max-height: calc(100% - 32px); overflow-y: auto; background: var(--c-surface); border-radius: 12px; box-shadow: var(--shadow-3); padding: 24px; display: flex; flex-direction: column; gap: 14px; }
+.modal-title2 { margin: 0; font-size: 16px; font-weight: 600; color: var(--c-text-1); }
+.modal-intro { margin: 0; font-size: 13px; line-height: 1.6; color: var(--c-text-3); }
+.field2 { display: flex; flex-direction: column; gap: 6px; }
+.field-label2 { font-size: 13px; font-weight: 500; color: var(--c-text-2); }
+.req2 { color: var(--c-danger); margin-left: 4px; }
+.input2 { height: 36px; border: 1px solid var(--c-border); border-radius: 6px; padding: 0 12px; font-size: 14px; color: var(--c-text-1); background: var(--c-surface); outline: none; font-family: inherit; }
+.input2:focus { border-color: var(--c-primary); box-shadow: 3px 3px 0 var(--c-focus-ring); }
+.field-hint2 { font-size: 12px; color: var(--c-text-3); }
+.tools-field { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--c-border); border-radius: 8px; }
+.tools-field .tf-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.modal-actions2 { display: flex; justify-content: flex-end; gap: 8px; }
+.btn2 { height: 36px; padding: 0 20px; border-radius: 6px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-1); font-size: 13px; cursor: pointer; font-family: inherit; }
+.btn2:hover { background: var(--c-hover-bg); }
+.btn2.pri { border-color: var(--c-primary); background: var(--c-primary-solid); color: #fff; }
+.btn2.pri:hover { background: var(--c-primary-solid-h); }
+
+/* ---- 3f. 文档辅助件（非产品组件） ---- */
+.sse-box { border: 1px solid var(--c-border); border-radius: var(--r-md); background: var(--c-surface); overflow: hidden; }
+.sse-head { padding: 8px 12px; font-size: 12px; font-weight: 600; color: var(--c-text-2); background: var(--c-subtle-bg); border-bottom: 1px solid var(--c-border); }
+.sse-body { height: 190px; overflow-y: auto; padding: 8px 12px; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; line-height: 1.8; color: var(--c-text-2); scrollbar-width: thin; scrollbar-color: var(--c-scrollbar) transparent; word-break: break-all; }
+.sse-body .f-tool { color: var(--c-primary); }
+.sse-body .f-err { color: var(--c-danger); }
+.sse-body .f-end { color: var(--c-success); font-weight: 600; }
+.sse-body .f-dim { color: var(--c-text-3); }
+.demo-toast {
+  position: fixed; top: 20px; right: 20px; z-index: 900; display: flex; align-items: center; gap: 8px;
+  background: var(--c-toast-bg); color: #fff; border: 1px solid var(--c-toast-border);
+  border-radius: 8px; padding: 10px 16px; font-size: 13px; box-shadow: var(--shadow-2);
+  opacity: 0; transform: translateY(-8px); transition: opacity .2s ease, transform .2s ease; pointer-events: none;
+}
+.demo-toast.show { opacity: 1; transform: translateY(0); }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>ai-chat · iter-14 设计稿草案（A2 联网搜索：引用来源卡与开关入口）</h1>
+  <div class="sub">
+    依据：<b>plans/iter-14.md</b> T1（五项范围 + 卫生项；验收 = CEO 批准基线 tag design-iter-14 + 4.8-6 形态定死 +
+    降级文案逐字定稿 + 走查清单随稿）· <b>req-baseline-v5</b>（REQ-035 主 + REQ-032 验收 4 / REQ-025 开关 / REQ-014 档案开关）·
+    CHG-007 内容 4.5/4.7/4.8 与定夺① · 令牌全部来自公司 <b>design-system/tokens.md v1.3/v1.3.1</b> +
+    <b>components.md v1.2</b>，本稿<b>零新增令牌、零自造色值</b>（唯一新增组件形态 = toggle switch，随基线登记 §4.2）·
+    消息流/工具步骤卡沿 <b>design-iter-13</b>、admin 沿 <b>design-iter-12</b> 基线引用零翻案；API 口径章节体例沿 iter-12 §4
+  </div>
+  <div class="badge">状态：设计稿 iter-14 —— <b>草案（待 CEO 批准基线）</b>；定夺 8 项待拍板（§7，全部有推荐）；批准后 spec 指针回填 + components.md 登记（§9）</div>
+  <div style="font-size:12px;color:#3370FF;background:#F0F4FF;border:1px solid #E5E6EB;border-radius:8px;padding:8px 12px;margin:-12px 0 28px;line-height:1.7;">
+    <b>视觉基调（CEO 已定，不得偏离）：</b>chat 正文白底 <code>--c-surface</code>（iter-9 起）· admin 灰底白卡 1080px（iter-12 起）·
+    消息列 712px 居中 · 主色飞书蓝 <b>#3370FF</b>（暗色前景 #5C8DFF）。<b>本稿新增面三件</b>：引用来源卡（消息流内，定夺①②载体）、
+    降级引导条（文案逐字定稿）、toggle switch（admin 开关行 + 档案模态两处消费）。
+    <b>天气工具 UI 零涉及</b>（已定案不纳入本迭代，B1 再议）。
+  </div>
+
+  <!-- 演示控制 -->
+  <div class="demo-ctl">
+    <b>演示控制：</b>
+    <span class="seg">
+      <button id="btnLight" class="on">浅色</button>
+      <button id="btnDark">暗色</button>
+    </span>
+    <span class="note">一键切换下方全部可翻转样件（§3 锁定帧不随动）；选择写 localStorage 刷新保持。
+    §1 主样件可真实操作：重放回合（四结局）、数据源切换（Tavily 型 / 博查型）、引用卡折叠展开；§4 admin 开关可点击；§5 档案模态可打开。
+    <b>演示数据全为虚构：来源标题/URL/片段/耗时数值虚构（URL 用 example.com 保留域；铁律 5）</b>。</span>
+  </div>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">1</span>消息流主样件：搜索回合 + 引用来源卡 + 降级与空结果（可交互）</h2>
+    <div class="sec-desc">
+      REQ-035 主流程 4 落形：<b>模型判定需要搜索 → search 工具卡（运行中 → 终态）→ tool.result 携带 sources →
+      引用来源卡出现（默认折叠，位置在回答文本之前）→ 回答流式生成 → turn.end 定型</b>。
+      样件叙事 = 会话「版本核验」：m1/m2 为 v1 旧消息（衬景，引用卡不破坏 v1 渲染）；m3/m4 = 可重放搜索回合（主样件）；
+      m5/m6 = 超时降级（引导条逐字 D1）；m7/m8 = 空结果（「未搜到相关内容」逐字 D2）；m9/m10 = admin 关闭后对照（零 UI 无感降级 D4）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.1 会话「版本核验」（可交互主样件）<span class="tag">消息流骨架零翻案（iter-11/13 基线）· 新增 = 引用来源卡 + 降级引导条</span></div>
+      <div class="sim-row">
+        <b>试：</b>点「▶ 重放回合」看 SSE 时序（m4：文本 → search 卡运行中→终态 → 引用卡出现（回答之前）→ 回答续写）；
+        切换结局（成功 / 失败 / 超时 / 空结果）再重放，看引用卡有无、降级条与空结果呈现；
+        切换数据源（Tavily 型 / 博查型）看引用卡条目形态差异（缺字段不塌）；点引用卡头部折叠/展开。
+        <a class="lnk-reset" id="aReset" style="margin-top:0;">↺ 重置主样件</a>
+      </div>
+      <div class="sim-row">
+        <b>结局：</b>
+        <label><input type="radio" name="toolOutcome" value="ok" checked> 成功（含引用卡）</label>
+        <label><input type="radio" name="toolOutcome" value="err"> 失败（429 降级直答）</label>
+        <label><input type="radio" name="toolOutcome" value="timeout"> 超时（10s 降级直答）</label>
+        <label><input type="radio" name="toolOutcome" value="empty"> 空结果（如实回答）</label>
+        <b style="margin-left:8px;">数据源：</b>
+        <label><input type="radio" name="srcProvider" value="tavily" checked> Tavily 型（长片段 · 无 siteName）</label>
+        <label><input type="radio" name="srcProvider" value="bocha"> 博查型（siteName + 日期）</label>
+        <button class="btn-p" id="btnReplay" style="height:28px;padding:0 14px;">▶ 重放回合（m4）</button>
+      </div>
+      <div class="stage">
+        <div class="tk app-stage" id="mfStage" style="height:820px;">
+          <div class="app-shell">
+            <!-- 侧栏：静态衬景（iter-11 基线引用） -->
+            <aside class="side">
+              <div class="brand-row">
+                <svg viewBox="0 0 128 128" width="20" height="20" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+                <span class="brand-name">喵喵</span>
+              </div>
+              <button class="new-btn" type="button"><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>新建会话</button>
+              <div class="s-list">
+                <div class="s-group">今天</div>
+                <div class="s-item on"><span class="s-title">版本核验</span></div>
+                <div class="s-item"><span class="s-title">迭代周报整理</span></div>
+                <div class="s-group">更早</div>
+                <div class="s-item"><span class="s-title">架构升级审核稿讨论</span></div>
+              </div>
+              <div class="acct">
+                <span class="acct-avatar" title="猫南北">猫</span>
+                <span class="acct-name" title="猫南北">猫南北</span>
+              </div>
+            </aside>
+            <!-- 主区：消息流 -->
+            <div class="chat-main">
+              <div class="msg-scroll">
+                <div class="msg-col" id="mfCol"></div>
+              </div>
+              <div class="composer">
+                <div class="composer-col">
+                  <div class="comp-box">
+                    <textarea rows="1" placeholder="输入消息，Enter 发送"></textarea>
+                    <div class="comp-row"><span class="comp-hint">演示件 · 输入区沿 CHG-003 定案不翻案；回合期间发送钮呈停止态（现状口径）</span><span class="sp"></span><button class="send-btn" title="发送" aria-label="发送" type="button"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M12.5 1.5 2 6.2l4.3 1.9 1.9 4.3 4.3-10.9z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></button></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>消息清单（自上而下）</b>：m1/m2 = <b>v1 旧消息</b>（衬景：读时归一化单文本段，逐字零回退——引用卡不破坏 v1）·
+        m3/m4 = <b>可重放搜索回合</b>（四结局 × 双数据源；初始 = 成功 + 当前数据源定型态）·
+        m5/m6 = <b>超时降级</b>（search 卡「超时」+ 引导条 + 直答）· m7/m8 = <b>空结果</b>（「完成」卡 + 结果区逐字「未搜到相关内容」，无引用卡无引导条）·
+        m9/m10 = <b>admin 关闭对照</b>（零卡零条零提示——「模型不知其存在」无感降级）。<b>侧栏为静态衬景</b>。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.2 SSE 事件流观测（文档辅助件，非产品 UI）<span class="tag">重放 m4 时逐帧打印——tool.result 帧 sources 字段演示（§6.3 契约）</span></div>
+      <div class="stage">
+        <div class="tk" id="sseScope">
+          <div class="sse-box">
+            <div class="sse-head">POST /api/chat/turn · text/event-stream —— 事件帧观测（tool.result 帧含可选 sources 数组；失败/超时帧无 sources）</div>
+            <div class="sse-body" id="sseBody"><span style="color:var(--c-text-3);">（待重放——点上方「▶ 重放回合」后逐帧打印）</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="ann"><b>走查口径</b>：本面板为文档辅助件，产品不渲染事件流 UI；面板与 §6.3 契约逐条对应（sources 仅 status=ok 携带；引用卡只在 sources 非空时出现）。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">2</span>引用来源卡规格（定夺①②③ = 4.8-6 载体，「原型即需求」本体）</h2>
+    <div class="sec-desc">
+      AI 消息流内<b>次级面板家族新成员</b>（容器语言 = 工具步骤卡同族：subtle-bg + 1px border + 圆角 10px）；
+      <b>无状态机、无运行中态</b>——卡只在 tool.result(sources) 到达时出现，出生即终态（默认折叠）。
+      数据承载 = <b>tool_result 结构化扩展</b>（可选 sources 字段，不新增 block 段类型）——导出/复制/搜索索引零适配面。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.1 承载与位置（blocks 数据面零结构改动）<span class="tag">定夺②载体；iter-13 §3.5 预留叙述修订随稿登记</span></div>
+      <table>
+        <tr><th style="width:150px">项</th><th>口径（推荐，随基线定案）</th></tr>
+        <tr><td>数据承载</td><td><b>tool_result 结构化扩展</b>：<code>ToolResultBlock</code> 增可选 <code>sources?: SourceItem[]</code>；<code>SourceItem = { title, url, snippet?, site_name?, date_published? }</code>（title/url 必有——两家搜索 API 归一化形状，§2.2）</td></tr>
+        <tr><td>渲染规则</td><td>tool_call 段渲染工具卡后，若配对 tool_result 含非空 sources 且 status=ok → <b>紧随渲染引用来源卡</b>（沿 MessageBubble 既有配对机制，渲染层派生，blocks 数组零新增段类型）</td></tr>
+        <tr><td>位置</td><td><b>紧跟 search 工具卡之后、回答首段之前</b>（blocks 顺序 = 事件顺序的自然结果）；流式期间 tool.result 到达即现——回答生成中用户已可见来源（核验前置）</td></tr>
+        <tr><td>不渲染条件</td><td>sources 空 / 缺失 / status ≠ ok（失败、超时、空结果一律无卡——降级由引导条承载）</td></tr>
+        <tr><td>落库与透传</td><td>sources 随 tool_result 段进 blocks 落库（PUT 整档透传保真，既有机制零改动）；老客户端读新会话：未知字段忽略不崩（窗口期已知边界）；新客户端读老会话：无 sources → 无卡</td></tr>
+        <tr><td>适配面</td><td><b>零新增</b>：导出 / 复制 / 搜索索引沿「工具内容非正文」口径，sources 不入正文（REQ-013/016 零波及）——选 tool_result 扩展而非新 block 类型的核心收益</td></tr>
+        <tr><td>条数防御</td><td>后端按结果条数参数（§6.4，5 条）保证 ≤5；前端 <code>slice(0,5)</code> 兜底，头部条数 = 实际渲染条数</td></tr>
+      </table>
+      <div class="ann"><b>iter-13 §3.5 预留叙述修订登记</b>：该稿预留契约为「挂回答末尾」，本稿定夺为「回答之前」。理由：① blocks 顺序铁律零例外（末尾方案需 turn.end 重排追加特例）；② 核验前置——搜索完成即可见来源，回答流式期间已能确认「AI 真的搜了」；③ 主流产品同位先例（来源列表在回答上方）。差异随本稿基线登记，不回改已基线文档。</div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.2 归一化字段与条目形态（两家来源承载，缺字段不塌）</div>
+      <table>
+        <tr><th style="width:120px">字段</th><th style="width:60px">必有</th><th>渲染</th><th>缺失降级</th></tr>
+        <tr><td><code>title</code></td><td>是</td><td>标题行 13px/500 <code>--c-primary</code> 链接（hover 下划线 + <code>--c-primary-h</code>）；<code>href=url · target=_blank · rel="noopener noreferrer"</code>；textContent 直排<b>不进 Markdown 管线</b>（防注入）</td><td>缺 → hostname（前端自 url 计算）</td></tr>
+        <tr><td><code>url</code></td><td>是</td><td>不直接展示全串（href 承载；来源身份由元信息行表达）</td><td>—</td></tr>
+        <tr><td><code>site_name</code></td><td>否</td><td>元信息行首段</td><td>缺 → hostname 兜底</td></tr>
+        <tr><td><code>date_published</code></td><td>否</td><td>元信息行次段（<code>·</code> 分隔）；<b>原样透传不重排格式</b></td><td>缺 → 连分隔点一并省略</td></tr>
+        <tr><td><code>snippet</code></td><td>否</td><td>片段行 12px/1.5 <code>--c-text-2</code>，<b>两行 line-clamp</b>（超长不破卡，全文看原站）</td><td>缺 → 不渲染（紧凑形态）</td></tr>
+      </table>
+      <div class="ann"><b>两家实测形状承载验证</b>（§1 数据源切换）：Tavily 型 = 结构化 content 长摘要（片段两行截断）+ 无 siteName（hostname 兜底）；博查型 = siteName + datePublished 富元数据 + 短片段。同一字段集合优雅承载两种，缺字段不塌、无空块、无悬挂分隔点。<br>
+      <b>几何</b>：元信息行上距 2px；片段行上距 4px；条目内边距 8px 0；条目间 1px border-top 分隔（首条无）；展开区 padding 0 12px 12px、<b>不限高</b>（5 条封顶全展示——展开 = 用户主动要看全）。</div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">2.3 卡片形态与逐字文案登记表（v1.4.10 B：样件文案逐字断言面）</div>
+      <table>
+        <tr><th style="width:64px">编号</th><th>文案（逐字）</th><th>触发</th><th>形态与位置</th></tr>
+        <tr><td><b>D1</b></td><td><b>搜索未成功，以下为模型直接回答</b></td><td>search 工具 error/timeout 且消息有后续直答文本段</td><td>warning 引导条（warning-l 底 + 左缘 3px warning + 13px warning 字 + padding 8px 12px + r-md）；位置 = 失败卡后、直答首段前；<b>渲染层派生不落库</b>（error 与 timeout 共用一句——诊断详情在工具卡结果区）</td></tr>
+        <tr><td><b>D2</b></td><td><b>未搜到相关内容</b></td><td>搜索结果为空（后端组装的 tool.result result 文本，逐字定死）</td><td>搜索卡「完成」态结果区原样渲染（后端拥有文案，同截断标注口径）；<b>无引用卡、无引导条</b>；模型据此如实回答、不编造来源</td></tr>
+        <tr><td><b>D3</b></td><td><b>引用来源 · N 条</b></td><td>引用卡头部（N = tabular-nums 实际渲染条数）</td><td>名称 13px/500 + count 12px text-3；「·」两侧各一空格</td></tr>
+        <tr><td><b>D4</b></td><td>（零 UI）</td><td>admin 关闭搜索 → 工具不注册 → 模型直答</td><td>无 search 卡、无引用卡、无引导条、无任何提示（「模型不知其存在」无感降级）</td></tr>
+        <tr><td><b>D5</b></td><td><b>已开启联网搜索</b> / <b>已关闭联网搜索</b></td><td>admin 开关操作成功（§4）</td><td>现有 AppToast 深底承载</td></tr>
+        <tr><td><b>D6</b></td><td><b>搜索密钥未配置：请在服务端 backend/.env 中设置 AI_CHAT_SEARCH_KEY 并重启后端，开启后才会生效</b></td><td><code>search_key_configured=false</code>（§6.1）</td><td>开关行说明区 warning 色替换常显说明；开关仍可操作（状态先存，key 配置后即生效）</td></tr>
+        <tr><td><b>D7</b></td><td><b>关闭后，使用此档案的对话不携带工具（如联网搜索），AI 直接回答</b></td><td>档案模态「支持工具」hint（§5）</td><td>12px text-3</td></tr>
+      </table>
+      <div class="ann"><b>折叠规则</b>：默认折叠（出生即终态，无 R1 展开期——与工具卡 R2/R3「终态折叠」精神一致）；无自动折叠规则（无运行中态可转）；历史消息恒折叠；交互 = 头部行 button + aria-expanded + Enter/Space + chevron .15s 旋转 + :focus-visible 2px focus-ring。<b>导出/复制不含引导条与引用卡</b>（非文本段，与 max-steps pill 同口径）。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">3</span>亮暗锁定对照（双帧并置，走查方法 = 找亮色残留）</h2>
+    <div class="sec-desc">同一 DOM，仅根节点令牌覆盖；暗色帧内任何肉眼发白块即为漏改裸色值。本节锁定帧不随「演示控制」切换。</div>
+
+    <div class="spec">
+      <div class="spec-title">3.1 引用来源卡（折叠 / 展开 · 博查型）+ 降级引导条 + 空结果卡（浅 ↔ 暗）</div>
+      <div class="cols">
+        <div>
+          <div class="frame-cap">浅色（卡 subtle-bg #FAFBFC；标题链接 #3370FF；降级条 #FFF7E8 + #B45309；空结果卡同工具卡）</div>
+          <div class="tk force-light" id="lock1L" style="padding:16px;display:flex;flex-direction:column;gap:8px;border:1px solid var(--c-border);border-radius:var(--r-lg);background:var(--c-surface);"></div>
+        </div>
+        <div>
+          <div class="frame-cap">暗色（卡 #24272E；标题链接 #5C8DFF；降级条 #38290F + #EDA23B；片段 #A2A9B6 / 元信息 #808896）</div>
+          <div class="tk force-dark" id="lock1D" style="padding:16px;display:flex;flex-direction:column;gap:8px;border:1px solid var(--c-border);border-radius:var(--r-lg);background:var(--c-surface);"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">3.2 toggle switch 双态 + admin 开关行 + 档案模态开关字段（浅 ↔ 暗）</div>
+      <div class="cols">
+        <div>
+          <div class="frame-cap">浅色（开轨道 #3370FF / 关轨道 #F2F3F5；滑块白 + #E5E6EB 描边；key 缺失附注 #B45309）</div>
+          <div class="tk force-light" id="lock2L" style="padding:16px;display:flex;flex-direction:column;gap:12px;border:1px solid var(--c-border);border-radius:var(--r-lg);background:var(--c-bg);"></div>
+        </div>
+        <div>
+          <div class="frame-cap">暗色（开轨道 #3370FF / 关轨道 #262930；滑块白 + #33363E 描边——关态轨道上滑块清晰可辨；key 缺失附注 #EDA23B）</div>
+          <div class="tk force-dark" id="lock2D" style="padding:16px;display:flex;flex-direction:column;gap:12px;border:1px solid var(--c-border);border-radius:var(--r-lg);background:var(--c-bg);"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">4</span>admin 联网搜索开关（AdminView 触点，REQ-025 A2 句）</h2>
+    <div class="sec-desc">
+      AdminView <b>iter-12 基线零翻案</b>（灰底白卡 1080px / 统计卡 / tabs / 列表全部不动），本轮<b>唯一新增区 = 开关行</b>：
+      统计卡区之后、分段 tabs 之前。控件 = toggle switch（本稿唯一新增组件形态，随基线登记 components.md）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.1 开关行（可交互缩样）<span class="tag">定夺⑤⑥载体 · 点击 switch 看 toast 与态翻转；勾选「key 缺失态」看 D6 附注</span></div>
+      <div class="sim-row">
+        <b>试：</b>点击 switch（PUT /api/admin/settings 演示）→ 态翻转 + D5 toast；勾选「模拟 key 缺失」→ 常显说明替换为 D6 warning 附注。
+        <label style="cursor:pointer;"><input type="checkbox" id="keyMissToggle"> 模拟 key 缺失（search_key_configured=false）</label>
+      </div>
+      <div class="stage">
+        <div class="tk adm-stage" id="admScope">
+          <div class="adm-top">
+            <span class="brand-name" style="font-size:14px;">喵喵</span>
+            <span class="adm-tag">管理后台</span>
+            <span class="sp"></span>
+            <button class="btn-ghost" type="button">返回主界面</button>
+          </div>
+          <div class="adm-body2">
+            <!-- 统计卡区：iter-12 基线静态衬景 -->
+            <div class="stat-grid">
+              <div class="stat-card"><div class="s-label">总用户数</div><div class="s-value">47</div><div class="s-sub">全部注册账号（含已封禁与管理员）</div></div>
+              <div class="stat-card"><div class="s-label">今日请求</div><div class="s-value">86</div><div class="s-sub">今日 · 全部密钥模式合计</div></div>
+              <div class="stat-card"><div class="s-label">今日 token</div><div class="s-value">412,530</div><div class="s-sub">今日 · 上游 usage 帧合计</div></div>
+              <div class="stat-card"><div class="s-label">统一 key 每日用量</div><div class="s-value">100 / 2,000 次</div><div class="s-sub">剩余 1,900 次</div></div>
+            </div>
+            <!-- 本稿唯一新增区：联网搜索开关行 -->
+            <div class="sw-row" id="adminSwRow">
+              <span class="row-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="M3 12h18M12 3c2.5 2.6 3.9 5.7 3.9 9S14.5 18.4 12 21c-2.5-2.6-3.9-5.7-3.9-9S9.5 5.6 12 3z" stroke="currentColor" stroke-width="1.7"/></svg></span>
+              <span class="sw-title">联网搜索</span>
+              <span class="sw-desc" id="adminSwDesc">开启后 AI 可自动联网搜索并在回答前展示来源引用；关闭后 AI 直接回答，用户无感知</span>
+              <button type="button" class="sw on" id="adminSw" role="switch" aria-checked="true" aria-label="联网搜索开关"></button>
+            </div>
+            <!-- tabs 衬景（iter-12 基线引用） -->
+            <div class="adm-tabs" role="radiogroup" aria-label="后台分区">
+              <button type="button" class="on">用户列表</button>
+              <button type="button">用量列表</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann"><b>交互口径</b>：点击 switch → PUT（§6.1）→ 成功：态翻转 + D5 toast；失败：toast 错误、开关回弹。<b>不做确认弹窗</b>（可逆操作，沿「解封直接生效」先例）。生效语义 = <b>下一回合</b>（正在生成的回合不受影响）；关闭 → tools 定义不含 search → 模型不知其存在（§1 m9/m10 对照形态）。403 门禁与可见性沿 iter-12 零改动。</div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.2 toggle switch 组件规格（唯一新增组件形态，零新令牌）</div>
+      <table>
+        <tr><th style="width:100px">件</th><th>规格</th></tr>
+        <tr><td>轨道</td><td>36 × 20px，<code>--r-full</code>；<b>开 = <code>--c-primary-solid</code></b>（实底语义族，同主按钮）/ <b>关 = <code>--c-hover-bg</code></b>；过渡 .15s ease</td></tr>
+        <tr><td>滑块</td><td>16px 圆，<b>#FFFFFF 固定反白实体</b>（同发送按钮白字先例——不引用 <code>--c-surface</code>，暗色关态下会同色不可辨）+ 1px <code>--c-border</code> 描边 + <code>--shadow-1</code>；开态 transform 右移 16px（无布局重排）</td></tr>
+        <tr><td>语义</td><td><code>&lt;button role="switch" aria-checked&gt;</code>；<code>:focus-visible</code> 3px <code>--c-focus-ring</code>；按压不做 scale（轨道小、抖动大于反馈）</td></tr>
+        <tr><td>复用</td><td>admin 开关行（§4.1）+ 档案模态「支持工具」（§5）同一组件两处消费；components.md 随基线登记（沿「工具步骤卡」v1.2 先例，CEO 随基线批准）</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">5</span>档案「支持工具」开关 UI（设置弹窗触点，REQ-014 定夺①兑现）</h2>
+    <div class="sec-desc">
+      design-iter-13 定夺④联动定案「开关 UI 随 A2 / design-iter-14 落地」兑现：后端 <code>profiles.tools_enabled</code>（DEFAULT 1）已在位，本轮补 UI。
+      位置 = 高级设置 → 档案<b>添加/编辑模态</b>内 API Key 之后<b>第五字段</b>（随表单保存制；统一 key 恒开——设置弹窗统一密钥区无此控件）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">5.1 设置弹窗高级设置分区 + 档案模态（可交互缩样）<span class="tag">定夺⑦载体 · 点「添加供应商档案」或档案 2 编辑 icon 开模态</span></div>
+      <div class="sim-row">
+        <b>试：</b>点「添加供应商档案」→ 模态第五字段默认开；点档案 2（公司中转）编辑 icon → 回显<b>关</b>态（列表行 p-sub 尾「 · 工具已关」可见）；切换开关后「保存档案」（演示：关模态 + toast）。
+      </div>
+      <div class="stage">
+        <div class="tk set-mask" id="setScope" style="position:relative;">
+          <div class="set-modal">
+            <div class="sm-head"><div class="sm-title">设置</div><span class="sp"></span></div>
+            <div class="sm-body2">
+              <nav class="sm-nav">
+                <button type="button">外观</button>
+                <button type="button">密钥模式</button>
+                <button type="button" class="on">高级设置</button>
+                <button type="button">对话设置</button>
+                <button type="button">账号</button>
+              </nav>
+              <div class="sm-pane">
+                <div class="pane-label">高级设置 · 自填供应商密钥</div>
+                <p class="adv-intro">填写自有 Base URL / 模型名 / API Key，解锁更高配额。密钥仅存服务端（受保护存储），浏览器本地不存储任何密钥。</p>
+                <div class="profile-list">
+                  <div class="profile-item current">
+                    <div class="p-info">
+                      <span class="p-name">DeepSeek 官方</span>
+                      <span class="p-sub">api.example-deep.cn · deepseek-chat · sk-****ab12</span>
+                    </div>
+                    <span class="p-current">当前生效</span>
+                  </div>
+                  <div class="profile-item">
+                    <div class="p-info">
+                      <span class="p-name">公司中转</span>
+                      <span class="p-sub">relay.example-corp.cn · glm-4.7 · sk-****f03 · 工具已关</span>
+                    </div>
+                    <button type="button" class="p-icon" id="editProfileBtn" title="编辑" aria-label="编辑档案"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>
+                  </div>
+                </div>
+                <div style="margin-top:12px;"><button type="button" class="p-btn2" id="addProfileBtn">+ 添加供应商档案</button></div>
+                <!-- 档案模态（iter-7 形态 + 本稿第五字段） -->
+                <div class="modal-mask" id="profileModal" style="display:none;">
+                  <div class="modal2" role="dialog" aria-label="供应商档案">
+                    <h3 class="modal-title2" id="pmTitle">添加供应商档案</h3>
+                    <p class="modal-intro">按 OpenAI 兼容协议填写三项；密钥仅存服务端（受保护存储）。<b>「支持工具」为能力开关（CHG-007 定夺①，默认开）</b>。</p>
+                    <label class="field2"><span class="field-label2">档案名称<span class="req2">*</span></span><input class="input2" type="text" placeholder="如：DeepSeek / GLM / 公司中转" id="pmName"></label>
+                    <label class="field2"><span class="field-label2">Base URL<span class="req2">*</span></span><input class="input2" type="text" placeholder="https://api.deepseek.com" id="pmUrl"></label>
+                    <label class="field2"><span class="field-label2">模型名<span class="req2">*</span></span><input class="input2" type="text" placeholder="deepseek-chat" id="pmModel"></label>
+                    <label class="field2"><span class="field-label2">API Key<span class="req2">*</span></span><input class="input2" type="password" placeholder="sk-…"></label>
+                    <div class="tools-field">
+                      <div class="tf-info">
+                        <span class="field-label2">支持工具</span>
+                        <span class="field-hint2">关闭后，使用此档案的对话不携带工具（如联网搜索），AI 直接回答</span>
+                      </div>
+                      <button type="button" class="sw on" id="profileSw" role="switch" aria-checked="true" aria-label="支持工具开关"></button>
+                    </div>
+                    <div class="modal-actions2">
+                      <button type="button" class="btn2" id="pmCancel">取消</button>
+                      <button type="button" class="btn2 pri" id="pmSave">保存档案</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann"><b>口径</b>：新建默认开；编辑回显 <code>tools_enabled</code> 实值；随「保存档案」一并提交（无独立保存钮）；统一 key 恒开（本字段仅自填档案存在）。<b>列表行状态可见</b>：关态档案 p-sub 尾显示「 · 工具已关」（12px text-3，开态不打扰不显示）——报错引导关闭后回来可确认状态。<b>引导路径</b>：上游明确报不支持 tools 的错误 → REQ-007 既有映射错误气泡 +「前往高级设置」直达（locateAdvanced 既有语义）+ 提示文案引导关闭本开关，<b>不新建映射</b>（建议语：错误气泡说明含「该端点可能不支持工具调用，可关闭档案中的『支持工具』后重试」；随 T2 REQ-014 走查）。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">6</span>API 口径（随稿定案——T2 实现依据；体例沿 design-iter-12 §4）</h2>
+    <div class="sec-desc">
+      硬门槛：既有 admin / profiles 相关用例<b>零改动通过</b>（加法扩展策略，iter-12 先例）。
+      key 与开关分离：key = <code>backend/.env</code> 部署配置（改需重启）；开关 = 落库运行时状态（下一回合生效）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">6.1 admin 开关存取<span class="tag">定夺⑥载体</span></div>
+      <pre><code>GET /api/admin/overview
+→ 200 { ...既有字段零变化...,
+       "search_enabled": true,          ← 新增（加法字段，默认 true）
+       "search_key_configured": true }  ← 新增（只报有无，不泄露 key 内容）
+
+PUT /api/admin/settings
+{ "search_enabled": false }
+→ 200 { "search_enabled": false }</code></pre>
+      <table>
+        <tr><th style="width:130px">项</th><th>口径</th></tr>
+        <tr><td>读取</td><td>并入 overview 响应（加法扩展，现有消费方零感知）；AdminView 既有 loadMeta 拉取，<b>零新增请求</b></td></tr>
+        <tr><td>写入</td><td>新端点 <code>PUT /api/admin/settings</code>（B1 服务端配置面板可扩展复用）；非 admin 403；body 缺字段/非布尔 422；幂等</td></tr>
+        <tr><td>实际注册条件</td><td><code>search 注册 = admin 开关 ∧ key 已配置</code>（key 缺失时开关状态可存但工具不注册——D6 附注说明）</td></tr>
+      </table>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">6.2 运行时生效语义（关闭 = 模型不知其存在）</div>
+      <table>
+        <tr><th style="width:130px">项</th><th>口径</th></tr>
+        <tr><td>存储与读取</td><td>开关值落 SQLite（KV 表实现 T2 定，稿不锁表结构）；读取点位 = <b>回合受理时实时读</b>（验收锚 =「PUT 后下一回合生效」，无需重启）</td></tr>
+        <tr><td>生效边界</td><td>正在生成的回合不受影响（注册判定在回合开始时一次性完成）；PUT 后<b>新回合</b>即生效</td></tr>
+        <tr><td>关闭语义链</td><td>注册表过滤 search（tools_for_user 挂点）→ 上游请求 tools 定义不含 search → 模型不知其存在 → 用户侧直答无感（D4）——payload 断言 = T2 pytest（MockTransport 捕获，plans T2 验收 3）</td></tr>
+        <tr><td>开关断言矩阵</td><td>admin 开关 × 档案「支持工具」× key 模式三态组合随 plans T2 验收执行（admin 关·档案开 → tools 无 search；admin 开·档案关 → 无 tools；admin 开·档案开/统一 key → 含 search；统一 key 恒开不参与变化）——本稿登记引用不重复展开</td></tr>
+      </table>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">6.3 profiles 扩展 + SSE/blocks 数据面扩展</div>
+      <pre><code>GET /api/profiles
+→ 200 [ { ...既有字段零变化..., "tools_enabled": true } ]     ← 响应加法字段
+
+POST /api/profiles      { "name":…, "base_url":…, "model":…, "api_key":… }        ← 老形状：缺省 = true（老前端零破坏）
+PUT  /api/profiles/{id} { …, "tools_enabled": false }                             ← 显式传值覆盖
+PUT  /api/profiles/{id} { … }                                                     ← 未传 = 沿用原值（编辑）
+
+data: {"type":"tool.result","tool_call_id":"c_1","status":"ok",
+       "result":"…结果摘要 + 来源列表文本（给模型）…","duration_ms":2380,
+       "sources":[ {"title":"…","url":"https://…","snippet":"…","site_name":"…","date_published":"2026-08-12"}, … ]}</code></pre>
+      <table>
+        <tr><th style="width:150px">项</th><th>口径</th></tr>
+        <tr><td>profiles payload</td><td><code>tools_enabled</code> <b>可选布尔</b>：缺省 = 新建 true / 编辑沿用原值（与 api_key「留空 = 沿用」同精神；老客户端不带此字段不 422）</td></tr>
+        <tr><td>tool.result 负载</td><td>增<b>可选 <code>sources</code> 数组</b>（§2.1 归一化形状）；<code>result</code> 文本与 <code>sources</code> = 同一搜索结果两个视角（模型消费文本、前端消费结构化列表——REQ-035 主流程 3 组装口径落形）；仅 status=ok 携带</td></tr>
+        <tr><td>前端消费</td><td>配对挂卡后渲染引用卡（§2.1）；落库随 tool_result 段透传；<b>未知负载字段忽略</b>（老前端遇 sources 不崩）</td></tr>
+        <tr><td>search 工具注册</td><td>入参 JSON Schema <code>{ "query": string }</code>；出网白名单 = 选定搜索 API 域（Tavily 域，选型 4.8-10 已定夺）；结果上限 32 KiB 沿网关默认（design-iter-13 定夺③）</td></tr>
+      </table>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">6.4 微参数 + 4.8-10 定夺值登记（随基线定案；定夺⑧与登记段载体）</div>
+      <table>
+        <tr><th style="width:170px">参数</th><th style="width:120px">候选</th><th style="width:110px">推荐</th><th>理由</th></tr>
+        <tr><td>search 单工具超时</td><td>8 / 10 / 15 s</td><td><b>10s</b></td><td>Tavily 常规 1~3s、长尾约 8s；交互式等待体感上限约 10s；超时路径已兜底（降级直答不崩）。8s 对慢查询偏紧误杀、15s 悬挂感强无增益</td></tr>
+        <tr><td>搜索结果条数</td><td>3 / 5 / 8</td><td><b>5 条</b></td><td>5 条（标题+URL+片段）约 1~2k token，32 KiB 包络内合理成本位；引用卡一屏可核验；更多条数质量边际收益低、噪声成本升（Tavily max_results=5）</td></tr>
+        <tr><td>引用卡折叠默认</td><td>默认折叠 / 展开</td><td><b>默认折叠</b></td><td>引用卡是核验资产非过程演示（同工具卡 R2/R3 终态折叠精神）；5 条展开 300px+ 淹没回答；头部一行承载存在感</td></tr>
+      </table>
+      <div class="ann"><b>4.8-10 定夺值登记（已定夺，非本稿定夺项）</b>：搜索 API = <b>Tavily 起步</b>（备选博查：中文质量实测不足或出境调用受限即切换，网关封装后 S 级；SearXNG 不做）；key = <b>backend/.env <code>AI_CHAT_SEARCH_KEY</code></b>（与统一 key 三变量同法，.env.example 占位；不入 git/日志/响应体；admin 可见开关状态、不可见 key）。出处：plans/iter-14.md 定夺记录 1/2（CEO 2026-08-18）。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">7</span>CEO 定夺项（8 项，待拍板）</h2>
+    <div class="sec-desc">
+      沿 iter-1~13 固化模式：设计师给推荐方案与理由 → CEO 拍板 → 固化为决策记录，T2/T3 按定案实现。
+      <b>本稿全部可交互样件已按「推荐」落形</b>（定夺若改选，改稿走评审修订，不默认套用）。
+    </div>
+
+    <div class="spec" style="border-color:#B45309;background:#FFF7E8;">
+      <div class="spec-title" style="color:#1F2329;">定夺速览（待 CEO 拍板 · 全部有推荐）</div>
+      <div class="ann" style="color:#646A73;">
+        <b>①（4.8-6）引用来源卡形态</b>——推荐：<b>按本稿 §2 基线</b>（次级面板家族 + 归一化五字段 + 默认折叠）；<br>
+        <b>② 引用卡位置与承载</b>——推荐：<b>回答之前 · tool_result.sources 扩展</b>（blocks 顺序零例外 + 适配面零新增）；<br>
+        <b>③ 回答内引用标记</b>——推荐：<b>纯来源列表卡，不做上标/角标联动</b>（备砍序 a 按基线形态直接定案）；<br>
+        <b>④ 搜索降级呈现</b>——推荐：<b>warning 引导条 + 逐字「搜索未成功，以下为模型直接回答」</b>；<br>
+        <b>⑤ admin 开关控件</b>——推荐：<b>toggle switch 新组件</b>（随基线登记 components.md，零新令牌）；<br>
+        <b>⑥ admin 开关 API</b>——推荐：<b>overview 加字段读 + PUT /api/admin/settings 写</b>；<br>
+        <b>⑦ 档案开关位置</b>——推荐：<b>档案添加/编辑模态第五字段</b>；<br>
+        <b>⑧ 微参数三项</b>——推荐：<b>超时 10s / 条数 5 / 默认折叠</b>。
+      </div>
+    </div>
+
+    <table>
+      <tr><th style="width:46px">编号</th><th>问题</th><th>选项与推荐（样件已按推荐落形）</th><th>理由 / 备选（未采纳留档）</th></tr>
+      <tr>
+        <td>①<br><span style="color:#8F959E;font-size:11px;">4.8-6</span></td>
+        <td>引用来源卡形态（徽章/字段/条目/折叠）——本稿本体，「原型即需求」</td>
+        <td><b>推荐：按 §2 全规格基线</b>——次级面板家族容器（subtle-bg + border + 10px 圆角，同工具卡）+ 归一化五字段条目（标题链接/元信息/两行片段）+ 默认折叠 + 头部「引用来源 · N 条」；无状态机（出生即终态）</td>
+        <td>与工具卡同族语言零学习成本；五字段集合同时承载 Tavily（长片段无 siteName）与博查（富元数据）实测形状，缺字段不塌；折叠默认与工具卡 R2/R3 精神一致。<br>备选（未采纳）：默认展开（5 条 300px+ 淹没回答）/ 表格式来源（信息密度过高，对话流不适合表格）/ 工具卡展开态内嵌来源（默认折叠下不可见，核验价值丢失）</td>
+      </tr>
+      <tr>
+        <td>②</td>
+        <td>引用卡位置与数据承载</td>
+        <td><b>推荐：回答之前（紧跟 search 工具卡）+ tool_result 结构化扩展（可选 sources 字段）</b>——blocks 顺序 = 事件顺序的自然结果；流式期间 tool.result 到达即现（回答生成中已可见来源）</td>
+        <td>核验前置（REQ-035「可核验」的流式兑现）；导出/复制/搜索索引沿「工具内容非正文」口径<b>零适配面</b>；老客户端未知字段忽略不崩。iter-13 §3.5 预留叙述「挂回答末尾」随稿修订登记（§2.1）。<br>备选（未采纳）：回答末尾（需 turn.end 重排特例，破坏顺序铁律）/ 新增 sources block 段类型（导出/搜索/复制三处适配 + 组装规则面变大）</td>
+      </tr>
+      <tr>
+        <td>③</td>
+        <td>回答内引用标记形态</td>
+        <td><b>推荐：纯来源列表卡，不做文本内上标/角标联动</b>——模型回答自然引用（prompt 引导，非 UI 机制）；回答内自发出现的「[1]」类文本按普通文本渲染、不联动</td>
+        <td>上标标记可靠性依赖 prompt 约束，错位/漏标反而损害核验性；编号与来源对齐需后处理校验（Tavily 无序号）；M 级容量下联动交互（点击滚动/高亮）成本不成比例。来源列表卡已满足「可核验」。备砍序 a（plans）按基线形态直接定案，联动交互留暂缓池 B1+ 候选。<br>备选（未采纳）：上标 + 悬浮预览（上述可靠性问题）/ 上标 + 点击滚动联动（再增交互面）</td>
+      </tr>
+      <tr>
+        <td>④</td>
+        <td>搜索降级呈现（失败/超时 → 直答）</td>
+        <td><b>推荐：warning 引导条 + 逐字「搜索未成功，以下为模型直接回答」</b>——位置 = 失败卡后、直答首段前；渲染层派生不落库；error/timeout 共用一句</td>
+        <td>「这段回答没有联网核验」需要 block 级可见性（重于 pill——pills 承载过程护栏，此为回答可信度声明）；派生规则确定性（历史重渲染一致），零协议新增。诊断详情保留在工具卡结果区（展开可见）。<br>备选（未采纳）：pill 标注（可见性不足）/ 由模型自述降级（A1 现状——文案不可控不可断言，v1.4.10 B 断言面要求固定文案）/ 红色错误气泡（非错误——回合正常继续，语义色错档）</td>
+      </tr>
+      <tr>
+        <td>⑤</td>
+        <td>admin 开关控件形态</td>
+        <td><b>推荐：toggle switch 新组件</b>（36×20 轨道 + 白滑块；开 primary-solid / 关 hover-bg；零新令牌）——随基线登记 components.md（沿工具步骤卡 v1.2 先例）</td>
+        <td>布尔开关的行业惯例形态（iOS/后台通用，语义零学习成本）；admin 开关行 + 档案模态两处消费一次定夺两处受益；零新令牌（实底族 + 白实体反白 + border 组合）。<br>备选（未采纳）：分段控件开/关（既有组件但占宽 80px+，两处行内空间紧）/ checkbox（表单勾选语义弱于开关，状态翻转反馈不明显）</td>
+      </tr>
+      <tr>
+        <td>⑥</td>
+        <td>admin 开关 API 口径</td>
+        <td><b>推荐：读取并入 GET /api/admin/overview（加法字段 search_enabled + search_key_configured）+ 写入新端点 PUT /api/admin/settings</b></td>
+        <td>overview 加法扩展 = iter-12 先例（既有用例零改动），AdminView 已拉 overview <b>零新增请求</b>；写端点独立命名可为 B1 服务端配置面板扩展复用；key_configured 只报有无不泄露内容。<br>备选（未采纳）：独立 GET /api/admin/search-enabled（多一次请求无收益）/ 复用 PUT overview（overview 语义为读聚合，写入职责混入不当）</td>
+      </tr>
+      <tr>
+        <td>⑦</td>
+        <td>档案「支持工具」开关位置</td>
+        <td><b>推荐：档案添加/编辑模态内第五字段</b>（API Key 后；switch 同组件；随「保存档案」提交；列表行关态显示「 · 工具已关」）</td>
+        <td>能力随档案（REQ-014 定夺①语义）；档案编辑为模态表单保存制，行内直改破坏模式一致性；列表行状态可见满足「引导关闭后回来确认」。<br>备选（未采纳）：档案列表行内 switch（直改即时生效，与模态保存制不一致）/ 设置弹窗全局开关（spec 定案为档案级，非全局）</td>
+      </tr>
+      <tr>
+        <td>⑧</td>
+        <td>微参数三项（search 超时 / 结果条数 / 折叠默认）</td>
+        <td><b>推荐：10s / 5 条 / 默认折叠</b>（逐项理由 §6.4）</td>
+        <td>超时 10s = 候选区间中位，长尾覆盖与体感上限平衡（演示工具 2s 先例为无出网工具，搜索为真实出网交互等待，量级不同）；条数 5 = 成本/核验性/噪声平衡位（32 KiB 包络内约 1~2k token）；折叠默认与终态折叠精神一致。<br>备选（未采纳）：8s（误杀慢查询）/ 15s（悬挂无增益）/ 3 条（核验面不足）/ 8 条（噪声成本升）/ 默认展开（淹没回答）</td>
+      </tr>
+    </table>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">8</span>T1 验收对照 + 走查清单（42 条；T2/T3 任务级门槛）</h2>
+    <div class="sec-desc">
+      8.1 对照 plans/iter-14.md T1 验收标准与 REQ-035/032/025/014 验收原文逐条落点；8.2 为全部触点与状态组合走查清单——
+      <b>T2/T3 实现时对照逐条自查留档（verify 文档），QA 审计取证</b>。<b>全部条目浅色与暗色各过一遍</b>（条 37 承载）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">8.1 T1 验收对照（原文）</div>
+      <table>
+        <tr><th style="width:46%">验收标准（原文）</th><th>本稿落点</th><th>状态</th></tr>
+        <tr><td>〔plans T1〕CEO 批准基线（tag design-iter-14）</td><td>本稿提交 CEO 评审——批准后打 tag（§9 声明；打 tag 由主会话执行）</td><td>☐ 待批准</td></tr>
+        <tr><td>〔plans T1〕4.8-6 引用来源卡形态定死</td><td>§2 全规格（承载/位置/字段/条目/折叠/条数防御）+ §1 可交互样件</td><td>☑ 稿内定死</td></tr>
+        <tr><td>〔plans T1〕4.8-10 定夺值与微参数（search 单工具超时/结果条数）随稿登记</td><td>§6.4（Tavily + .env 登记；微参数 10s/5/折叠默认 带推荐）</td><td>☑ 已登记</td></tr>
+        <tr><td>〔plans T1〕降级文案定稿（样件文案逐字断言面——v1.4.10 B）</td><td>§2.3 登记表 D1~D7（降级句/空结果句/头部句/toast/附注/hint 全部落死）</td><td>☑ 已定稿</td></tr>
+        <tr><td>〔plans T1〕走查清单随稿（引用卡亮/暗双主题、几何断言面——v1.4.11 B、加载态一帧）</td><td>§8.2（42 条：几何 2/3/7/9/10/19/26/40；加载态 39；双主题 37；逐字 4/18/22/28/29/33）</td><td>☑ 已覆盖</td></tr>
+        <tr><td>〔plans T1〕spec「涉及页面」指针零滞后回填（v1.4.10 A）+ REQ-033 措辞注记同步（OBS-3）</td><td>§9 基线后动作清单 ②③（主会话随基线执行，本稿不动 spec）</td><td>☐ 随基线执行</td></tr>
+        <tr><td>〔REQ-032 验收 4〕A2：回答含引用来源卡（design-iter-14 走查留档）</td><td>§1 主样件 + §8.2 条 1~17（真实 Chrome + 真实搜索 API 走查为 T3 交付）</td><td>☑ 稿内覆盖</td></tr>
+        <tr><td>〔REQ-035 验收 1 前端侧〕时效性问题回答含可见工具步骤与引用来源</td><td>§1 m3/m4 重放（含加载态帧）；真实 API 走查留档为 T3</td><td>☑ 稿内覆盖</td></tr>
+        <tr><td>〔REQ-035 验收 2 用户所见〕搜索失败/超时 → 降级直答不崩</td><td>§1 m5/m6 + 重放 err/timeout 结局 + D1 引导条</td><td>☑ 稿内覆盖</td></tr>
+        <tr><td>〔REQ-025 复验〕admin 开关操作生效；关闭后普通用户直答降级无错误提示</td><td>§4 开关行 + §6.1/6.2 口径 + §1 m9/m10 对照形态</td><td>☑ 稿内覆盖</td></tr>
+      </table>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">8.2 走查清单（design-iter-14，42 条；勾选框供 T2/T3 自查与 QA 取证）</div>
+      <table>
+        <tr><th style="width:26px">过</th><th style="width:36px">序号</th><th>需求</th><th>触点</th><th>状态组合</th><th>期望表现（= 验收口径；浅 = tokens 浅值 / 暗 = tokens 暗值）</th><th style="width:52px">样件</th></tr>
+        <tr><td><input type="checkbox"></td><td>1</td><td>REQ-032</td><td>消息流框架</td><td>基调零回退</td><td>消息列 712px 居中、AI 全宽无气泡、用户浅气泡（#E8EBF2/#33363E）右对齐、操作栏悬停浮现——iter-11/13 基线零翻案；引用卡与降级条不破坏消息间距</td><td>1.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>2</td><td>v1.4.11B</td><td>引用卡容器</td><td>几何断言</td><td>subtle-bg（#FAFBFC/#24272E）+ 1px border（#E5E6EB/#33363E）+ 圆角 <b>10px</b>（computed border-radius，同工具卡家族）；头部行 ≥36px（padding 7px 12px）hover <code>--c-hover-bg</code></td><td>1.1/3.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>3</td><td>v1.4.11B</td><td>头部行布局</td><td>几何断言</td><td>icon 14px text-3 +「引用来源」13px/500 text-1 +「· N 条」12px text-3 tabular-nums + chevron 12px（.15s 旋转 180°）；gap 8px；单行不换行</td><td>1.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>4</td><td>v1.4.10B</td><td>头部文案</td><td>逐字断言</td><td><b>引用来源 · 5 条</b>（「·」两侧各一空格；N tabular）——§2.3 D3 登记表为唯一来源</td><td>1.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>5</td><td>REQ-035</td><td>默认折叠</td><td>出生即终态</td><td>tool.result(sources) 到达即渲染为<b>折叠</b>态；无运行中态、无自动折叠规则；历史消息恒折叠</td><td>1.1（重放）</td></tr>
+        <tr><td><input type="checkbox"></td><td>6</td><td>REQ-035</td><td>折叠交互</td><td>点击/键盘</td><td>头部行 button 切换展开/折叠；aria-expanded 同步；Enter/Space 原生；:focus-visible 内嵌 2px <code>--c-focus-ring</code>（rgba(51,112,255,.12)/rgba(92,141,255,.25)）</td><td>1.1（可交互）</td></tr>
+        <tr><td><input type="checkbox"></td><td>7</td><td>v1.4.11B</td><td>展开区几何</td><td>几何断言</td><td>padding 0 12px 12px；条目 padding 8px 0；条目间 1px border-top 分隔（首条无）；不限高（5 条封顶全展示）；引用卡作为 blocks 渲染单元参与段间 8px</td><td>1.1（展开）</td></tr>
+        <tr><td><input type="checkbox"></td><td>8</td><td>REQ-035</td><td>条目标题</td><td>链接规格</td><td>13px/500 <code>--c-primary</code> 链接（浅 #3370FF/暗 #5C8DFF）；hover 下划线 + <code>--c-primary-h</code>；href = 原 URL、target=_blank、rel="noopener noreferrer"</td><td>1.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>9</td><td>v1.4.11B</td><td>条目元信息</td><td>几何与降级</td><td>12px text-3、上距 2px；<code>site_name · date_published</code>；缺失项连同分隔点省略；都缺 → hostname 兜底（前端自 url 计算）</td><td>1.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>10</td><td>v1.4.11B</td><td>条目片段</td><td>两行截断</td><td>12px/1.5 <code>--c-text-2</code>、上距 4px；2 行 line-clamp；超长不破卡；缺 snippet → 紧凑形态不渲染空块</td><td>1.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>11</td><td>REQ-035</td><td>缺字段不塌</td><td>降级</td><td>title 缺 → hostname 兜底；双数据源样件各自正确（无空块、无悬挂分隔点）</td><td>1.1（切换数据源）</td></tr>
+        <tr><td><input type="checkbox"></td><td>12</td><td>REQ-011</td><td>管线边界</td><td>防注入</td><td>条目 title/snippet/site_name/date_published 全部 textContent 直排，不进 markdown-it/DOMPurify 管线（沿「工具内容不进管线」口径）</td><td>1.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>13</td><td>REQ-032</td><td>位置</td><td>blocks 顺序</td><td>引用卡紧跟 search 工具卡之后、回答首段之前；流式期间 tool.result 到达即现、后续文本追加其后（重放中：回答生成时卡已在）</td><td>1.1（重放）</td></tr>
+        <tr><td><input type="checkbox"></td><td>14</td><td>REQ-035</td><td>不渲染条件</td><td>空/失败无卡</td><td>sources 空 / 缺失 / status ≠ ok → 不渲染引用卡（空结果 m7/m8、失败/超时结局可验）</td><td>1.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>15</td><td>REQ-035</td><td>Tavily 型</td><td>长片段承载</td><td>无 site_name → hostname 兜底；结构化 content 长片段两行截断；5 条全展示</td><td>1.1（Tavily 源）</td></tr>
+        <tr><td><input type="checkbox"></td><td>16</td><td>REQ-035</td><td>博查型</td><td>富元数据</td><td>site_name + date_published 元信息完整形态；短片段；同卡片字段集合零改动（换搜索 API 前端零改）</td><td>1.1（博查源）</td></tr>
+        <tr><td><input type="checkbox"></td><td>17</td><td>REQ-035</td><td>条数防御</td><td>上限</td><td>后端 ≤5（结果条数参数）；前端 slice(0,5) 兜底；头部 N = 实际渲染条数</td><td>2.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>18</td><td>v1.4.10B</td><td>降级文案</td><td>逐字断言</td><td><b>搜索未成功，以下为模型直接回答</b>（D1；error 与 timeout 共用一句——诊断详情在工具卡结果区）</td><td>1.1（m5/m6）</td></tr>
+        <tr><td><input type="checkbox"></td><td>19</td><td>v1.4.11B</td><td>降级条几何</td><td>几何断言</td><td>warning-l 底（#FFF7E8/#38290F）+ 左缘 3px <code>--c-warning</code>（#B45309/#EDA23B）+ 13px warning 字 + padding 8px 12px + r-md 8px；位置 = 失败卡后、直答首段前</td><td>1.1（m6）/3.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>20</td><td>REQ-035</td><td>派生规则</td><td>不落库</td><td>search 卡 error/timeout 且有后续文本段 → 渲染引导条；渲染层派生（blocks 无对应段、PUT 载荷不含）；历史重渲染一致；导出/复制不含</td><td>2.3</td></tr>
+        <tr><td><input type="checkbox"></td><td>21</td><td>REQ-035</td><td>超时降级</td><td>超时路径</td><td>search 卡「超时」徽章（warning）+ 结果区「工具执行超时」（A1 后端固定文案）+ 引导条 + 直答继续；回合不崩</td><td>1.1（m6/重放超时）</td></tr>
+        <tr><td><input type="checkbox"></td><td>22</td><td>v1.4.10B</td><td>空结果卡</td><td>逐字断言</td><td>search 卡「完成」态结果区逐字 <b>未搜到相关内容</b>（D2，后端组装 result 原样渲染）；无引用卡、无引导条</td><td>1.1（m8）</td></tr>
+        <tr><td><input type="checkbox"></td><td>23</td><td>REQ-035</td><td>空结果回答</td><td>如实口径</td><td>模型据空 result 如实回答、不编造来源（无引用卡即验收锚）；不显示「搜索失败」类误导文案（空 ≠ 失败）</td><td>1.1（m8）</td></tr>
+        <tr><td><input type="checkbox"></td><td>24</td><td>REQ-035</td><td>admin 关闭</td><td>无感降级</td><td>关闭后直答：无 search 卡、无引用卡、无引导条、无任何提示（D4；「模型不知其存在」口径走查）</td><td>1.1（m10）</td></tr>
+        <tr><td><input type="checkbox"></td><td>25</td><td>REQ-025</td><td>开关行形态</td><td>位置与规格</td><td>统计卡区后、tabs 前；surface 白卡 + border + r-lg 12px + padding 12px 16px；globe icon 16px + 「联网搜索」13px/500 + 说明 12px text-3；AdminView 其余区域 iter-12 基线零翻案</td><td>4.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>26</td><td>v1.4.11B</td><td>switch 规格</td><td>几何断言</td><td>track 36×20 r-full（开 <code>--c-primary-solid</code> / 关 <code>--c-hover-bg</code>）；knob 16px #FFF + 1px <code>--c-border</code> + shadow-1；开态位移 16px（transform）；.15s ease——computed 抽查</td><td>4.1/4.2</td></tr>
+        <tr><td><input type="checkbox"></td><td>27</td><td>可访问性</td><td>switch 语义</td><td>role/焦点</td><td>button + role="switch" + aria-checked 同步；:focus-visible 3px <code>--c-focus-ring</code>；暗色关态轨道 #262930 + 白滑块 #33363E 描边清晰可辨（§3.2 锁定帧）</td><td>4/3.2</td></tr>
+        <tr><td><input type="checkbox"></td><td>28</td><td>v1.4.10B</td><td>admin toast</td><td>逐字断言</td><td>开关操作成功 toast 逐字：<b>已开启联网搜索</b> / <b>已关闭联网搜索</b>（D5）；失败 toast 错误文案、开关回弹</td><td>4.1（可交互）</td></tr>
+        <tr><td><input type="checkbox"></td><td>29</td><td>v1.4.10B</td><td>key 缺失附注</td><td>逐字断言</td><td>逐字 <b>搜索密钥未配置：请在服务端 backend/.env 中设置 AI_CHAT_SEARCH_KEY 并重启后端，开启后才会生效</b>（D6）warning 色替换常显说明；开关仍可操作</td><td>4.1（勾选缺失态）</td></tr>
+        <tr><td><input type="checkbox"></td><td>30</td><td>REQ-025</td><td>状态读取</td><td>overview 加字段</td><td>GET /api/admin/overview 增 search_enabled + search_key_configured（加法、既有用例零改动）；进页随 loadMeta 拉取零新增请求</td><td>6.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>31</td><td>REQ-035</td><td>生效语义</td><td>下一回合</td><td>PUT /api/admin/settings 落库；下一回合生效（进行中回合不受影响）；关闭 → tools 定义不含 search（payload 断言 = T2 pytest MockTransport）</td><td>6.2</td></tr>
+        <tr><td><input type="checkbox"></td><td>32</td><td>REQ-014</td><td>字段位置</td><td>模态第五字段</td><td>档案添加/编辑模态 API Key 后；label「支持工具」13px/500 + D7 hint 12px text-3 + 右 switch；随「保存档案」提交、无独立保存钮</td><td>5.1（可交互）</td></tr>
+        <tr><td><input type="checkbox"></td><td>33</td><td>v1.4.10B</td><td>档案 hint</td><td>逐字断言</td><td>逐字 <b>关闭后，使用此档案的对话不携带工具（如联网搜索），AI 直接回答</b>（D7）</td><td>5.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>34</td><td>REQ-014</td><td>默认与回显</td><td>默认开</td><td>新建默认开；编辑回显 tools_enabled 实值（原型：编辑「公司中转」可见关态）；列表行关态 p-sub 尾「 · 工具已关」（开态不显示）</td><td>5.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>35</td><td>REQ-014</td><td>API 扩展</td><td>老前端零破坏</td><td>响应加 tools_enabled: bool（加法）；payload 可选布尔（缺省 = 新建 true / 编辑沿用）；老形状请求不 422</td><td>6.3</td></tr>
+        <tr><td><input type="checkbox"></td><td>36</td><td>REQ-014</td><td>引导路径</td><td>REQ-007 复用</td><td>上游报不支持 tools → 既有映射错误气泡 +「前往高级设置」locateAdvanced 直达 + 文案引导关闭开关；不新建映射（T3 REQ-014 走查）</td><td>5.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>37</td><td>REQ-017</td><td>全局</td><td>双主题承载</td><td>全部条目浅/暗各过一遍；§3 两组锁定帧暗色无亮色残留；正文组合沿 tokens v1.3 既有结论</td><td>3.1/3.2</td></tr>
+        <tr><td><input type="checkbox"></td><td>38</td><td>REQ-017</td><td>对比度</td><td>组合登记</td><td>条目标题链接浅 4.1:1 / 暗 4.9:1（沿全站 .md a 链接口径，13px/500 非正文）；片段 text-2 ≥4.5:1；元信息 text-3；降级条 warning 族 6.6:1（暗，既有结论）</td><td>3.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>39</td><td>v1.4.10B</td><td>加载态一帧</td><td>两帧取证</td><td>① search 卡运行中帧（11px spinner +「运行中」徽章 + 结果占位「（等待结果…）」）；② 搜索完成回答流式中帧（引用卡折叠已现 +「正在生成…」hint + 光标）——重放中各截一帧留档</td><td>1.1（重放中截图）</td></tr>
+        <tr><td><input type="checkbox"></td><td>40</td><td>v1.4.11B</td><td>几何汇总</td><td>断言汇总</td><td>blocks 段间 8px / 消息间 20px；次级面板 10px 圆角家族；switch 36×20/位移 16px；条目 8px 栅格与 1px 分隔线——computed 抽查验</td><td>全稿</td></tr>
+        <tr><td><input type="checkbox"></td><td>41</td><td>REQ-013/016</td><td>适配面</td><td>零新增</td><td>导出/复制/搜索索引 sources 不入正文（沿工具内容非正文口径）；老客户端读新会话 sources 忽略不崩、仅少渲染引用卡（窗口期已知边界）</td><td>2.1</td></tr>
+        <tr><td><input type="checkbox"></td><td>42</td><td>适用性</td><td>不适用项</td><td>登记</td><td>天气工具零涉及（已定案不纳入，B1 再议）；上标联动 = 暂缓 B1+ 候选；用户侧搜索开关不存在；admin 其他区域/移动端/输入区/侧栏零改动</td><td>—</td></tr>
+      </table>
+      <div class="ann">共 <b>42</b> 条（引用来源卡形态 1~14 / 双来源承载 15~17 / 降级与空结果 18~24 / admin 开关 25~31 / 档案开关 32~36 / 全局 37~42）。
+      逐字断言面（v1.4.10 B）= 条 4/18/22/28/29/33 + §2.3 登记表；几何断言面（v1.4.11 B）= 条 2/3/7/9/10/19/26/40；加载态一帧 = 条 39（iter-12 OBS-5 配套）；
+      行为类（pytest/vitest）条目已注明 T2/T3 交付时点（条 31/35/36）。<b>所有条目浅/暗双主题各过一遍</b>（条 37）。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">9</span>基线声明（待批准）与基线后动作</h2>
+    <div class="sec-desc">
+      本稿为 iter-14 T1 交付物（<b>草案</b>）：引用来源卡全规格（§1/§2，4.8-6「原型即需求」本体）、降级与空结果逐字文案定稿（§2.3 D1~D7）、
+      admin 搜索开关入口与 API 口径（§4/§6.1/6.2）、档案「支持工具」开关 UI（§5）、微参数与 4.8-10 定夺值登记（§6.4）、
+      定夺 8 项（§7）、走查清单 42 条（§8）——对应 plans/iter-14.md T1 全部交付点。
+      全部色值取自公司 design-system tokens.md v1.3/v1.3.1，零新增令牌、零自造色值（switch 滑块 #FFF 为实体反白先例）；
+      文档结构与 .tk 作用域沿 design-iter-13 范本。
+    </div>
+    <div class="spec">
+      <div class="spec-title">基线后动作清单（批准 = 触发，主会话统筹执行）</div>
+      <table>
+        <tr><th style="width:40px">#</th><th>动作</th><th>依据</th></tr>
+        <tr><td>1</td><td>打 tag <code>design-iter-14</code>（项目仓库内，主会话执行——设计师不自行打 tag）</td><td>plans T1 验收原文</td></tr>
+        <tr><td>2</td><td>spec REQ-035/032「涉及页面」指针回填「design-iter-14（已基线）」——零滞后（v1.4.10 A 条）</td><td>plans T1 卫生项</td></tr>
+        <tr><td>3</td><td>REQ-033 措辞注记同步（QA OBS-3）：spec 触点时顺带补「可选 system_prompt 第三字段」一句，无需 CHG</td><td>plans T1 卫生项</td></tr>
+        <tr><td>4</td><td>components.md 登记「toggle switch」新形态（CEO 随基线批准，零令牌变更；沿「工具步骤卡」v1.2 先例）</td><td>资产沉淀惯例</td></tr>
+        <tr><td>5</td><td>§7 定夺结论回填 + 微参数定案值（10s / 5 条 / 默认折叠）同步 T2 实现口径</td><td>定夺固化流程</td></tr>
+        <tr><td>6</td><td>基线后改动先登记变更再改（design 稿变更记录），不接受「顺手改」</td><td>沿 iter-12/13 基线声明口径</td></tr>
+      </table>
+      <div class="ann"><b>令牌评估结论</b>：零新增令牌、零自造色值，无 design-system 令牌变更提案（§4.2 组件登记不涉令牌值）。
+      <b>若定夺改选</b>（如③改上标联动、⑦改列表行内开关）属规格变更：改稿走评审修订后重新基线，不默认套用。</div>
+    </div>
+  </section>
+
+</div>
+<div class="demo-toast" id="demoToast"><span id="demoToastText"></span></div>
+<script>
+/* ============================================================
+   演示交互（文档功能件）：主题 / 引用卡工厂 / 工具卡工厂（iter-13 引用）/
+   §1 消息流构建（静态样件 + 重放引擎四结局 × 双数据源）/ SSE 面板 /
+   admin 开关交互 / 档案模态交互 / §3 锁定帧
+   —— 样件数据全为虚构（URL 用 example.com 保留域；耗时数值虚构，铁律 5）
+   ============================================================ */
+(function () {
+'use strict';
+var $ = function (id) { return document.getElementById(id); };
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); };
+
+/* ---------- 主题（写 localStorage；锁定帧 force-* 不随动） ---------- */
+var TKEY = 'mm-demo-theme';
+var btnLight = $('btnLight'), btnDark = $('btnDark');
+function applyTheme(t) {
+  document.querySelectorAll('.tk:not(.force-light):not(.force-dark)').forEach(function (f) { f.classList.toggle('dark', t === 'dark'); });
+  btnLight.classList.toggle('on', t === 'light');
+  btnDark.classList.toggle('on', t === 'dark');
+}
+btnLight.addEventListener('click', function () { applyTheme('light'); try { localStorage.setItem(TKEY, 'light'); } catch (e) {} });
+btnDark.addEventListener('click', function () { applyTheme('dark'); try { localStorage.setItem(TKEY, 'dark'); } catch (e) {} });
+var savedTheme = 'light';
+try { savedTheme = localStorage.getItem(TKEY) || 'light'; } catch (e) {}
+applyTheme(savedTheme);
+
+/* ---------- 共用 SVG ---------- */
+var WRENCH = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M14.7 6.3a4.5 4.5 0 0 0-6.05 5.93L3.6 17.3a1.5 1.5 0 0 0 0 2.12l.98.98a1.5 1.5 0 0 0 2.12 0l5.07-5.05A4.5 4.5 0 0 0 17.7 9.3l-2.6 2.6-2.12-.48-.48-2.12 2.2-2.99z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>';
+var BOOKMARK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M7 3h10a1 1 0 0 1 1 1v17l-6-4.2L6 21V4a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>';
+var CHK = '<svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M2.5 7.5l3 3 6-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+var XING = '<svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+var CLK = '<svg width="11" height="11" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.2" stroke="currentColor" stroke-width="1.5"/><path d="M7 4.2V7l2 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+var CHEV = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+var COPY = '<svg width="13" height="13" viewBox="0 0 24 24"><path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/></svg>';
+
+/* ---------- toast 演示（文档辅助件，复用 AppToast 深底语言） ---------- */
+var toastTimer;
+function toast(text) {
+  var t = $('demoToast');
+  $('demoToastText').textContent = text;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { t.classList.remove('show'); }, 2000);
+}
+
+/* ---------- 演示数据（全虚构；URL 用 example.com 保留域） ----------
+   两家实测形状的归一化样件：Tavily 型 = 长 content 无 siteName；博查型 = siteName + datePublished */
+var QUERY = 'DeepSeek 最新模型 API 价格';
+var SRC = {
+  tavily: [
+    { title: 'DeepSeek-V3.2 Release Notes', url: 'https://platform.example.com/docs/v3-2-release',
+      snippet: 'We are excited to release DeepSeek-V3.2, featuring significant improvements in coding and reasoning benchmarks. The API pricing for deepseek-chat is reduced to $0.28 per million input tokens (cache miss) and $0.42 per million output tokens, effective August 1, 2026. Existing API keys require no changes; the model field deepseek-chat now points to V3.2 by default.' },
+    { title: 'DeepSeek API 定价页', url: 'https://api-docs.example.com/zh-cn/quick_start/pricing',
+      snippet: 'deepseek-chat（V3.2）：输入 0.28 美元/百万 tokens（缓存未命中），输出 0.42 美元/百万 tokens；缓存命中输入 0.028 美元/百万 tokens。夜间错峰时段（00:30-08:30 UTC+8）享五折优惠。本文档随官方调价实时更新，最后核对时间 2026-08-16。' },
+    { title: 'V3.2 评测：代码与数学推理提升显著', url: 'https://bench.example.com/reports/deepseek-v3-2',
+      snippet: 'In our independent evaluation across 14 coding tasks and 8 mathematical reasoning suites, DeepSeek-V3.2 achieved a 9.4% average improvement over V3.1-Terminus, with the largest gains in multi-step tool-use scenarios and long-context retrieval quality. The 128K context window is maintained with no pricing premium.' },
+    { title: 'DeepSeek-V3.2 API 迁移指南', url: 'https://platform.example.com/docs/migration-v3-2',
+      snippet: 'V3.2 与 V3.1 API 完全兼容，无需改动请求体即可切换（model 字段 deepseek-chat 自动指向最新版本）。新增加权字段支持与函数调用并行输出；建议依赖工具调用的应用将客户端超时上调至 10 秒以上。' },
+    { title: '大模型价格跟踪：八月调价一览', url: 'https://llm-prices.example.com/august-2026',
+      snippet: '八月以来共有 6 家模型厂商下调 API 定价。DeepSeek 于 8 月 1 日将 deepseek-chat 输入价格下调约 30%、输出价格下调约 25%，是本月幅度最大的一次调价；同期 GLM-4.7 与 Qwen3.5 亦有小幅调整，行业整体价格带继续下移。' }
+  ],
+  bocha: [
+    { title: 'DeepSeek 发布 V3.2 模型，代码能力再升级', url: 'https://www.example-news.cn/tech/2026-08/deepseek-v3-2', site_name: '科技日报网', date_published: '2026-08-12', snippet: 'DeepSeek 今日正式发布 V3.2 模型，官方称代码生成与推理能力显著提升。' },
+    { title: 'DeepSeek API 八月起降价，最高降幅 30%', url: 'https://www.example-fin.cn/api/price-cut-2026', site_name: '财联讯', date_published: '2026-08-01', snippet: '自 8 月 1 日起，deepseek-chat 输入价格下调约 30%，输出下调约 25%。' },
+    { title: 'V3.2 实测：工具调用更稳了', url: 'https://www.example-dev.cn/test/v3-2-tools', site_name: '开发者社区', date_published: '2026-08-14', snippet: '实测 20 轮工具调用任务，V3.2 参数格式错误率明显下降，多步任务完成率提升。' },
+    { title: 'deepseek-chat 模型说明（官方文档）', url: 'https://docs.example-open.cn/model/deepseek-chat', site_name: '开放平台文档', date_published: '2026-08-12', snippet: 'deepseek-chat 已默认指向 DeepSeek-V3.2；128K 上下文，自动上下文缓存。' },
+    { title: '夜间错峰五折活动延长至九月', url: 'https://www.example-fin.cn/api/night-discount', site_name: '财联讯', date_published: '2026-08-15', snippet: '错峰时段（00:30–08:30）API 五折优惠延长至 9 月 30 日。' }
+  ]
+};
+/* 工具卡 result 文本（给模型的视角，示意截短）与回答文案 */
+var RESULT_TEXT = '搜索摘要：DeepSeek 于 2026-08-12 发布 V3.2，deepseek-chat 已默认指向该版本；8 月 1 日起 API 降价（输入约 -30% / 输出约 -25%）……\n来源列表：\n1. DeepSeek-V3.2 Release Notes — https://platform.example.com/docs/v3-2-release\n2. DeepSeek API 定价页 — https://api-docs.example.com/zh-cn/quick_start/pricing\n3. ……（示意：完整 result 含全部 5 条标题 + URL + 片段，此处截短）';
+var ANSWER_MD = '<p>DeepSeek 当前最新的模型是 <b>V3.2</b>（2026-08-12 发布，<code>deepseek-chat</code> 已默认指向该版本）：</p><ul><li><b>定价有变化</b>：8 月 1 日起输入约 0.28 美元/百万 tokens（降约 30%）、输出约 0.42 美元/百万 tokens（降约 25%）；缓存命中与夜间错峰另有优惠。</li><li><b>能力</b>：代码生成与推理提升，API 与 V3.1 完全兼容、无需改请求体。</li></ul><p>以上信息来自本次搜索的 5 个来源，可点开「引用来源」逐条核验。</p>';
+var FALLBACK_MD = '<p>DeepSeek 最新版本我无法实时确认——本次搜索没有成功。基于已有知识：DeepSeek-V3.1-Terminus 为 2026 年中的主力版本，<code>deepseek-chat</code> 始终指向最新正式版；API 价格历史上多次下调，最新价格请以其开放平台定价页为准。</p>';
+var EMPTY_MD = '<p>这次搜索没有找到相关内容（未搜到相关内容）。目前没有「火星猫粮销量」这类公开统计数据——火星上还没有商店。如果你想找国内宠物食品行业的数据，可以换个更具体的关键词，我再帮你搜。</p>';
+var CLOSED_MD = '<p>DeepSeek 最新模型与 API 价格这类时效性信息我无法联网核对，请以其开放平台页面为准，或稍后再问。（本条为 admin 关闭联网搜索后的对照形态：无工具步骤卡、无引用来源卡、无任何提示——模型不知搜索工具存在，直接作答。）</p>';
+
+/* ---------- 工具卡工厂（iter-13 §3 规格，引用零改动） ---------- */
+function badgeHtml(st) {
+  if (st === 'run') return '<span class="tbadge tb-run"><span class="b-spin"></span>运行中</span>';
+  if (st === 'ok') return '<span class="tbadge tb-ok">' + CHK + '完成</span>';
+  if (st === 'err') return '<span class="tbadge tb-err">' + XING + '失败</span>';
+  return '<span class="tbadge tb-tmo">' + CLK + '超时</span>';
+}
+function resHtml(st, result) {
+  if (st === 'run') return '<div class="t-res"><span class="t-ph">（等待结果…）</span></div>';
+  var cls = st === 'ok' ? 'ok' : (st === 'err' ? 'err' : 'tmo');
+  var txt = result ? esc(result) : '<span class="t-ph">（无返回内容）</span>';
+  return '<div class="t-res ' + cls + '">' + txt + '</div>';
+}
+function makeToolCard(o) {
+  var card = document.createElement('div');
+  card.className = 'tcard' + (o.open ? ' open' : '');
+  card.innerHTML =
+    '<button type="button" class="tcard-h" aria-expanded="' + (o.open ? 'true' : 'false') + '" aria-label="工具步骤 ' + esc(o.name) + '，展开或折叠">' +
+      '<span class="t-ico">' + WRENCH + '</span>' +
+      '<span class="t-name" title="' + esc(o.name) + '">' + esc(o.name) + '</span>' +
+      '<span class="t-args" title="' + esc(o.args) + '">' + esc(o.args) + '</span>' +
+      '<span class="t-dur"></span>' +
+      '<span class="tbadge-slot"></span>' +
+      '<span class="t-chev">' + CHEV + '</span>' +
+    '</button>' +
+    '<div class="t-body">' +
+      '<div class="t-sec"><div class="t-lab">参数</div><pre class="t-pre">' + esc(o.args) + '</pre></div>' +
+      '<div class="t-sec"><div class="t-lab">结果</div><div class="t-res-slot"></div></div>' +
+    '</div>';
+  card.touched = false;
+  var h = card.querySelector('.tcard-h');
+  h.addEventListener('click', function () {
+    card.touched = true;
+    var open = card.classList.toggle('open');
+    h.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+  card.setToolState = function (st, result, dur) {
+    card.querySelector('.tbadge-slot').innerHTML = badgeHtml(st);
+    card.querySelector('.t-dur').textContent = (dur != null && st !== 'run') ? dur + 'ms' : '';
+    card.querySelector('.t-res-slot').innerHTML = resHtml(st, result);
+  };
+  card.setToolState(o.state, o.result, o.dur);
+  return card;
+}
+
+/* ---------- 引用来源卡工厂（本稿新增，§2 规格） ---------- */
+function hostOf(u) { try { return new URL(u).hostname; } catch (e) { return u; } }
+function srcItemHtml(s) {
+  var title = s.title || hostOf(s.url);
+  var meta = [s.site_name || hostOf(s.url), s.date_published].filter(Boolean).join(' · ');
+  var h = '<div class="src-item"><div class="src-title"><a href="' + esc(s.url) + '" target="_blank" rel="noopener noreferrer">' + esc(title) + '</a></div>';
+  if (meta) h += '<div class="src-meta">' + esc(meta) + '</div>';
+  if (s.snippet) h += '<div class="src-snip">' + esc(s.snippet) + '</div>';
+  return h + '</div>';
+}
+function makeSourceCard(sources, open) {
+  var n = Math.min(5, sources.length);
+  var card = document.createElement('div');
+  card.className = 'scard' + (open ? ' open' : '');
+  /* 头部逐字断言面：名称 + count 两 span 紧邻拼接 = 「引用来源 · N 条」 */
+  card.innerHTML =
+    '<button type="button" class="scard-h" aria-expanded="' + (open ? 'true' : 'false') + '" aria-label="引用来源，' + n + ' 条，展开或折叠">' +
+      '<span class="sc-ico">' + BOOKMARK + '</span>' +
+      '<span class="sc-name">引用来源</span><span class="sc-count"> · ' + n + ' 条</span>' +
+      '<span class="sc-chev">' + CHEV + '</span>' +
+    '</button>' +
+    '<div class="sc-body">' + sources.slice(0, 5).map(srcItemHtml).join('') + '</div>';
+  var h = card.querySelector('.scard-h');
+  h.addEventListener('click', function () {
+    var o = card.classList.toggle('open');
+    h.setAttribute('aria-expanded', o ? 'true' : 'false');
+  });
+  return card;
+}
+/* 降级引导条（D1 逐字；渲染层派生不落库） */
+function degradeBar() {
+  var d = document.createElement('div');
+  d.className = 'degrade';
+  d.setAttribute('role', 'note');
+  d.textContent = '搜索未成功，以下为模型直接回答';
+  return d;
+}
+
+/* ---------- 消息构建件（消息流骨架沿 iter-11/13 基线引用） ---------- */
+function userMsg(text) {
+  var row = document.createElement('div'); row.className = 'm-row user';
+  var col = document.createElement('div'); col.className = 'm-col user';
+  var b = document.createElement('div'); b.className = 'ububble'; b.textContent = text;
+  col.appendChild(b); row.appendChild(col); return row;
+}
+function aiShell() {
+  var row = document.createElement('div'); row.className = 'm-row ai';
+  var col = document.createElement('div'); col.className = 'm-col ai';
+  row.appendChild(col);
+  return { row: row, col: col };
+}
+function actRow() {
+  var a = document.createElement('div'); a.className = 'act-row';
+  a.innerHTML = '<button type="button" class="abtn" title="复制" aria-label="复制">' + COPY + '</button>';
+  var cb = a.querySelector('.abtn');
+  cb.addEventListener('click', function () { cb.textContent = '✓'; setTimeout(function () { cb.innerHTML = COPY; }, 1200); });
+  return a;
+}
+function mdBlock(html) { var d = document.createElement('div'); d.className = 'md'; d.innerHTML = html; return d; }
+function blocksBox() { var b = document.createElement('div'); b.className = 'blocks'; return b; }
+
+/* ---------- SSE 观测面板（文档辅助件） ---------- */
+var sseBody;
+function sse(frame) {
+  var t = frame.type || '';
+  var cls = t.indexOf('tool.') === 0 ? 'f-tool' : (t === 'error' ? 'f-err' : (t === 'turn.end' ? 'f-end' : ((t === 'text.delta' || t === 'usage') ? 'f-dim' : '')));
+  var line = document.createElement('div');
+  line.className = cls;
+  var shown = frame;
+  if (frame.type === 'tool.result' && frame.sources) {
+    shown = { type: frame.type, tool_call_id: frame.tool_call_id, status: frame.status, result: '…（文本截短，含摘要与 5 条来源列表）…', duration_ms: frame.duration_ms, sources: frame.sources };
+    line.textContent = 'data: ' + JSON.stringify(shown).replace(/"snippet":"[^"]{40}[^"]*"/g, function (m) { return m.slice(0, 46) + '…"'; });
+  } else {
+    line.textContent = 'data: ' + JSON.stringify(frame);
+  }
+  sseBody.appendChild(line);
+  sseBody.scrollTop = sseBody.scrollHeight;
+}
+
+/* ---------- §1 消息流（静态样件 + 重放宿主） ---------- */
+var mfCol, rpHost = { row: null };
+function curProvider() { return document.querySelector('input[name=srcProvider]:checked').value; }
+function buildStream() {
+  mfCol = $('mfCol'); mfCol.innerHTML = '';
+  /* m1/m2 —— v1 旧消息（衬景：读时归一化，逐字零回退） */
+  mfCol.appendChild(userMsg('上周把架构升级第一期（A1）收尾了，这周开始 A2 联网搜索'));
+  var a2 = aiShell();
+  a2.col.appendChild(mdBlock('<p>A1 已全部交付：blocks 消息模型、工具步骤卡、SSE v2 回合端点、配额回合计——存量体验零回退，全量用例绿。</p>'));
+  a2.col.appendChild(actRow()); mfCol.appendChild(a2.row);
+  /* m3 —— 重放宿主的用户消息 */
+  mfCol.appendChild(userMsg('DeepSeek 现在最新的模型是哪个版本？API 价格有变化吗？'));
+  /* m4 —— 重放宿主（初始 = 成功结局定型态，按当前数据源） */
+  renderReplayFinal(confOf('ok'));
+  /* m5/m6 —— 超时降级（静态） */
+  mfCol.appendChild(userMsg('帮我搜一下「喵喵牌猫粮 2026 年度行业白皮书」的下载链接'));
+  var a6 = aiShell();
+  var b6 = blocksBox();
+  b6.appendChild(makeToolCard({ name: 'search', args: '{"query":"喵喵牌猫粮 2026 年度行业白皮书 下载"}', state: 'tmo', result: '工具执行超时', dur: 10000 }));
+  b6.appendChild(degradeBar());
+  b6.appendChild(mdBlock(FALLBACK_MD));
+  a6.col.appendChild(b6); a6.col.appendChild(actRow()); mfCol.appendChild(a6.row);
+  /* m7/m8 —— 空结果（静态） */
+  mfCol.appendChild(userMsg('换个冷门的：喵喵牌猫粮上个季度在火星的销量是多少？'));
+  var a8 = aiShell();
+  var b8 = blocksBox();
+  b8.appendChild(makeToolCard({ name: 'search', args: '{"query":"喵喵牌猫粮 火星 销量 2026Q2"}', state: 'ok', result: '未搜到相关内容', dur: 2210 }));
+  b8.appendChild(mdBlock(EMPTY_MD));
+  a8.col.appendChild(b8); a8.col.appendChild(actRow()); mfCol.appendChild(a8.row);
+  /* m9/m10 —— admin 关闭后对照（静态，零 UI 无感降级） */
+  mfCol.appendChild(userMsg('DeepSeek 最新模型是哪个版本？（对照样件：此刻 admin 已在后台关闭联网搜索）'));
+  var a10 = aiShell();
+  a10.col.appendChild(mdBlock(CLOSED_MD));
+  a10.col.appendChild(actRow()); mfCol.appendChild(a10.row);
+}
+function renderReplayFinal(c) {
+  if (rpHost.row && rpHost.row.parentNode) rpHost.row.remove();
+  var a = aiShell();
+  var b = blocksBox();
+  b.appendChild(mdBlock('<p>我搜一下最新信息。</p>'));
+  b.appendChild(makeToolCard({ name: 'search', args: c.args, state: c.state, result: c.result, dur: c.dur }));
+  if (c.state === 'err' || c.state === 'timeout') b.appendChild(degradeBar());
+  if (c.state === 'ok' && c.sources) b.appendChild(makeSourceCard(c.sources, false)); /* 默认折叠 */
+  b.appendChild(mdBlock(c.answer));
+  a.col.appendChild(b); a.col.appendChild(actRow());
+  rpHost.row = a.row; mfCol.appendChild(a.row);
+}
+
+/* ---------- 重放引擎（四结局；SSE 时序含 sources 字段演示） ---------- */
+var RP = { playing: false, timers: [] };
+function T(ms, fn) { RP.timers.push(setTimeout(fn, ms)); }
+function confOf(v) {
+  var p = curProvider();
+  if (v === 'ok') return {
+    args: '{"query":"' + QUERY + '"}', wait: 1500, state: 'ok', result: RESULT_TEXT, dur: 2380,
+    sources: SRC[p], answer: ANSWER_MD
+  };
+  if (v === 'err') return {
+    args: '{"query":"' + QUERY + '"}', wait: 700, state: 'err',
+    result: '搜索服务暂时不可用（HTTP 429）：上游额度受限（示意文案，真实文案由后端错误分支给出）', dur: 640,
+    answer: FALLBACK_MD
+  };
+  if (v === 'timeout') return {
+    args: '{"query":"' + QUERY + '"}', wait: 2400, state: 'timeout', result: '工具执行超时', dur: 10000,
+    answer: FALLBACK_MD
+  };
+  return {
+    args: '{"query":"喵喵牌猫粮 火星 销量 2026Q2"}', wait: 1300, state: 'ok',
+    result: '未搜到相关内容', dur: 2210, sources: null, answer: EMPTY_MD
+  };
+}
+function setCtl(dis) {
+  RP.playing = dis;
+  $('btnReplay').disabled = dis; $('btnReplay').style.opacity = dis ? .5 : 1; $('btnReplay').style.cursor = dis ? 'not-allowed' : 'pointer';
+  document.querySelectorAll('input[name=toolOutcome],input[name=srcProvider]').forEach(function (r) { r.disabled = dis; });
+}
+function typeWriter(box, html, done) {
+  /* 简化打字机：按纯文本逐字（演示件；产品为 markdown-it 流式） */
+  var tmp = document.createElement('div'); tmp.innerHTML = html;
+  var text = tmp.textContent;
+  var md = document.createElement('div'); md.className = 'md'; box.appendChild(md);
+  var p = document.createElement('p'); md.appendChild(p);
+  var cur = document.createElement('span'); cur.className = 'cursor';
+  var i = 0;
+  function step() {
+    p.textContent = text.slice(0, ++i);
+    p.appendChild(cur);
+    if (i % 6 === 0) sse({ type: 'text.delta', text: text.slice(i - 6, i) });
+    if (i < text.length) T(28, step); else { cur.remove(); done(); }
+  }
+  T(28, step);
+}
+function replay() {
+  if (RP.playing) return;
+  RP.timers.forEach(clearTimeout); RP.timers = [];
+  var v = document.querySelector('input[name=toolOutcome]:checked').value;
+  var c = confOf(v);
+  sseBody.innerHTML = '';
+  setCtl(true);
+  if (rpHost.row && rpHost.row.parentNode) rpHost.row.remove();
+  /* turn.start */
+  var a = aiShell(); rpHost.row = a.row; mfCol.appendChild(a.row);
+  var box = blocksBox(); a.col.appendChild(box);
+  var hint = document.createElement('span'); hint.className = 'status-hint'; hint.textContent = '正在生成…'; a.col.appendChild(hint);
+  var scr = a.row.closest('.msg-scroll'); if (scr) scr.scrollTop = scr.scrollHeight;
+  sse({ type: 'turn.start', session_id: 's_bb01', turn_id: 't_01J2' });
+  /* 首段文本 */
+  T(500, function () {
+    typeWriter(box, '<p>我搜一下最新信息。</p>', function () {
+      /* tool.call —— search 卡创建即展开（iter-13 R1） */
+      T(400, function () {
+        sse({ type: 'tool.call', tool_call_id: 'c_1', name: 'search', arguments: c.args });
+        var card = makeToolCard({ name: 'search', args: c.args, state: 'run', open: true });
+        box.appendChild(card);
+        /* 工具执行等待（受单工具超时 10s 约束；超时结局等待更久以体现） */
+        T(c.wait, function () {
+          var frame = { type: 'tool.result', tool_call_id: 'c_1', status: c.state === 'timeout' ? 'timeout' : c.state, result: c.result, duration_ms: c.dur };
+          if (c.state === 'ok' && c.sources) frame.sources = c.sources;
+          sse(frame);
+          card.setToolState(c.state === 'timeout' ? 'timeout' : c.state, c.result, c.dur);
+          if (!card.touched) { card.classList.remove('open'); card.querySelector('.tcard-h').setAttribute('aria-expanded', 'false'); }
+          /* ok → 引用卡出现（回答之前，默认折叠） */
+          if (c.state === 'ok' && c.sources) box.appendChild(makeSourceCard(c.sources, false));
+          /* err/timeout → 降级条（直答首段前） */
+          if (c.state === 'err' || c.state === 'timeout') box.appendChild(degradeBar());
+          T(300, function () { sse({ type: 'turn.step', step: 2, max_steps: 10 });
+            /* 回答流式（搜索完成回答生成中 = 加载态第二帧） */
+            typeWriter(box, c.answer, function () {
+              T(220, function () { sse({ type: 'usage', requests: 2, tokens: 2860 }); });
+              T(450, function () {
+                sse({ type: 'turn.end', reason: 'done' });
+                hint.remove();
+                a.col.appendChild(actRow());
+                try { console.log('[demo] turn.end → 会话 PUT（整档，顶层 "schema": 2，sources 随 tool_result 段透传）'); } catch (e) {}
+                setCtl(false);
+              });
+            });
+          });
+        });
+      });
+    });
+  });
+}
+$('btnReplay').addEventListener('click', replay);
+$('aReset').addEventListener('click', function () {
+  if (RP.playing) { RP.timers.forEach(clearTimeout); RP.timers = []; setCtl(false); }
+  var ck = document.querySelector('input[name=toolOutcome][value=ok]'); if (ck) ck.checked = true;
+  var ps = document.querySelector('input[name=srcProvider][value=tavily]'); if (ps) ps.checked = true;
+  sseBody.innerHTML = '<span style="color:var(--c-text-3);">（待重放——点上方「▶ 重放回合」后逐帧打印）</span>';
+  buildStream();
+});
+/* 数据源切换：非播放中 → 按「成功 + 当前源」重建宿主定型态 */
+document.querySelectorAll('input[name=srcProvider]').forEach(function (r) {
+  r.addEventListener('change', function () { if (!RP.playing) renderReplayFinal(confOf('ok')); });
+});
+
+/* ---------- §4 admin 开关交互（PUT 演示 + toast + key 缺失态） ---------- */
+var adminSw = $('adminSw'), adminDesc = $('adminSwDesc');
+var DESC_ON = '开启后 AI 可自动联网搜索并在回答前展示来源引用；关闭后 AI 直接回答，用户无感知';
+var DESC_MISS = '搜索密钥未配置：请在服务端 backend/.env 中设置 AI_CHAT_SEARCH_KEY 并重启后端，开启后才会生效';
+adminSw.addEventListener('click', function () {
+  var on = adminSw.classList.toggle('on');
+  adminSw.setAttribute('aria-checked', on ? 'true' : 'false');
+  toast(on ? '已开启联网搜索' : '已关闭联网搜索');
+  try { console.log('[demo] PUT /api/admin/settings {"search_enabled":' + on + '} → 200；下一回合生效'); } catch (e) {}
+});
+$('keyMissToggle').addEventListener('change', function () {
+  var miss = this.checked;
+  adminDesc.textContent = miss ? DESC_MISS : DESC_ON;
+  adminDesc.classList.toggle('miss', miss);
+});
+
+/* ---------- §5 档案模态交互（添加/编辑回显 + 开关 + 保存演示） ---------- */
+var profileModal = $('profileModal'), profileSw = $('profileSw');
+function openProfileModal(isEdit) {
+  $('pmTitle').textContent = isEdit ? '编辑供应商档案' : '添加供应商档案';
+  $('pmName').value = isEdit ? '公司中转' : '';
+  $('pmUrl').value = isEdit ? 'https://relay.example-corp.cn' : '';
+  $('pmModel').value = isEdit ? 'glm-4.7' : '';
+  setSw(profileSw, isEdit ? false : true); /* 编辑回显 tools_enabled 实值（关）；新建默认开 */
+  profileModal.style.display = '';
+}
+function setSw(sw, on) { sw.classList.toggle('on', on); sw.setAttribute('aria-checked', on ? 'true' : 'false'); }
+$('addProfileBtn').addEventListener('click', function () { openProfileModal(false); });
+$('editProfileBtn').addEventListener('click', function () { openProfileModal(true); });
+$('pmCancel').addEventListener('click', function () { profileModal.style.display = 'none'; });
+profileSw.addEventListener('click', function () {
+  var on = profileSw.classList.toggle('on');
+  profileSw.setAttribute('aria-checked', on ? 'true' : 'false');
+});
+$('pmSave').addEventListener('click', function () {
+  profileModal.style.display = 'none';
+  toast('档案已保存');
+  try { console.log('[demo] POST/PUT /api/profiles（payload 含 tools_enabled:' + profileSw.classList.contains('on') + '）'); } catch (e) {}
+});
+
+/* ---------- §3 锁定帧构建（同一 DOM 仅根节点令牌覆盖） ---------- */
+function lockGroup1(el) {
+  /* 折叠引用卡（Tavily 型）+ 展开引用卡（博查型）+ 降级条 + 空结果工具卡 */
+  el.appendChild(makeSourceCard(SRC.tavily, false));
+  el.appendChild(makeSourceCard(SRC.bocha, true));
+  el.appendChild(degradeBar());
+  el.appendChild(makeToolCard({ name: 'search', args: '{"query":"喵喵牌猫粮 火星 销量 2026Q2"}', state: 'ok', result: '未搜到相关内容', dur: 2210, open: true }));
+}
+function lockGroup2(el) {
+  /* switch 双态 + admin 开关行（开 / 关+key 缺失）+ 档案模态开关字段 */
+  var row1 = document.createElement('div'); row1.className = 'sw-row';
+  row1.innerHTML = '<span class="row-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="M3 12h18M12 3c2.5 2.6 3.9 5.7 3.9 9S14.5 18.4 12 21c-2.5-2.6-3.9-5.7-3.9-9S9.5 5.6 12 3z" stroke="currentColor" stroke-width="1.7"/></svg></span>' +
+    '<span class="sw-title">联网搜索</span><span class="sw-desc">开启后 AI 可自动联网搜索并在回答前展示来源引用；关闭后 AI 直接回答，用户无感知</span>' +
+    '<button type="button" class="sw on" role="switch" aria-checked="true" aria-label="联网搜索开关（锁定帧）"></button>';
+  el.appendChild(row1);
+  var row2 = document.createElement('div'); row2.className = 'sw-row';
+  row2.innerHTML = '<span class="row-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="M3 12h18M12 3c2.5 2.6 3.9 5.7 3.9 9S14.5 18.4 12 21c-2.5-2.6-3.9-5.7-3.9-9S9.5 5.6 12 3z" stroke="currentColor" stroke-width="1.7"/></svg></span>' +
+    '<span class="sw-title">联网搜索</span><span class="sw-desc miss">搜索密钥未配置：请在服务端 backend/.env 中设置 AI_CHAT_SEARCH_KEY 并重启后端，开启后才会生效</span>' +
+    '<button type="button" class="sw" role="switch" aria-checked="false" aria-label="联网搜索开关（锁定帧，关态）"></button>';
+  el.appendChild(row2);
+  var tf = document.createElement('div'); tf.className = 'tools-field';
+  tf.innerHTML = '<div class="tf-info"><span class="field-label2">支持工具</span><span class="field-hint2">关闭后，使用此档案的对话不携带工具（如联网搜索），AI 直接回答</span></div>' +
+    '<button type="button" class="sw on" role="switch" aria-checked="true" aria-label="支持工具开关（锁定帧）"></button>';
+  el.appendChild(tf);
+}
+
+/* ---------- 初始化 ---------- */
+sseBody = $('sseBody');
+buildStream();
+lockGroup1($('lock1L')); lockGroup1($('lock1D'));
+lockGroup2($('lock2L')); lockGroup2($('lock2D'));
+})();
+</script>
+</body>
+</html>
