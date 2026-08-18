@@ -18,10 +18,12 @@ const okResult: ToolResultBlock = {
 }
 
 describe('ToolStepCard（CHG-007 REQ-032，design-iter-13 §3）', () => {
-  it('运行中：R1 卡创建即展开，徽章「运行中」，占位「（等待结果…）」', () => {
+  it('运行中：R1\'（CEO 指示修订 2026-08-18）卡创建即折叠，徽章「运行中」示进度；点击展开见占位', async () => {
     const w = mount(ToolStepCard, { props: { call, live: true } })
     expect(w.find('.tc-badge.running').text()).toContain('运行中')
-    expect(w.find('[aria-expanded="true"]').exists()).toBe(true)
+    expect(w.find('[aria-expanded="false"]').exists()).toBe(true)
+    expect(w.find('.tc-body').exists()).toBe(false) // 运行中不展开
+    await w.find('.tc-head').trigger('click')
     expect(w.find('.tc-result-text').text()).toBe('（等待结果…）')
   })
 
@@ -58,11 +60,10 @@ describe('ToolStepCard（CHG-007 REQ-032，design-iter-13 §3）', () => {
     expect(w.find('.tc-result-text').text()).toBe('（无返回内容）')
   })
 
-  it('R2 用户操作过则保持用户态：手动展开后终态到达不折叠', async () => {
+  it('R2\' 用户操作过则保持用户态：手动展开后终态到达不折叠', async () => {
     const w = mount(ToolStepCard, { props: { call, live: true } })
-    // 初始展开（R1）；先手动折叠再展开 → userToggled 置位
-    await w.find('.tc-head').trigger('click')
-    await w.find('.tc-head').trigger('click')
+    expect(w.find('[aria-expanded="false"]').exists()).toBe(true) // R1' 初始折叠
+    await w.find('.tc-head').trigger('click') // 用户展开
     expect(w.find('[aria-expanded="true"]').exists()).toBe(true)
     await w.setProps({ result: okResult })
     expect(w.find('[aria-expanded="true"]').exists()).toBe(true) // 用户态保持
@@ -77,6 +78,8 @@ describe('ToolStepCard（CHG-007 REQ-032，design-iter-13 §3）', () => {
   it('头部行语义与参数原样：button 可达、arguments verbatim 入参数块', async () => {
     const w = mount(ToolStepCard, { props: { call, live: true } })
     expect(w.find('.tc-head').element.tagName).toBe('BUTTON')
+    expect(w.find('[aria-expanded="false"]').exists()).toBe(true) // R1' 初始折叠
+    await w.find('.tc-head').trigger('click') // 用户展开
     expect(w.find('.tc-args-block').text()).toBe('{"city":"北京"}')
     await w.find('.tc-head').trigger('click')
     expect(w.find('.tc-body').exists()).toBe(false)

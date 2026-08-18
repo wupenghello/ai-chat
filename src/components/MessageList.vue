@@ -17,14 +17,30 @@ function hasKeptContent(m: Message): boolean {
 
 const el = ref<HTMLElement | null>(null)
 
-// 流式追加时自动滚底（用户手动上滚时不打扰：距底 > 120px 则不跟随）
+// 流式追加时自动滚底（DEF-034 修复，2026-08-18 CEO 验收反馈）：
+// 程序滚动的 scroll 回声不重置 follow（否则用户滚轮抬升未过阈值即被下一次增量拽回底）；
+// 用户滚动时距底 > 120px 即脱离跟随，回到底部自动恢复，另出「回到底部」浮钮
 function nearBottom() {
   const n = el.value
   return !n || n.scrollHeight - n.scrollTop - n.clientHeight < 120
 }
-let follow = true
+let echo = false // 程序滚动的回声标记
+const follow = ref(true) // 模板可见（回底浮钮 v-if），须响应式
 function onScroll() {
-  follow = nearBottom()
+  if (echo) return
+  follow.value = nearBottom()
+}
+async function stick() {
+  const n = el.value
+  if (!n) return
+  echo = true
+  n.scrollTop = n.scrollHeight
+  await nextTick()
+  echo = false
+}
+function toBottom() {
+  follow.value = true
+  void stick()
 }
 // CHG-007（iter-13 T2）：content 为 string | Block[]——blocks 消息序列化后拼接作 watch 键
 function contentKey(m: Message): string {
@@ -33,17 +49,17 @@ function contentKey(m: Message): string {
 watch(
   () => props.messages.map(contentKey).join(''),
   async () => {
-    if (!follow) return
+    if (!follow.value) return
     await nextTick()
-    if (el.value) el.value.scrollTop = el.value.scrollHeight
+    await stick()
   },
 )
 watch(
   () => props.messages.length,
   async () => {
-    follow = true
+    follow.value = true // 新消息（用户发送/新回合）= 明确回底，恢复跟随
     await nextTick()
-    if (el.value) el.value.scrollTop = el.value.scrollHeight
+    await stick()
   },
 )
 </script>
@@ -79,6 +95,10 @@ watch(
         </div>
       </template>
     </div>
+    <!-- DEF-034：脱离跟随时的回底浮钮（零高度 sticky 槽，不占文档流） -->
+    <div v-if="!follow" class="tb-slot">
+      <button type="button" class="tb-btn" @click="toBottom">↓ 回到底部</button>
+    </div>
   </div>
 </template>
 
@@ -109,6 +129,31 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+.tb-slot {
+  position: sticky;
+  bottom: 12px;
+  height: 0;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+.tb-btn {
+  pointer-events: auto;
+  margin-right: 18px;
+  transform: translateY(-100%);
+  padding: 6px 14px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-full);
+  background: var(--c-surface);
+  color: var(--c-text-2);
+  font-size: 12px;
+  box-shadow: var(--shadow-1);
+  cursor: pointer;
+}
+.tb-btn:hover {
+  color: var(--c-text-1);
+  border-color: var(--c-text-3);
 }
 .row-wrap {
   width: 100%;

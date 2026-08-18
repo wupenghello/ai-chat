@@ -710,13 +710,13 @@ try {
       const running = [...document.querySelectorAll('.tc-badge.running')].at(-1)
       if (!running) return null
       const card = running.closest('.tool-card')
-      return { badge: running.textContent.trim(), spinner: !!running.querySelector('.tc-spinner'), expanded: card.querySelector('.tc-head').getAttribute('aria-expanded'), placeholder: card.querySelector('.tc-result-text')?.textContent }
+      return { badge: running.textContent.trim(), spinner: !!running.querySelector('.tc-spinner'), expanded: card.querySelector('.tc-head').getAttribute('aria-expanded') }
     })
     if (runFrame) break
     await sleep(100)
   }
-  const runOk = runFrame?.badge === '运行中' && runFrame?.spinner === true && runFrame?.expanded === 'true' && runFrame?.placeholder === '（等待结果…）'
-  log('条39① 运行中帧（spinner +「运行中」+（等待结果…）+ R1 展开）', runOk, JSON.stringify(runFrame))
+  const runOk = runFrame?.badge === '运行中' && runFrame?.spinner === true && runFrame?.expanded === 'false'
+  log('条39① 运行中帧（spinner +「运行中」+ R1\' 创建即折叠）', runOk, JSON.stringify(runFrame))
   await shot('14-frame-running')
 
   // 条 39-②：搜索完成回答流式中帧（引用卡折叠已现 + 正在生成… + 光标）

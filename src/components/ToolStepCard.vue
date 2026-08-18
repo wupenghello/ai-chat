@@ -4,8 +4,9 @@
  *
  * 次级面板家族：subtle-bg + 1px border；头部行常显可点击（button 语义，aria-expanded）。
  * 徽章五态（§3.1）：运行中（spinner）/ 完成 ✓ / 失败 ✕ / 超时 ⏱ / 已中断（派生：无匹配
- * 结果且非生成中——运行中徽章不得冻结留存历史）。折叠规则：R1 tool.call 到达即展开；
- * R2 终态到达且用户未操作过 → 自动折叠；R3 历史消息（live=false）恒折叠。
+ * 结果且非生成中——运行中徽章不得冻结留存历史）。折叠规则（R1 于 2026-08-18 经 CEO
+ * 指示修订，登记 design-iter-14 §12）：R1' 卡创建即折叠（含运行中，徽章示进度）；
+ * R2 终态保持折叠；R3 历史消息恒折叠。展开/收起一律由用户。
  */
 import { ref, watch } from 'vue'
 import type { ToolCallBlock, ToolResultBlock } from '../api/client'
@@ -17,7 +18,7 @@ const props = defineProps<{
   live: boolean
 }>()
 
-const open = ref(true) // R1：卡创建即展开（过程可见 = A1 北极星）
+const open = ref(false) // R1'（2026-08-18 CEO 指示修订）：卡创建即折叠，运行中不展开（头部行徽章已示进度）；展开/收起由用户
 const userToggled = ref(false)
 
 function toggle() {
