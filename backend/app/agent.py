@@ -15,6 +15,7 @@ import logging
 import time
 import uuid
 from collections.abc import AsyncIterator, Callable
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -125,6 +126,16 @@ def wire_messages_from_doc(doc: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+_CN_TZ = timezone(timedelta(hours=8))
+
+
+def _now_line() -> str:
+    """当前时间行（CHG-008：模型无时钟，时效性问题与搜索 days 判定都依赖它）。"""
+    now = datetime.now(_CN_TZ)
+    weekday = "一二三四五六日"[now.weekday()]
+    return now.strftime(f"当前时间：%Y-%m-%d（周{weekday}）%H:%M（北京时间）")
+
+
 def assemble_context(
     history: list[dict[str, Any]],
     message: str,
@@ -137,6 +148,7 @@ def assemble_context(
     轮 = user 起、至下一 user 前（回合内 tool 消息属助手侧不占轮）。user 锚定截断天然
     不留悬空 assistant（对齐旧「丢弃截断后悬空的 assistant」）。去重护栏：前端
     「先 PUT 再发回合」流向下库内已含本条用户消息，不重复追加。
+    CHG-008（2026-08-18 CEO 验收走查反馈）：系统段恒存在 = 用户系统提示词（如有）+ 当前时间行。
     """
     msgs = [m for m in history if m.get("role") != "system"]
     if not (msgs and msgs[-1].get("role") == "user" and msgs[-1].get("content") == message):
@@ -144,8 +156,8 @@ def assemble_context(
     turn_starts = [i for i, m in enumerate(msgs) if m.get("role") == "user"]
     start = turn_starts[-max_turns] if len(turn_starts) > max_turns else 0
     selected = msgs[start:]
-    prefix = [{"role": "system", "content": system_prompt}] if system_prompt else []
-    return prefix + selected
+    sys_content = f"{system_prompt}\n\n{_now_line()}" if system_prompt else _now_line()
+    return [{"role": "system", "content": sys_content}] + selected
 
 
 # ---------- 上游流式调用（SSE 解析重组：文本增量 + tool_calls 分片重组 + usage） ----------

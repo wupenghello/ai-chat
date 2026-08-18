@@ -140,6 +140,11 @@ def validate_args(args: dict[str, Any], schema: dict[str, Any]) -> None:
             raise ToolError(f"参数 {key} 取值不在允许范围")
         if "maxLength" in spec and isinstance(value, str) and len(value) > spec["maxLength"]:
             raise ToolError(f"参数 {key} 超过最大长度 {spec['maxLength']}")
+        # 数值边界（CHG-008 search.days 1~30 起启用；schema 声明即网关强制）
+        if "minimum" in spec and isinstance(value, (int, float)) and value < spec["minimum"]:
+            raise ToolError(f"参数 {key} 小于最小值 {spec['minimum']}")
+        if "maximum" in spec and isinstance(value, (int, float)) and value > spec["maximum"]:
+            raise ToolError(f"参数 {key} 超过最大值 {spec['maximum']}")
 
 
 # ---------- ③ 出网白名单 + SSRF 防护（A2 搜索工具起真实出网生效） ----------

@@ -5,6 +5,7 @@
 
 import asyncio
 import json
+import re
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -263,6 +264,22 @@ def _mk_turns(n: int) -> list[dict]:
              "content": f"msg{i}", "status": "done"} for i in range(n * 2)]
 
 
+def test_组装_系统段恒含当前时间行():
+    """CHG-008（2026-08-18 CEO 验收反馈）：模型无时钟，上下文恒注入当前时间行。"""
+    from app.agent import _now_line, assemble_context
+
+    assert re.fullmatch(
+        r"当前时间：\d{4}-\d{2}-\d{2}（周[一二三四五六日]）\d{2}:\d{2}（北京时间）",
+        _now_line(),
+    )
+    ctx = assemble_context([], "hi", None)
+    assert ctx[0]["role"] == "system"
+    assert ctx[0]["content"] == _now_line()  # 无用户提示词 → 系统段仅时间行
+    assert ctx[-1] == {"role": "user", "content": "hi"}
+    ctx2 = assemble_context([], "hi", "你是助手")
+    assert ctx2[0]["content"] == f"你是助手\n\n{_now_line()}"  # 有则拼接其后
+
+
 def test_组装等价_系统提示词首位加最近20轮(tmp):
     def handler(_req, n):
         return _sse(text_then_done("ok", 10))
@@ -274,14 +291,19 @@ def test_组装等价_系统提示词首位加最近20轮(tmp):
         assert evs[-1]["reason"] == "done"
 
         msgs = _upstream_messages(seen[-1])
-        expected = [{"role": "system", "content": "你是助手"}]
+        # CHG-008（2026-08-18）：系统段恒存在 = 用户系统提示词 + 当前时间行（时间动态，正则断言）
+        assert msgs[0]["role"] == "system"
+        assert msgs[0]["content"].startswith("你是助手\n\n当前时间：")
+        time_pat = r"当前时间：\d{4}-\d{2}-\d{2}（周[一二三四五六日]）\d{2}:\d{2}（北京时间）"
+        assert re.search(time_pat, msgs[0]["content"])
+        expected = [msgs[0]]
         # 等价口径（旧 buildContext）：30 轮存量 + 本条 = 31 轮，取最近 20 轮
         # = 第 12 轮 user 起（m22..m59）+ 本条；旧法「最近 40 条 + 丢悬空 assistant」同结果
         for i in range(22, 60):
             role = "user" if i % 2 == 0 else "assistant"
             expected.append({"role": role, "content": f"msg{i}"})
         expected.append({"role": "user", "content": "current question"})
-        assert msgs == expected  # 逐字段等价（验收 6）
+        assert msgs == expected  # 逐字段等价（验收 6；系统段外逐字）
 
 
 def test_组装_库内已含本条消息_不重复追加(tmp):

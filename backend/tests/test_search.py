@@ -139,6 +139,31 @@ def test_执行_ok_双视角输出_文本与sources同源(tmp_path: Path, caplog
     assert json.loads(req.content) == {"query": "今日热点", "max_results": 5}
 
 
+def test_days参数_透传新闻源与时间窗(tmp_path: Path):
+    """CHG-008：时效性查询由模型带 days（1~30），透传 Tavily topic=news + days。"""
+    with search_bound(lambda _req: _tavily_ok()) as seen:
+        out = _run_search('{"query": "最近AI新闻", "days": 7}')
+    assert out.status == "ok"
+    (req,) = seen
+    body = json.loads(req.content)
+    assert body == {"query": "最近AI新闻", "max_results": 5, "topic": "news", "days": 7}
+
+
+def test_days缺省_不带topic与时间窗(tmp_path: Path):
+    with search_bound(lambda _req: _tavily_ok()) as seen:
+        _run_search('{"query": "光速是多少"}')
+    (req,) = seen
+    body = json.loads(req.content)
+    assert "topic" not in body and "days" not in body  # 一般查询综合搜索不限时
+
+
+def test_days越界_网关参数校验拒绝零连接(tmp_path: Path):
+    with search_bound(lambda _req: _tavily_ok()) as seen:
+        out = _run_search('{"query": "x", "days": 31}')
+    assert out.status == "error"
+    assert seen == []  # 拒绝先于任何出网动作
+
+
 def test_空结果_D2逐字文案_无sources():
     with search_bound(lambda _req: _tavily_ok([])):
         out = _run_search('{"query": "冷门问题"}')

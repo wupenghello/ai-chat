@@ -122,9 +122,11 @@ def assemble_text(query: str, sources: list[dict[str, str]]) -> str:
 
 # ---------- Tavily 客户端（POST /search，Bearer key；全 mock 假端点承载测试） ----------
 
-async def tavily_search(query: str) -> ToolOutput:
+async def tavily_search(query: str, days: int | None = None) -> ToolOutput:
     """出网调用 Tavily 并组装双视角结果（文本给模型 / sources 给前端引用卡）。
 
+    days（CHG-008，1~30 可选）：时效性查询由模型自行限定「最近 N 天」，透传为
+    Tavily topic=news + days（新闻源 + 时间窗）；不传 = 综合搜索不限时。
     任何失败以 ToolError 机器可读原因上抛 → 网关转 error result → 模型降级直答
     （回合不崩，REQ-035 异常分支）；超时由网关 wait_for(10s) 兜底。
     """
@@ -132,10 +134,14 @@ async def tavily_search(query: str) -> ToolOutput:
         raise ToolError("搜索未配置（AI_CHAT_SEARCH_KEY 缺失）")
     ensure_egress_allowed(TAVILY_URL, (TAVILY_HOST,))  # 白名单/字面 IP：零连接拒绝
     await _assert_public_resolution(TAVILY_HOST)  # DNS 解析地址：连接前拒绝
+    payload: dict[str, Any] = {"query": query, "max_results": SEARCH_MAX_RESULTS}
+    if days:
+        payload["topic"] = "news"
+        payload["days"] = days
     try:
         resp = await _client.post(
             TAVILY_URL,
-            json={"query": query, "max_results": SEARCH_MAX_RESULTS},
+            json=payload,
             headers={"Authorization": f"Bearer {_api_key}"},
         )
     except httpx.HTTPError:
@@ -157,15 +163,22 @@ async def tavily_search(query: str) -> ToolOutput:
 
 
 async def _search_handler(args: dict[str, Any]) -> ToolOutput:
-    return await tavily_search(args["query"])
+    return await tavily_search(args["query"], args.get("days"))
 
 
 register_tool(ToolDef(
     name="search",
-    description="联网搜索最新信息（时效性问题、最新动态、版本号、今日热点等）",
+    description=(
+        "联网搜索最新信息（时效性问题、最新动态、版本号、今日热点等）。"
+        "新闻/热点等强时效查询建议带 days 限定最近 N 天（1~30，启用新闻源与时间窗过滤）；"
+        "一般性查询不必带。"
+    ),
     parameters={
         "type": "object",
-        "properties": {"query": {"type": "string", "maxLength": QUERY_MAX_LENGTH}},
+        "properties": {
+            "query": {"type": "string", "maxLength": QUERY_MAX_LENGTH},
+            "days": {"type": "integer", "minimum": 1, "maximum": 30},
+        },
         "required": ["query"],
     },
     handler=_search_handler,
