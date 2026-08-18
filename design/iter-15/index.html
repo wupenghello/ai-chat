@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-chat · iter-15 设计稿（REQ-038 admin 遥测面板，呈批待基线）</title>
+<!--
+  ============================================================
+  ai-chat 迭代 15 T1 设计稿（设计稿即页面骨架，开发对照实现）
+  依据（逐条登记）：
+  1. projects/ai-chat/plans/iter-15.md T1 行（2026-08-19 迭代已批准）：
+     REQ-038 遥测视图形态——每日成本估算卡（仅统一 key 计成本、自填模式列 token 不计成本并明示「用户自带密钥」；
+     单价 admin 只读）/ 缓存命中率（缺失时段缺失标注）/ 工具用量视图（按工具名×状态聚合，暂缓池主题包⑤由本视图天然承载）；
+     API 口径章节随稿定案（遥测聚合端点形状、缺失与未配置语义）；缺失态/单价未配置态两异常形态；
+     卫生项：spec REQ-038「涉及页面」指针随基线零滞后回填（v1.4.10 A 防线，本稿产出时已回填）；
+     验收 = CEO 批准基线（tag design-iter-15）+ 走查清单随稿（亮/暗双主题、几何断言面 v1.4.11 B、
+     样件文案逐字 v1.4.10 B、行为断言面适用项 v1.4.13 B）+ REQ-025/029 零回退组逐条映射既有走查编号
+  2. requirements/spec.md（req-baseline-v6）：
+     REQ-038 admin 遥测面板扩展（验收 4 条：六端点形状零变化或仅加法字段 + 既有 admin pytest 零改动复跑全绿 /
+     造数聚合数值断言（成本=tokens×单价精确值、命中率数值、缺失→缺失标注）/ 普通用户访问遥测端点 403 零泄露 /
+     design-iter-15 走查清单留档）；
+     REQ-025 管理员 Web 后台（既有三类能力口径零回退 + 403 门禁 + 缺失「不估算补齐」先例）；
+     REQ-029 管理后台体验重构（iter-12 基线：四卡 + 三态警示条 + 搜索/双表分页 + 灰底白卡 1080px——本稿加法扩展的宿主形态）；
+     REQ-037（数据面：telemetry 表 / NULL 口径 / 90 天保留期 / 卫生）
+  3. requirements/changes.md CHG-009（已批准 2026-08-18，基线 v6）：
+     定夺⑤保留期 90 天（按自然日惰性清理）；定夺⑥成本口径（仅统一 key 模式计成本 + .env 单价三变量
+     input/output/cache-hit，admin 只读；自填模式列 token 不计成本并明示「用户自带密钥」）；
+     内容 4.3 聚合口径（成本=Σtokens×单价三项分项；命中率=Σhit/(Σhit+Σmiss)，任一侧缺失该时段显缺失标注；
+     工具用量=按 tool_name×status 聚合行数与耗时均值；全部机器聚合无手工修正入口）；
+     内容 4.2 telemetry 表 schema（status: ok|error|timeout|cancelled；缓存列 NULL=上游不返回）
+  4. plans/iter-15-verify.md T0 段（API 口径的唯一字段事实来源）：
+     DeepSeek 缓存字段恒返回（prompt_cache_hit_tokens / prompt_cache_miss_tokens，未命中值为 0 而非缺失——
+     统一 key 侧命中率恒可计算）；GLM 类自填端点无缓存字段 → 缓存列 NULL → 聚合显缺失（铁律 5）；
+     tokens_prompt/completion/total 三字段映射口径（§2.4）
+  5. design/iter-12/index.html（已基线）：AdminView 重构稿——后台框架/四卡/警示条/表格卡/分页/缺失标注/
+     亮暗锁定帧体例 + §7.2 走查清单 52 条编号（本稿零回退组「iter-12#」列逐条映射）+ §4 API 口径章节体例
+  6. design/iter-14/index.html + design-iter-14.md（已基线）：联网搜索开关行（统计卡区后、tabs 前）+
+     toggle switch + overview 加法扩展 + PUT /api/admin/settings 先例——本稿 API 章节同体例；
+     开关行与档案开关走查编号（零回退引用）
+  7. 现状实现核对：src/views/AdminView.vue（stat-grid 四卡 / site-bar 三态 / sw-row 开关行 / adm-tabs 双 tab /
+     双表面板 / 403 卡 / 加载失败态文案）；backend/app/routers/admin.py（get_admin_user 门禁依赖；
+     users/ban/unban/quota/usage/overview 六端点 + PUT settings）
+  8. 公司设计规范 design-system/tokens.md v1.3/v1.3.1 + components.md v1.4：只用既有令牌，
+     零新增令牌、零自造色值、零新增组件形态（统计卡/分页/徽标/分段控件/表格卡均为既有登记形态组合，评估结论 §8-⑥）
+  视觉基调（CEO 已定，不得偏离）：延续 iter-9/11/12——页面灰底 --c-bg、内容白卡 --c-surface、主色飞书蓝 #3370FF
+     （暗色前景 #5C8DFF）；本次遥测视图是 AdminView 的**加法扩展**（第三 tab），不是重构——既有四卡/警示条/
+     开关行/双表位置与形态零翻案。
+  硬约束落实：REQ-025/029 既有口径零回退（§5 映射表 + §7 零回退组）；成本口径仅统一 key（定夺⑥）；
+     缺失不估算不造数（铁律 5：缓存 NULL→缺失标注、单价未配置→不估算并提示）；90 天保留期语义呈现（定夺⑤）；
+     数值表格不做趋势图（CHG-004/REQ-029 定案延续）；移动端不做（admin 桌面优先，沿 iter-12 适用性口径）；
+     演示数据全为虚构（铁律 5）。
+  状态：呈批待基线（design-iter-15）。批准后由主会话打 tag；spec REQ-038「涉及页面」指针已随本稿零滞后回填
+     （卫生项 v1.4.10 A，呈批时点状态为「呈批待基线」，批准后主会话更新为「已基线」措辞）。
+  可交互：右上「演示控制」一键亮/暗（写 localStorage）+ 遥测数据态切换（正常/缺失时段/单价未配置/缓存全缺失/
+     空窗口/加载/失败）；§1 主样件可真实操作——tab 切换、时间窗切换（近 7/14/30 天）、失败重试。零外部依赖，双击即开。
+  ============================================================
+-->
+<style>
+/* ============================================================
+   一、文档外壳（说明页自身，浅色固定，不随演示切换；色值 = tokens 浅色原值，沿 iter-5~14 惯例）
+   ============================================================ */
+:root { --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-full: 999px; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-size: 14px; line-height: 1.6; color: #1F2329; background: #F5F6F7; padding: 40px 32px 80px;
+}
+.page { max-width: 1160px; margin: 0 auto; }
+h1 { font-size: 20px; font-weight: 600; }
+.sub { font-size: 13px; color: #8F959E; margin: 4px 0 8px; }
+.sub b { color: #646A73; }
+.badge {
+  display: inline-block; padding: 1px 10px; border-radius: var(--r-full);
+  font-size: 12px; font-weight: 500; background: #FFF7E8; color: #B45309; margin-bottom: 24px;
+}
+section { margin-bottom: 48px; }
+h2 { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+h2 .no { color: #3370FF; margin-right: 4px; }
+.sec-desc { font-size: 13px; color: #8F959E; margin-bottom: 16px; }
+.sec-desc b { color: #646A73; }
+
+table { width: 100%; border-collapse: collapse; background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-md); overflow: hidden; font-size: 13px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #E5E6EB; vertical-align: top; }
+th { color: #8F959E; font-weight: 500; background: #FAFBFC; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+td code, li code, .ann code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; background: #F2F3F5; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
+pre { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; background: #F2F3F5; border: 1px solid #E5E6EB; border-radius: var(--r-md); padding: 10px 14px; overflow: auto; line-height: 1.7; color: #1F2329; margin: 8px 0 0; }
+pre code { background: none; padding: 0; white-space: pre; }
+
+.spec { background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-lg); padding: 24px; box-shadow: 0 1px 2px rgba(31,35,41,.06); margin-bottom: 16px; }
+.spec-title { font-size: 13px; font-weight: 600; color: #646A73; margin-bottom: 12px; }
+.spec-title .tag { font-weight: 400; color: #8F959E; margin-left: 8px; }
+.stage { border: 1px dashed #E5E6EB; border-radius: var(--r-md); padding: 16px; background: #F5F6F7; }
+.ann { font-size: 12px; color: #8F959E; margin-top: 8px; line-height: 1.8; }
+.ann b { color: #646A73; font-weight: 600; }
+.sim-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; font-size: 12px; color: #646A73; margin-bottom: 12px; }
+.sim-row label { cursor: pointer; white-space: nowrap; }
+.lnk-reset { display: inline-block; margin-top: 8px; font-size: 12px; color: #3370FF; cursor: pointer; }
+.lnk-reset:hover { text-decoration: underline; color: #2E5FDF; }
+.frame-cap { text-align: center; font-size: 12px; color: #8F959E; margin-bottom: 8px; }
+.cols { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+.cols > div { flex: 1; min-width: 380px; max-width: 580px; }
+
+/* ---- 演示控制条（文档功能件，非产品组件） ---- */
+.demo-ctl {
+  position: sticky; top: 0; z-index: 500; display: flex; align-items: center; gap: 12px;
+  background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-md);
+  padding: 10px 16px; margin-bottom: 32px; box-shadow: 0 1px 2px rgba(31,35,41,.06);
+  font-size: 13px; color: #646A73; flex-wrap: wrap;
+}
+.demo-ctl .seg { display: inline-flex; border: 1px solid #E5E6EB; border-radius: var(--r-md); overflow: hidden; }
+.demo-ctl .seg button {
+  height: 30px; padding: 0 14px; border: none; background: #FFFFFF; color: #646A73;
+  font-size: 13px; cursor: pointer; transition: background .15s ease, color .15s ease;
+}
+.demo-ctl .seg button.on { background: #3370FF; color: #fff; font-weight: 600; }
+.demo-ctl .note { font-size: 12px; color: #8F959E; }
+
+/* ============================================================
+   二、演示令牌作用域 .tk（组件全部引用 var()，同 src 范式；浅 = tokens v1.3 浅值，暗 = v1.3 暗值，零自造）
+   ============================================================ */
+.tk {
+  --c-bg: #F5F6F7; --c-surface: #FFFFFF; --c-border: #E5E6EB;
+  --c-text-1: #1F2329; --c-text-2: #646A73; --c-text-3: #8F959E;
+  --c-primary: #3370FF; --c-primary-h: #2E5FDF; --c-primary-a: #2860D8; --c-primary-l: #F0F4FF;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #2E5FDF; --c-primary-solid-a: #2860D8;
+  --c-danger: #D93025; --c-danger-l: #FDECEA; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #1A9E5C; --c-success-on-dark: #4CC38A;
+  --c-warning: #B45309; --c-warning-l: #FFF7E8;
+  --c-hover-bg: #F2F3F5; --c-disabled-bg: #C9CFDB; --c-subtle-bg: #FAFBFC;
+  --c-avatar-bg: #E8EBF2; --c-scrollbar: #D5D9E0;
+  --c-toast-bg: #23272E; --c-toast-border: #23272E; --c-primary-on-dark: #A3BCFF;
+  --c-mask: rgba(31,35,41,.4); --c-focus-ring: rgba(51,112,255,.12);
+  --shadow-1: 0 1px 2px rgba(31,35,41,.06);
+  --shadow-2: 0 4px 16px rgba(31,35,41,.10);
+  --shadow-3: 0 12px 40px rgba(31,35,41,.16);
+  color: var(--c-text-1);
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+.tk.dark, .tk.force-dark {
+  --c-bg: #131417; --c-surface: #1E2026; --c-border: #33363E;
+  --c-text-1: #E6EAF0; --c-text-2: #A2A9B6; --c-text-3: #808896;
+  --c-primary: #5C8DFF; --c-primary-h: #7AA4FF; --c-primary-a: #4C84FF; --c-primary-l: #1D2740;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #4C84FF; --c-primary-solid-a: #3D78FF;
+  --c-danger: #FF8073; --c-danger-l: #361B18; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #4CC38A;
+  --c-warning: #EDA23B; --c-warning-l: #38290F;
+  --c-hover-bg: #262930; --c-disabled-bg: #3D414A; --c-subtle-bg: #24272E;
+  --c-avatar-bg: #33363E; --c-scrollbar: #3A3E46;
+  --c-toast-bg: #2A2D34; --c-toast-border: #33363E; --c-primary-on-dark: #A3BCFF;
+  --c-mask: rgba(0,0,0,.55); --c-focus-ring: rgba(92,141,255,.25);
+  --shadow-1: 0 1px 2px rgba(0,0,0,.4);
+  --shadow-2: 0 4px 16px rgba(0,0,0,.45);
+  --shadow-3: 0 12px 40px rgba(0,0,0,.6);
+}
+.tk.force-light {
+  --c-bg: #F5F6F7; --c-surface: #FFFFFF; --c-border: #E5E6EB;
+  --c-text-1: #1F2329; --c-text-2: #646A73; --c-text-3: #8F959E;
+  --c-primary: #3370FF; --c-primary-h: #2E5FDF; --c-primary-a: #2860D8; --c-primary-l: #F0F4FF;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #2E5FDF; --c-primary-solid-a: #2860D8;
+  --c-danger: #D93025; --c-danger-l: #FDECEA; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #1A9E5C;
+  --c-warning: #B45309; --c-warning-l: #FFF7E8;
+  --c-hover-bg: #F2F3F5; --c-disabled-bg: #C9CFDB; --c-subtle-bg: #FAFBFC;
+  --c-avatar-bg: #E8EBF2; --c-scrollbar: #D5D9E0;
+  --c-mask: rgba(31,35,41,.4); --c-focus-ring: rgba(51,112,255,.12);
+  --shadow-1: 0 1px 2px rgba(31,35,41,.06);
+  --shadow-2: 0 4px 16px rgba(31,35,41,.10);
+  --shadow-3: 0 12px 40px rgba(31,35,41,.16);
+  color: var(--c-text-1);
+}
+/* ============================================================
+   三、产品组件样式（全部 var() 引用，零裸色值）
+   3a. 后台框架 / 顶栏 / 分段 tab（iter-12 基线零变化，样式照搬）
+   3b. 概览统计卡 + 警示条（iter-12 基线零变化，本稿仅静态承载）
+   3c. 联网搜索开关行（iter-14 基线零变化，本稿仅静态承载）
+   3d. 遥测视图（本稿新增区，全部既有令牌/既有形态组合）：
+       tel-toolbar 时间窗分段 + 保留期注记 / tel-card 遥测卡（统计卡家族）/
+       分项行 / 单价行 / 缺失徽标 / 双卡并排 / 明细表（表格卡家族）/ gap-note（iter-12 沿用）
+   3e. 加载 / 失败 / 空态（iter-12 口径沿用）
+   ============================================================ */
+
+/* ---- 3a. 后台框架（iter-12 基线零变化） ---- */
+.admin-frame { position: relative; overflow: hidden; border: 1px solid var(--c-border); border-radius: var(--r-lg); background: var(--c-bg); }
+.adm-top { flex: none; height: 52px; padding: 0 20px; border-bottom: 1px solid var(--c-border); background: var(--c-surface); display: flex; align-items: center; gap: 8px; }
+.adm-brand { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; color: var(--c-text-1); }
+.adm-tag { padding: 0 8px; height: 20px; line-height: 20px; border-radius: var(--r-full); font-size: 12px; font-weight: 500; background: var(--c-primary-l); color: var(--c-primary); }
+.adm-sp { flex: 1; }
+.btn-icon32 { width: 32px; height: 32px; padding: 0; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-2); border-radius: var(--r-md); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: border-color .15s ease, color .15s ease, background .15s ease, transform .1s ease; }
+.btn-icon32:hover { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-l); }
+.btn-icon32:active { transform: scale(.94); }
+.btn-ghost { height: 30px; padding: 0 12px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-2); border-radius: var(--r-md); font-size: 13px; cursor: pointer; font-family: inherit; transition: border-color .15s ease, color .15s ease, background .15s ease, transform .1s ease; }
+.btn-ghost:hover { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-l); }
+.btn-ghost:active { transform: scale(.98); }
+.adm-body { width: min(1080px, calc(100% - 48px)); margin: 24px auto 32px; }
+.adm-tabs { display: inline-flex; border: 1px solid var(--c-border); border-radius: var(--r-md); overflow: hidden; background: var(--c-surface); }
+.adm-tabs button { height: 32px; padding: 0 16px; border: none; background: transparent; color: var(--c-text-2); font-size: 13px; cursor: pointer; font-family: inherit; transition: background .15s ease, color .15s ease; }
+.adm-tabs button:hover { color: var(--c-text-1); background: var(--c-hover-bg); }
+.adm-tabs button.on { background: var(--c-primary-l); color: var(--c-primary); font-weight: 500; }
+
+/* ---- 3b. 概览统计卡 + 警示条（iter-12 基线零变化，静态承载） ---- */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 16px; }
+.stat-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: var(--shadow-1); padding: 16px 20px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.sc-label { font-size: 13px; color: var(--c-text-2); }
+.sc-value { font-size: 20px; font-weight: 600; color: var(--c-text-1); font-variant-numeric: tabular-nums; line-height: 1.3; white-space: nowrap; }
+.sc-total { font-size: 14px; font-weight: 400; color: var(--c-text-3); }
+.sc-sub { font-size: 12px; color: var(--c-text-3); }
+.sc-prog { height: 6px; border-radius: var(--r-full); background: var(--c-hover-bg); overflow: hidden; margin-top: 2px; }
+.sc-prog .fill { height: 100%; border-radius: var(--r-full); background: var(--c-primary-solid); }
+.site-strip { display: none; }
+
+/* ---- 3c. 联网搜索开关行（iter-14 基线零变化，静态承载） ---- */
+.sw-row { display: flex; align-items: center; gap: 10px; padding: 12px 16px; margin-bottom: 16px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: var(--shadow-1); }
+.sw-row .row-ico { color: var(--c-text-3); display: inline-flex; flex: none; }
+.sw-row .sw-title { font-size: 13px; font-weight: 500; color: var(--c-text-1); flex: none; }
+.sw-row .sw-desc { flex: 1; min-width: 0; font-size: 12px; color: var(--c-text-3); }
+.sw-track { flex: none; width: 36px; height: 20px; border-radius: var(--r-full); background: var(--c-primary-solid); position: relative; }
+.sw-knob { position: absolute; top: 2px; left: 18px; width: 16px; height: 16px; border-radius: 50%; background: #FFFFFF; border: 1px solid var(--c-border); box-shadow: var(--shadow-1); }
+
+/* ---- 3d. 遥测视图（本稿新增区） ---- */
+/* 面板工具行：时间窗分段（分段控件既有形态）+ 右端保留期注记 */
+.tel-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.tel-toolbar .win-seg { display: inline-flex; border: 1px solid var(--c-border); border-radius: var(--r-md); overflow: hidden; background: var(--c-surface); }
+.tel-toolbar .win-seg button { height: 32px; padding: 0 14px; border: none; background: transparent; color: var(--c-text-2); font-size: 13px; cursor: pointer; font-family: inherit; transition: background .15s ease, color .15s ease; }
+.tel-toolbar .win-seg button:hover { color: var(--c-text-1); background: var(--c-hover-bg); }
+.tel-toolbar .win-seg button.on { background: var(--c-primary-l); color: var(--c-primary); font-weight: 500; }
+.tel-toolbar .retention-note { margin-left: auto; font-size: 12px; color: var(--c-text-3); }
+
+/* 遥测卡（统计卡家族：surface + border + r-lg + shadow-1 + padding 16/20） */
+.tel-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: var(--shadow-1); padding: 16px 20px; margin-bottom: 16px; min-width: 0; }
+.tc-head { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--c-text-1); }
+.tc-head .tc-ico { color: var(--c-text-3); display: inline-flex; }
+.tc-sub { font-size: 12px; color: var(--c-text-3); margin-top: 2px; }
+.tc-big-row { display: flex; align-items: baseline; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.tc-big-label { font-size: 12px; color: var(--c-text-3); }
+.tc-big { font-size: 20px; font-weight: 600; color: var(--c-text-1); font-variant-numeric: tabular-nums; line-height: 1.3; }
+.tc-big-sub { font-size: 12px; color: var(--c-text-3); font-variant-numeric: tabular-nums; }
+/* 分项三列（输入/输出/缓存命中）：等宽栅格 gap 16 */
+.bd-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 12px; }
+.bd-item { border: 1px solid var(--c-border); border-radius: var(--r-md); background: var(--c-subtle-bg); padding: 10px 12px; min-width: 0; }
+.bd-label { font-size: 12px; color: var(--c-text-3); }
+.bd-tokens { font-size: 13px; font-weight: 500; color: var(--c-text-1); font-variant-numeric: tabular-nums; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bd-cost { font-size: 12px; color: var(--c-text-2); font-variant-numeric: tabular-nums; margin-top: 2px; }
+/* 单价行（admin 只读）与自填行 */
+.kv-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding-top: 10px; margin-top: 12px; border-top: 1px solid var(--c-border); font-size: 12px; color: var(--c-text-3); }
+.kv-row .kv-label { font-weight: 500; color: var(--c-text-2); flex: none; }
+.kv-row .kv-val { color: var(--c-text-2); font-variant-numeric: tabular-nums; }
+.kv-row .kv-note { color: var(--c-text-3); }
+/* 缺失/不计成本徽标（胶囊 20px 家族既有形态；缺失用琥珀族与 gap-note 同语义） */
+.pill { display: inline-flex; align-items: center; padding: 0 8px; height: 20px; border-radius: var(--r-full); font-size: 12px; font-weight: 500; white-space: nowrap; vertical-align: middle; }
+.pill-miss { background: var(--c-warning-l); color: var(--c-warning); }
+.pill-nocost { background: var(--c-subtle-bg); color: var(--c-text-2); border: 1px solid var(--c-border); }
+.pill-ok { background: var(--c-subtle-bg); color: var(--c-success); border: 1px solid var(--c-border); }
+.pill-err { background: var(--c-danger-l); color: var(--c-danger); }
+.pill-to { background: var(--c-warning-l); color: var(--c-warning); }
+.pill-cancel { background: var(--c-hover-bg); color: var(--c-text-2); }
+/* 单价未配置提示（warning 族：warning-l 底 + 左缘 3px warning，沿 site-strip 警示语言） */
+.warn-hint { display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; padding: 8px 12px; border-radius: var(--r-md); background: var(--c-warning-l); border-left: 3px solid var(--c-warning); color: var(--c-warning); font-size: 12px; line-height: 1.7; }
+/* 双卡并排（命中率 + 工具用量） */
+.tel-2col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.tel-2col .tel-card { margin-bottom: 0; }
+/* 遥测表格（表格卡家族：tbl-card + adm-table 规格照搬 iter-12） */
+.tbl-card { border: 1px solid var(--c-border); border-radius: var(--r-md); background: var(--c-surface); overflow-x: auto; }
+.adm-table { width: 100%; border-collapse: collapse; font-size: 13px; background: transparent; }
+.adm-table th { text-align: left; font-size: 12px; font-weight: 500; color: var(--c-text-3); background: var(--c-subtle-bg); padding: 10px 16px; border-bottom: 1px solid var(--c-border); white-space: nowrap; }
+.adm-table th.num { text-align: right; }
+.adm-table td { padding: 12px 16px; border-bottom: 1px solid var(--c-border); vertical-align: middle; color: var(--c-text-2); white-space: nowrap; }
+.adm-table tbody tr { transition: background .15s ease; }
+.adm-table tbody tr:hover { background: var(--c-hover-bg); }
+.adm-table tbody tr:last-child td { border-bottom: none; }
+.adm-table td.num { text-align: right; }
+.adm-table td.day-cell { color: var(--c-text-1); font-weight: 500; font-variant-numeric: tabular-nums; }
+.mono { font-variant-numeric: tabular-nums; }
+.tbl-in-card { margin-top: 12px; border: 1px solid var(--c-border); border-radius: var(--r-md); overflow-x: auto; }
+/* 缺失时段琥珀行（iter-12 gap-note 口径沿用） */
+.gap-note { padding: 8px 14px; margin-top: 12px; border-radius: var(--r-md); background: var(--c-warning-l); color: var(--c-warning); font-size: 12px; }
+
+/* ---- 3e. 加载 / 失败 / 空态（iter-12 口径沿用） ---- */
+.adm-state { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 48px 0; color: var(--c-text-3); font-size: 12px; }
+.spin-p { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--c-primary-l); border-top-color: var(--c-primary); animation: spin .8s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.err-banner { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: var(--r-md); background: var(--c-danger-l); color: var(--c-danger); font-size: 13px; flex-wrap: wrap; }
+.err-banner .btn-ghost { border-color: currentColor; color: inherit; background: transparent; }
+.err-banner .btn-ghost:hover { background: var(--c-surface); opacity: .85; }
+.empty-box { padding: 40px 0; text-align: center; color: var(--c-text-3); font-size: 13px; border: 1px dashed var(--c-border); border-radius: var(--r-md); background: var(--c-surface); display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.empty-box .e-hint { font-size: 12px; }
+/* 零回退引用占位（用户/用量 tab 面板：本稿不重复样件） */
+.baseline-ref { padding: 24px; border: 1px dashed var(--c-border); border-radius: var(--r-md); background: var(--c-surface); color: var(--c-text-3); font-size: 12px; line-height: 1.8; text-align: center; }
+.toast { display: inline-flex; align-items: center; gap: 8px; background: var(--c-toast-bg); border: 1px solid var(--c-toast-border); color: #fff; font-size: 13px; padding: 10px 16px; border-radius: var(--r-md); box-shadow: var(--shadow-2); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>ai-chat · iter-15 设计稿（REQ-038 admin 遥测面板扩展）</h1>
+  <div class="sub">
+    依据：<b>plans/iter-15.md</b> T1（遥测视图形态 + API 口径随稿定案 + 缺失态/单价未配置态 + 走查清单随稿 +
+    spec 指针零滞后回填卫生项）· <b>req-baseline-v6</b> REQ-038（验收 4 条）+ REQ-025/029（既有口径<b>零回退锚点</b>，
+    §5 逐条映射 design-iter-12 §7.2 走查编号）· <b>CHG-009</b> 定夺⑤保留期 90 天 / 定夺⑥成本口径（仅统一 key + .env 单价三变量 admin 只读）/
+    内容 4.3 聚合口径 · <b>plans/iter-15-verify.md T0</b> 字段事实（DeepSeek 缓存字段恒返回；GLM 类自填无缓存字段 → NULL → 显缺失）·
+    令牌全部来自 <b>design-system/tokens.md v1.3/v1.3.1 + components.md v1.4</b>，本稿<b>零新增令牌、零自造色值、零新增组件形态</b>（§8-⑥）·
+    宿主形态 = <b>design-iter-12</b>（灰底白卡 1080px 四卡双表）+ <b>design-iter-14</b>（开关行）——本稿为<b>加法扩展：第三 tab「遥测」</b>，既有区域零翻案
+  </div>
+  <div class="badge">状态：设计稿 iter-15 —— <b>呈批待基线</b>（提交 CEO 评审；批准后由主会话打 tag design-iter-15；§8 六项定夺项附推荐）</div>
+  <div style="font-size:12px;color:#3370FF;background:#F0F4FF;border:1px solid #E5E6EB;border-radius:8px;padding:8px 12px;margin:-12px 0 28px;line-height:1.7;">
+    <b>加法扩展纪律：</b>既有四卡 / 三态警示条 / 联网搜索开关行 / 用户与用量双表的位置、形态、文案<b>零变化</b>（§5 映射表 + §7 条 1~10 零回退组）；
+    遥测视图以<b>第三个 tab</b> 承载，共享后台框架与 403 门禁。成本口径<b>仅统一 key 模式</b>（定夺⑥）；自填模式列 token 不计成本并<b>明示「用户自带密钥」</b>；
+    缺失与未配置<b>不估算不造数</b>（铁律 5）。<b>样件内全部数值为虚构演示数据（铁律 5：线上度量只允许机器采集）</b>。
+  </div>
+
+  <!-- 演示控制 -->
+  <div class="demo-ctl">
+    <b>演示控制：</b>
+    <span class="seg">
+      <button id="btnLight" class="on">浅色</button>
+      <button id="btnDark">暗色</button>
+    </span>
+    <span style="border-left:1px solid #E5E6EB;padding-left:16px;"><b>遥测数据态：</b>
+      <label><input type="radio" name="telState" value="normal" checked> 正常</label>
+      <label><input type="radio" name="telState" value="gap"> 缺失时段</label>
+      <label><input type="radio" name="telState" value="noprice"> 单价未配置</label>
+      <label><input type="radio" name="telState" value="nocache"> 缓存字段全缺失</label>
+      <label><input type="radio" name="telState" value="empty"> 空窗口</label>
+      <label><input type="radio" name="telState" value="loading"> 加载中</label>
+      <label><input type="radio" name="telState" value="error"> 拉取失败</label>
+    </span>
+    <span class="note">§1 主样件可操作：tab 切换 / 时间窗切换（近 7/14/30 天）/ 失败重试。第 6 节锁定帧不随主题切换。</span>
+  </div>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">1</span>遥测视图主样件（AdminView 加法扩展 · 第三 tab，可交互）</h2>
+    <div class="sec-desc">
+      REQ-038 主流程：管理员进入后台 → 遥测视图 → 按日查看成本估算/命中率/工具用量 → 缺失时段见缺失标注。
+      载体定夺①（推荐 = 既有分段 tabs 加第三段「遥测」）；时间窗定夺④（推荐 = 近 7/14/30 天分段）。
+      四卡/警示条/开关行区域为 iter-12/14 基线静态承载（零翻案证据），用户/用量面板见引用占位。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.1 管理后台 · 遥测视图（可交互）<span class="tag">顶栏/四卡/开关行零变化 + tabs 2→3 加法 + 遥测面板四区</span></div>
+      <div class="stage">
+        <div class="tk admin-frame" id="admFrame">
+          <div class="adm-top">
+            <div class="adm-brand">
+              <svg viewBox="0 0 128 128" width="22" height="22" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+              喵喵 <span class="adm-tag">管理后台</span>
+            </div>
+            <span class="adm-sp"></span>
+            <button class="btn-icon32" title="切换主题" aria-label="切换主题"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" fill="currentColor"/></svg></button>
+            <button class="btn-ghost" title="返回主界面">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              返回主界面
+            </button>
+          </div>
+          <div class="adm-body">
+            <!-- 概览四卡（iter-12 基线零变化，静态承载） -->
+            <div class="stat-grid">
+              <div class="stat-card"><div class="sc-label">总用户数</div><div class="sc-value">47</div><div class="sc-sub">全部注册账号（含已封禁与管理员）</div></div>
+              <div class="stat-card"><div class="sc-label">今日请求</div><div class="sc-value">86</div><div class="sc-sub">今日 · 全部密钥模式合计</div></div>
+              <div class="stat-card"><div class="sc-label">今日 token</div><div class="sc-value">412,530</div><div class="sc-sub">今日 · 上游 usage 帧合计</div></div>
+              <div class="stat-card"><div class="sc-label">统一 key 每日用量</div><div class="sc-value">100<span class="sc-total"> / 2,000 次</span></div><div class="sc-prog"><div class="fill" style="width:5%"></div></div><div class="sc-sub">剩余 1,900 次</div></div>
+            </div>
+            <!-- 联网搜索开关行（iter-14 基线零变化，静态承载） -->
+            <div class="sw-row">
+              <span class="row-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="M3 12h18M12 3c2.5 2.6 3.9 5.7 3.9 9S14.5 18.4 12 21c-2.5-2.6-3.9-5.7-3.9-9S9.5 5.6 12 3z" stroke="currentColor" stroke-width="1.7"/></svg></span>
+              <span class="sw-title">联网搜索</span>
+              <span class="sw-desc">开启后 AI 可自动联网搜索并在回答前展示来源引用；关闭后 AI 直接回答，用户无感知</span>
+              <span class="sw-track" role="switch" aria-checked="true" aria-label="联网搜索开关（iter-14 基线形态引用）"><span class="sw-knob"></span></span>
+            </div>
+
+            <!-- tabs：2 → 3 加法（前两段零变化，第三段为本稿新增） -->
+            <div class="adm-tabs" role="radiogroup" aria-label="后台分区">
+              <button id="tabUsersBtn" role="radio" aria-checked="false">用户列表</button>
+              <button id="tabUsageBtn" role="radio" aria-checked="false">用量列表</button>
+              <button id="tabTelBtn" class="on" role="radio" aria-checked="true">遥测</button>
+            </div>
+
+            <!-- 用户/用量面板：零回退引用占位 -->
+            <section id="panelUsers" style="margin-top:12px;display:none;">
+              <div class="baseline-ref">用户列表面板（搜索 + 分页 + 封禁/解封/调配额）= design-iter-12 基线零回退区，本稿不重复样件——<br>形态与走查口径见 design/iter-12/index.html §1/§2 与 §7.2 条 12~36（本稿 §7 条 7 复跑引用）。</div>
+            </section>
+            <section id="panelUsage" style="margin-top:12px;display:none;">
+              <div class="baseline-ref">用量列表面板（筛选 + 排序 + 分页 + 缺失标注）= design-iter-12 基线零回退区，本稿不重复样件——<br>形态与走查口径见 design/iter-12/index.html §3 与 §7.2 条 37~43（本稿 §7 条 8 复跑引用）。</div>
+            </section>
+
+            <!-- 遥测面板（本稿新增区；工具行由 telArea 随数据态一体渲染，避免双工具行） -->
+            <section id="panelTel" style="margin-top:12px;">
+              <div id="telArea"></div>
+            </section>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>结构（自上而下，加法扩展示意）</b>：顶栏 52px（零变化，iter-12#2）/ 概览四卡区（零变化，tabs 上方常驻，iter-12#3~10）/
+        联网搜索开关行（零变化，design-iter-14 §4.1）/ 分段 tabs（<b>2 → 3 加法</b>：前两段文案/选中样式/radiogroup 语义零变化 + 新增「遥测」）/
+        遥测面板 = 工具行（时间窗分段 + 保留期注记）+ 卡 A 每日成本估算 + 双卡并排（卡 B 缓存命中率 / 卡 C 工具用量）+ 卡 D 按日成本明细表。
+        卡间距恒 16px；面板上距 tabs 12px（与既有两面板同口径）。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.2 卡 A：每日成本估算（规格）<span class="tag">定夺⑥口径落形；单价 admin 只读；自填不计成本并明示</span></div>
+      <table>
+        <tr><th style="width:130px">项</th><th>规格</th></tr>
+        <tr><td>容器</td><td>统计卡家族：<code>--c-surface</code> + 1px <code>--c-border</code> + <code>--r-lg</code>（12px）+ <code>--shadow-1</code> + padding 16px 20px；卡间距 16px</td></tr>
+        <tr><td>标题区</td><td>标题「每日成本估算」13px/600 <code>--c-text-1</code>（前置 icon 14px <code>--c-text-3</code>）；副题 12px <code>--c-text-3</code>：「仅统一 key 模式计成本；自填模式 tokens 不计成本」——成本口径<b>明示</b>于卡面</td></tr>
+        <tr><td>大数值</td><td>「今日成本估算」label 12px <code>--c-text-3</code> + 数值 <b>20px/600 <code>--c-text-1</code> tabular-nums</b>，格式 <code>¥ + 4 位小数</code>；右侧注「YYYY-MM-DD · 统一 key」12px text-3（日期 = 服务器本地今日）</td></tr>
+        <tr><td>分项三列</td><td>等宽栅格 gap 16px；每分项 = subtle-bg 内面板（border + r-md + padding 10/12）：label 12px text-3（输入/输出/缓存命中）+ tokens 13px/500 text-1 tabular + 分项小计 12px text-2 tabular（<code>¥4 位小数</code>）</td></tr>
+        <tr><td>单价行（只读）</td><td>分隔线上方 12px 区：label「单价（只读）」12px/500 text-2 + 值 12px text-2 tabular「输入 ¥2 / 1M tokens · 输出 ¥8 / 1M tokens · 缓存命中 ¥0.5 / 1M tokens」（实际值 = .env 三变量）+ 说明 12px text-3「单价由 backend/.env 三变量 AI_CHAT_PRICE_* 注入，admin 只读」。<b>全稿无单价编辑入口</b>（无输入框/无按钮/无模态）</td></tr>
+        <tr><td>自填行</td><td>同分隔线下第二行：「自填模式（用户自带密钥）：tokens 12,480 · 不计成本」12px text-3 + 尾随徽标「不计成本」（subtle-bg/text-2/border 胶囊）——「用户自带密钥」五字逐字定死（定夺⑥）；hover title「成本口径：部署者真实支出；自填模式使用用户自己的密钥，成本归用户」</td></tr>
+        <tr><td>单价未配置态</td><td>大数值与三小计显「—」（tokens 如实显示，数据不隐藏）；单价行值替换为「单价三变量未配置」warning 色；卡内 warning 提示条（warning-l 底 + 左缘 3px warning + 12px warning 字，padding 8/12，r-md）：「单价未配置：请在 backend/.env 配置 AI_CHAT_PRICE_INPUT / AI_CHAT_PRICE_OUTPUT / AI_CHAT_PRICE_CACHE_HIT 并重启后端，即可启用每日成本估算」——<b>不估算、不出现任何成本数字</b>（铁律 5）</td></tr>
+      </table>
+      <div class="ann"><b>成本口径（CHG-009 4.3 + 定夺⑥）</b>：分项小计 = Σ对应 tokens × 对应单价 ÷ 1,000,000——
+      输入 × <code>AI_CHAT_PRICE_INPUT</code> / 输出 × <code>AI_CHAT_PRICE_OUTPUT</code> / 缓存命中 × <code>AI_CHAT_PRICE_CACHE_HIT</code>（元 / 1M tokens，与上游计费单位一致）；
+      总计 = 三项之和；<b>仅统计 mode='unified' 的 llm 行</b>。全部后端机器聚合，无手工修正入口（铁律 5）。
+      显示精度：前端恒 4 位小数；后端计算保留 6 位小数（pytest 精确值断言口径见 §4）。</div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.3 卡 B：缓存命中率 / 卡 C：工具用量（双卡并排规格）</div>
+      <table>
+        <tr><th style="width:130px">项</th><th>规格</th></tr>
+        <tr><td>布局</td><td>两卡并排：<code>grid-template-columns: repeat(2, minmax(0,1fr))</code>，gap 16px；卡容器同卡 A（统计卡家族）；并排区与上下卡间距 16px</td></tr>
+        <tr><td>卡 B 标题区</td><td>「缓存命中率」13px/600 text-1 + icon；说明 12px text-3 逐字：「命中率 = Σ缓存命中 tokens ÷（Σ命中 + Σ未命中）· 仅统计上游返回缓存字段的调用」</td></tr>
+        <tr><td>卡 B 大数值</td><td>「窗口合计命中率」20px/600 tabular，格式 <code>NN.N%</code>；窗口内无任何带字段调用 → 显<b>缺失徽标</b>（不显 0%）</td></tr>
+        <tr><td>卡 B 按日行</td><td>内嵌表格（表格卡家族，tbl-in-card）四列：日期 / 缓存命中 tokens / 未命中 tokens / 命中率；数字列右对齐 tabular；该日缓存字段全 NULL → 两 tokens 列显「—」+ 命中率列缺失徽标「缺失」（warning-l/warning 胶囊 20px）——<b>永不显 0</b>（0 是合法命中值：首现 miss 日 hit=0 如实显 0）</td></tr>
+        <tr><td>卡 C 标题区</td><td>「工具用量」13px/600 text-1 + icon；说明 12px text-3 逐字：「按工具名 × 状态聚合；search 为当前唯一生产工具（本视图即搜索用量面板）」——暂缓池主题包⑤承载声明</td></tr>
+        <tr><td>卡 C 表格</td><td>四列：工具名 / 状态 / 次数 / 平均耗时；次数与耗时右对齐 tabular；状态徽标四态 = 成功（subtle-bg/<code>--c-success</code>/border）/ 失败（danger-l/danger）/ 超时（warning-l/warning）/ 已取消（hover-bg/text-2）——色组合沿工具步骤卡徽章五态家族（components.md v1.4）；空窗口显空文案「窗口内无工具调用记录」</td></tr>
+      </table>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.4 卡 D：按日成本明细表 + 缺失时段标注</div>
+      <table>
+        <tr><th style="width:130px">项</th><th>规格</th></tr>
+        <tr><td>标题区</td><td>「按日成本明细」13px/600 text-1 + icon；卡容器同卡 A</td></tr>
+        <tr><td>六列</td><td>日期 / 输入 tokens / 输出 tokens / 缓存命中 tokens / 成本估算 / 自填 tokens（不计成本）；日期列 text-1/500 tabular，数字列右对齐 tabular；th 12px/500 text-3（subtle-bg 底），td padding 12/16（表格卡家族照搬）</td></tr>
+        <tr><td>列口径</td><td>输入/输出/缓存命中 = 统一 key llm 行 Σ；成本估算 = 三项 × 单价合计（¥4 位小数；单价未配置 → 「—」）；缓存字段缺失日 → 缓存命中列「—」（title「上游未返回缓存字段」）；自填 tokens = mode='self' 的 Σtokens_total，<b>独立成列且列名恒带「（不计成本）」</b>（定夺⑥明示）</td></tr>
+        <tr><td>缺失时段</td><td>窗口内有遥测行缺口的自然日 → 卡内顶部琥珀行（gap-note 口径照搬 iter-12）：「部分时段无统计数据：仅显示已有数据（不估算补齐）」（warning-l/warning，padding 8/14，r-md）；表格仅列有数据日（无数据日不造空行）</td></tr>
+      </table>
+      <div class="ann"><b>0 与缺失的区分（铁律 5 走查要点）</b>：「0」= 机器采集真值（如首现 miss 日 hit=0、无工具调用日的次数列不出现该行），如实显示；
+      「缺失」= 上游未返回字段（缓存列 NULL）或该日无遥测行（整行不列 + 琥珀行标注）——二者视觉语言不同（数字 vs 徽标/「—」），走查条 27/37 断言。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">2</span>样件文案逐字登记表（v1.4.10 B 断言面 · 唯一来源）</h2>
+    <div class="sec-desc">本表为遥测视图全部用户可见文案的<b>唯一来源</b>；走查逐字断言（§7 标「文」条目）对照本表，一字一符不差。数值位以「X/N/日期」占位。</div>
+    <div class="spec">
+      <table>
+        <tr><th style="width:44px">编号</th><th style="width:120px">位置</th><th>文案（逐字）</th></tr>
+        <tr><td>T1</td><td>tab 第三段</td><td><code>遥测</code></td></tr>
+        <tr><td>T2</td><td>卡 A 标题</td><td><code>每日成本估算</code></td></tr>
+        <tr><td>T3</td><td>卡 A 副题</td><td><code>仅统一 key 模式计成本；自填模式 tokens 不计成本</code></td></tr>
+        <tr><td>T4</td><td>卡 A 数值 label</td><td><code>今日成本估算</code>（右侧注：<code>YYYY-MM-DD · 统一 key</code>）</td></tr>
+        <tr><td>T5</td><td>卡 A 分项 label</td><td><code>输入</code> / <code>输出</code> / <code>缓存命中</code></td></tr>
+        <tr><td>T6</td><td>单价行 label</td><td><code>单价（只读）</code></td></tr>
+        <tr><td>T7</td><td>单价行值</td><td><code>输入 ¥2 / 1M tokens · 输出 ¥8 / 1M tokens · 缓存命中 ¥0.5 / 1M tokens</code>（样件演示值；实际值由 .env 三变量注入，格式恒为「¥N / 1M tokens」）</td></tr>
+        <tr><td>T8</td><td>单价行说明</td><td><code>单价由 backend/.env 三变量 AI_CHAT_PRICE_* 注入，admin 只读</code></td></tr>
+        <tr><td>T9</td><td>自填行</td><td><code>自填模式（用户自带密钥）：tokens X · 不计成本</code> + 尾随徽标 <code>不计成本</code></td></tr>
+        <tr><td>T10</td><td>单价未配置提示</td><td><code>单价未配置：请在 backend/.env 配置 AI_CHAT_PRICE_INPUT / AI_CHAT_PRICE_OUTPUT / AI_CHAT_PRICE_CACHE_HIT 并重启后端，即可启用每日成本估算</code></td></tr>
+        <tr><td>T11</td><td>单价未配置·单价行值</td><td><code>单价三变量未配置</code></td></tr>
+        <tr><td>T12</td><td>卡 B 标题</td><td><code>缓存命中率</code></td></tr>
+        <tr><td>T13</td><td>卡 B 说明</td><td><code>命中率 = Σ缓存命中 tokens ÷（Σ命中 + Σ未命中）· 仅统计上游返回缓存字段的调用</code></td></tr>
+        <tr><td>T14</td><td>卡 B 数值 label</td><td><code>窗口合计命中率</code></td></tr>
+        <tr><td>T15</td><td>缺失徽标</td><td><code>缺失</code>（warning-l/warning 胶囊）</td></tr>
+        <tr><td>T16</td><td>卡 C 标题</td><td><code>工具用量</code></td></tr>
+        <tr><td>T17</td><td>卡 C 说明</td><td><code>按工具名 × 状态聚合；search 为当前唯一生产工具（本视图即搜索用量面板）</code></td></tr>
+        <tr><td>T18</td><td>卡 C 表头</td><td><code>工具名</code> / <code>状态</code> / <code>次数</code> / <code>平均耗时</code></td></tr>
+        <tr><td>T19</td><td>状态徽标</td><td><code>成功</code> / <code>失败</code> / <code>超时</code> / <code>已取消</code></td></tr>
+        <tr><td>T20</td><td>卡 C 空态</td><td><code>窗口内无工具调用记录</code></td></tr>
+        <tr><td>T21</td><td>卡 D 标题</td><td><code>按日成本明细</code></td></tr>
+        <tr><td>T22</td><td>卡 D 表头</td><td><code>日期</code> / <code>输入 tokens</code> / <code>输出 tokens</code> / <code>缓存命中 tokens</code> / <code>成本估算</code> / <code>自填 tokens（不计成本）</code></td></tr>
+        <tr><td>T23</td><td>缺失时段琥珀行</td><td><code>部分时段无统计数据：仅显示已有数据（不估算补齐）</code>（iter-12 用量表口径逐字沿用）</td></tr>
+        <tr><td>T24</td><td>时间窗分段</td><td><code>近 7 天</code> / <code>近 14 天</code> / <code>近 30 天</code></td></tr>
+        <tr><td>T25</td><td>保留期注记</td><td><code>遥测明细保留 90 天，超期数据自动清理</code>（定夺⑤语义呈现）</td></tr>
+        <tr><td>T26</td><td>加载态</td><td><code>正在加载遥测数据…</code></td></tr>
+        <tr><td>T27</td><td>失败态</td><td><code>遥测数据加载失败</code> + 按钮 <code>重试</code></td></tr>
+        <tr><td>T28</td><td>空窗口态</td><td><code>窗口内无遥测数据——新部署或尚无对话的日子属正常现象</code></td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">3</span>两异常形态锁定帧（数据缺失态 / 单价未配置态）</h2>
+    <div class="sec-desc">REQ-038 异常分支的两种 UI 形态 + 加载/失败/空窗口三态。§1 主样件可切换全部七种数据态实时预览；此处为规格定格。</div>
+    <div class="spec">
+      <div class="spec-title">3.1 状态矩阵（七态）</div>
+      <table>
+        <tr><th style="width:140px">数据态</th><th>触发（后端事实）</th><th>用户所见（= 验收口径）</th></tr>
+        <tr><td>正常</td><td>窗口内有 unified llm 行（DeepSeek 缓存字段恒返回，T0 取证）+ 单价已配置</td><td>卡 A 全量（大数值 + 三分项 + 单价行 + 自填行）；卡 B 按日命中率；卡 C 工具表；卡 D 明细</td></tr>
+        <tr><td><b>缺失时段</b></td><td>窗口内部分自然日无遥测行（采集中断/无流量）</td><td>卡 D 顶部琥珀行 T23；表格仅列有数据日；<b>不补零行、不估算</b>（铁律 5，REQ-025 既有口径沿用）</td></tr>
+        <tr><td><b>单价未配置</b></td><td><code>price.configured=false</code>（.env 三变量任一缺失）</td><td>卡 A：大数值与小计「—」、tokens 如实显示、warning 提示 T10、单价行值 T11；卡 D 成本列「—」；其余区不受影响（命中率/工具用量照常）</td></tr>
+        <tr><td><b>缓存字段全缺失</b></td><td>窗口内全部 llm 行缓存列 NULL（如仅 GLM 类自填流量）</td><td>卡 B 合计位显缺失徽标 T15（不显 0%）；按日行 tokens「—」+「缺失」徽标；卡 B 说明 T13 常驻（口径自释）</td></tr>
+        <tr><td>空窗口</td><td>窗口内零遥测行</td><td>面板整体空盒 T28（dashed border + surface，非错误态）；工具行与时间窗保留可切换</td></tr>
+        <tr><td>加载中</td><td>请求在途</td><td>spinner + T26（面板区居中，不清时间窗选择）</td></tr>
+        <tr><td>拉取失败</td><td>网络/5xx</td><td>danger-l banner T27 + 「重试」；重试保留当前时间窗选择（不清状态）</td></tr>
+      </table>
+      <div class="ann"><b>部分缺失口径（定夺⑤）</b>：某日同时存在带缓存字段行（unified/DeepSeek）与 NULL 行（自填/GLM）→
+      命中率仅按带字段行聚合（Σhit/(Σhit+Σmiss)），卡 B 说明 T13 已常驻自释「仅统计上游返回缓存字段的调用」——不另弹提示；
+      整天无带字段行 → 该日显「缺失」。<b>口径依据 CHG-009 4.3「任一侧缺失则该时段显示缺失标注」</b>：缺失判定粒度 = 时段（日）级聚合结果，非逐行。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">4</span>API 口径（随稿定案——T3 实现依据；体例沿 design-iter-12 §4 / design-iter-14 §6）</h2>
+    <div class="sec-desc">
+      硬门槛：<b>既有 admin 六端点（users/ban/unban/quota/usage/overview）+ PUT /api/admin/settings 形状零变化</b>，
+      既有 admin pytest 用例零改动复跑全绿（REQ-038 验收 1）。遥测为<b>新增一个只读聚合端点</b>（加法扩展，不触既有端点）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.1 GET /api/admin/telemetry（新端点 · 只读聚合）</div>
+      <table>
+        <tr><th style="width:170px">项</th><th>口径（推荐，随基线定案）</th></tr>
+        <tr><td>参数</td><td><code>days</code>（整数 1~90，默认 7；越界/非整数 → 422）——时间窗 = 截至<b>服务器本地今日</b>（<code>quota.today()</code> 口径，与 usage_daily.day / telemetry.day 同源，不引入时区换算）的近 N 个自然日</td></tr>
+        <tr><td>门禁</td><td><code>get_admin_user</code> 依赖（与既有六端点同一依赖）——非 admin → <b>403，响应体不含任何遥测字段</b>（REQ-038 验收 3）；普通用户界面侧无遥测入口（tab 在 AdminView 内，403 路由守卫已覆盖，前端零新增守卫）</td></tr>
+        <tr><td>数据源</td><td>telemetry 表（迁移 v8，REQ-037）：<code>kind='llm'</code> 行供成本与命中率（mode 区分 unified/self）；<code>kind='tool'</code> 行供工具用量；<b>全部机器聚合，无手工修正入口</b>（铁律 5）</td></tr>
+        <tr><td>成本聚合</td><td>仅 <code>mode='unified'</code> 的 llm 行：<code>cost_input = Σtokens_prompt × input_per_mtok ÷ 1e6</code>；output / cache_hit 同法（cache_hit 的 tokens 基数 = Σcache_hit_tokens）；<code>cost_total = 三项和</code>；后端保留 6 位小数，响应为数值（非字符串）；<b>单价未配置 → price.configured=false 且全部 cost_* 字段为 null</b>（tokens 字段照常如实返回）</td></tr>
+        <tr><td>命中率聚合</td><td><code>cache_rate = Σcache_hit_tokens ÷ (Σhit + Σmiss)</code>（该日带字段行聚合；NULL 行不参与）；整天无带字段行 → <code>cache_rate: null</code>（前端显「缺失」，不显 0）；tokens 分项为 null 时 JSON 输出 null（不是 0、不是缺字段）</td></tr>
+        <tr><td>工具聚合</td><td><code>GROUP BY tool_name, status</code>：count = 行数；avg_duration_ms = 均值四舍五入整数；排序固定 <code>tool_name ASC, status ASC</code>（确定性，走查可断言）</td></tr>
+        <tr><td>缺失语义</td><td>有数据的日子逐日列出、无数据日不出现在 <code>daily</code> 数组（前端以窗口天数比对判定缺口 → 琥珀行 T23）；遥测写失败行不补造（REQ-037 口径）——聚合层只见已落库行</td></tr>
+      </table>
+      <pre><code>GET /api/admin/telemetry?days=7
+→ 200 {
+  "window": { "days": 7, "date_from": "2026-08-13", "date_to": "2026-08-19" },
+  "price":  { "configured": true, "input_per_mtok": 2.0, "output_per_mtok": 8.0, "cache_hit_per_mtok": 0.5 },
+  "today_cost": {
+      "day": "2026-08-19",
+      "tokens_prompt": 182400, "tokens_completion": 46200, "cache_hit_tokens": 96512,
+      "cost_input": 0.364800, "cost_output": 0.369600, "cost_cache_hit": 0.048256, "cost_total": 0.782656,
+      "self_tokens_total": 12480
+  },
+  "daily": [
+      { "day": "2026-08-19",
+        "tokens_prompt": 182400, "tokens_completion": 46200,
+        "cache_hit_tokens": 96512, "cache_miss_tokens": 85888, "cache_rate": 0.529082,
+        "cost_total": 0.782656, "self_tokens_total": 12480 },
+      { "day": "2026-08-18", "…": "…" }                       ← 仅列有数据日；08-15 无数据则不出现（缺失时段）
+  ],
+  "tools": [
+      { "tool_name": "demo_weather", "status": "ok", "count": 2, "avg_duration_ms": 350 },
+      { "tool_name": "echo", "status": "ok", "count": 5, "avg_duration_ms": 6 },
+      { "tool_name": "search", "status": "ok", "count": 42, "avg_duration_ms": 2130 },
+      { "tool_name": "search", "status": "error", "count": 3, "avg_duration_ms": 890 },
+      { "tool_name": "search", "status": "timeout", "count": 1, "avg_duration_ms": 10000 }
+  ],
+  "retention_days": 90
+}
+
+GET /api/admin/telemetry?days=7          ← 普通用户：403，响应体零遥测字段
+GET /api/admin/telemetry?days=0|91|abc   ← 422（参数非法）
+单价未配置时：price.configured=false；today_cost.cost_* 与 daily[].cost_total 全部 null，tokens 字段如实</code></pre>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.2 既有面零变化声明 + 单价变量登记（T2/T3 卫生项）</div>
+      <table>
+        <tr><th style="width:190px">项</th><th>口径</th></tr>
+        <tr><td>既有端点</td><td>users / ban / unban / quota / usage / overview 六端点 + PUT /api/admin/settings：<b>形状零变化</b>（本稿不要求任何加法字段——遥测自足于新端点，overview 的「今日」四卡口径与遥测窗口口径分轨，不混用）；既有 admin pytest 用例零改动复跑全绿（REQ-038 验收 1 = iter-12 条 51/52 口径延伸）</td></tr>
+        <tr><td>单价 .env 变量</td><td><code>AI_CHAT_PRICE_INPUT</code> / <code>AI_CHAT_PRICE_OUTPUT</code> / <code>AI_CHAT_PRICE_CACHE_HIT</code>（元 / 1M tokens，非负小数；任一缺失或非法 → configured=false）——与统一 key 三变量、人设变量 <code>AI_CHAT_PRODUCT_PERSONA</code> 同法注入；<code>backend/.env.example</code> 占位随 T2 补；<b>admin 只读</b>：全仓库无写单价的端点与 UI（改价 = 改 .env + 重启，与改密钥同哲学）；变量值只出现在遥测端点 price 块（admin 可见）与成本计算，不入日志（卫生沿 REQ-031 口径）</td></tr>
+        <tr><td>前端请求面</td><td>AdminView 进入遥测 tab 时拉取一次；切换时间窗重拉；<b>零新增轮询</b>（管理员手动视图，不做自动刷新）；403 响应沿既有错误处理（理论上被路由守卫前置拦截）</td></tr>
+        <tr><td>T3 新增用例清单（pytest，对应 REQ-038 验收 2/3）</td><td>造数聚合数值断言（成本 = tokens×单价<b>精确值</b>；命中率数值；工具 count/均值）· 缺失 → null → 前端缺失标注链路 · 单价未配置 → configured=false + cost_* null + tokens 如实 · days 参数边界（1/90 通过；0/91/非整数 422）· 普通用户 403 零泄露 · 既有 admin 用例零改动复跑 · ruff clean</td></tr>
+        <tr><td>前端用例清单（vitest）</td><td>七态渲染（正常/缺失时段/单价未配置/缓存全缺失/空窗口/加载/失败）· 文案逐字（§2 登记表）· 0 与缺失区分 · 时间窗切换重拉 · tab 加法（前两 tab 行为零变化回归）</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">5</span>REQ-025/029 零回退映射（逐条对照既有走查编号）</h2>
+    <div class="sec-desc">本稿为加法扩展：<b>变的是多一个 tab 与一个面板，不变的是全部既有能力与口径</b>。「iter-12#」= design/iter-12/index.html §7.2 走查编号；「iter-8#」= 其清单内追溯的 REQ-025 初版编号；「iter-14#」= design-iter-14 走查编号。</div>
+    <div class="spec">
+      <table>
+        <tr><th style="width:210px">既有触点 / 口径</th><th style="width:150px">既有走查编号</th><th>本次处置</th></tr>
+        <tr><td>页面框架（灰底白卡 / 内容列 1080px）</td><td>iter-12#1</td><td><b>零变化</b>，遥测面板置于同一 adm-body 内</td></tr>
+        <tr><td>顶栏 52px（品牌/徽标/主题钮/返回）</td><td>iter-12#2（iter-8#5）</td><td><b>零变化</b></td></tr>
+        <tr><td>概览四卡区（位置/口径/三态进度）</td><td>iter-12#3~7、10、11</td><td><b>零变化</b>：卡区仍在 tabs 上方常驻，两 tab → 三 tab 均可见</td></tr>
+        <tr><td>near/burst 警示条（文案逐字）</td><td>iter-12#8、9（iter-8#9~11）</td><td><b>零变化</b></td></tr>
+        <tr><td>联网搜索开关行（位置/形态/toast/D6 附注）</td><td>iter-14#25~31</td><td><b>零变化</b>：仍在统计卡区后、tabs 前</td></tr>
+        <tr><td>分段 tabs（radiogroup / 选中样式）</td><td>iter-12#2</td><td><b>加法</b>：第三段「遥测」；「用户列表」「用量列表」两段文案/样式/aria 语义零变化</td></tr>
+        <tr><td>用户列表（搜索/分页/封禁/解封/调配额/模态/toast）</td><td>iter-12#12~36（iter-8#6~22）</td><td><b>零变化</b>，复跑原清单（§7 条 7）</td></tr>
+        <tr><td>用量列表（筛选/排序/分页/缺失标注/空态）</td><td>iter-12#37~43（iter-8#23~28）</td><td><b>零变化</b>，复跑原清单（§7 条 8）</td></tr>
+        <tr><td>403 卡 / 入口可见性 / 封禁登录横幅</td><td>iter-12#44~46（iter-8#1~4、29）</td><td><b>零变化</b>；遥测无新入口（tab 在 AdminView 内），普通用户 DOM 无遥测节点（§7 条 41）</td></tr>
+        <tr><td>六端点形状 + PUT settings + 19 用例门槛</td><td>iter-12#51、52</td><td><b>零变化</b>；遥测为新增端点（加法），既有端点零触达（REQ-038 验收 1）</td></tr>
+        <tr><td>统计同源口径（usage_daily 抽样比对）</td><td>iter-12#47（iter-8#43）</td><td><b>零变化</b>；遥测为并行新轨（telemetry 表），不替代配额数据面（REQ-037 口径）</td></tr>
+        <tr><td>亮暗双主题 / 样件数据虚构 / 适用性</td><td>iter-12#48~50</td><td><b>延伸复跑</b>（§7 条 42~44）</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">6</span>亮暗锁定对照（双帧并置，走查方法 = 找亮色残留）</h2>
+    <div class="sec-desc">同一 DOM，仅根节点令牌覆盖；暗色帧内任何肉眼发白块即为漏改裸色值。本节锁定帧不随「演示控制」切换。双主题承载口径（v1.4.10 B 第三子项）：浅色逐条 + 暗色全元素亮色残留扫描 + 关键文字令牌断言（iter-12 OBS-3 认可口径）。</div>
+
+    <div class="spec">
+      <div class="spec-title">6.1 遥测视图 · 正常态（浅 ↔ 暗）</div>
+      <div class="cols">
+        <div>
+          <div class="frame-cap">浅色（surface #FFFFFF 卡 / subtle-bg #FAFBFC 分项 / 琥珀 gap #FFF7E8）</div>
+          <div class="tk force-light admin-frame" id="lock1L"></div>
+        </div>
+        <div>
+          <div class="frame-cap">暗色（surface #1E2026 / subtle-bg #24272E / 琥珀 #38290F + #EDA23B）</div>
+          <div class="tk force-dark admin-frame" id="lock1D"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">6.2 遥测视图 · 单价未配置态（浅 ↔ 暗）</div>
+      <div class="cols">
+        <div>
+          <div class="frame-cap">浅色（warning-l #FFF7E8 + 左缘 #B45309；成本位「—」）</div>
+          <div class="tk force-light admin-frame" id="lock2L"></div>
+        </div>
+        <div>
+          <div class="frame-cap">暗色（warning-l #38290F + 左缘 #EDA23B）</div>
+          <div class="tk force-dark admin-frame" id="lock2D"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">7</span>T1 验收对照 + 走查清单（v1.4.4 硬要求，T3 任务级门槛）</h2>
+    <div class="sec-desc">
+      7.1 对照 plans/iter-15.md T1 验收与 REQ-038 验收原文；7.2 走查清单 44 条——断言面标注：
+      <b>[文]</b> = 样件文案逐字（v1.4.10 B，对照 §2 登记表唯一来源）；<b>[几]</b> = 几何断言（v1.4.11 B，computed 值）；
+      <b>[行]</b> = 行为断言（v1.4.13 B 适用项）；<b>[零]</b> = REQ-025/029 零回退复跑（§5 映射）。
+      <b>所有条目均须在浅色与暗色两个主题下逐条通过</b>（承载口径见 §6 说明）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">7.1 T1 验收 + REQ-038 验收对照（原文落点）</div>
+      <table>
+        <tr><th style="width:46%">验收标准（原文摘要）</th><th>本稿落点</th><th>状态</th></tr>
+        <tr><td>〔T1〕CEO 批准基线（tag design-iter-15）</td><td>本稿提交 CEO 评审；§8 六项定夺项附推荐</td><td>☑ 呈批</td></tr>
+        <tr><td>〔T1〕遥测视图形态与 API 口径定死</td><td>§1 视图规格 + §4 API 口径（端点/参数/响应/聚合公式/缺失与未配置语义/403）</td><td>☑ 已定案待批</td></tr>
+        <tr><td>〔T1〕缺失标注与「单价未配置不估算」语义定稿（样件文案逐字断言面 v1.4.10 B）</td><td>§2 逐字登记表（T10/T15/T23 等）+ §3.1 状态矩阵 + 走查条 22/23/27/37</td><td>☑ 已定稿</td></tr>
+        <tr><td>〔T1〕走查清单随稿（亮/暗双主题、几何断言面 v1.4.11 B、行为断言面适用项 v1.4.13 B）</td><td>7.2 共 44 条（[几] 11 条 / [行] 5 条 / 双主题全条目 + 条 42 专门承载）</td><td>☑ 已随稿</td></tr>
+        <tr><td>〔T1〕REQ-025/029 零回退组逐条映射既有走查编号</td><td>§5 映射表 + 7.2 条 1~10（iter-12#/iter-8#/iter-14# 逐条标注）</td><td>☑ 已映射</td></tr>
+        <tr><td>〔T1 卫生项〕spec「涉及页面」指针零滞后回填（v1.4.10 A）</td><td>spec REQ-038 指针已随本稿回填（呈批状态措辞；批准后主会话更新「已基线」）</td><td>☑ 已回填</td></tr>
+        <tr><td>〔REQ-038 验收 1〕既有六端点形状零变化或仅加法字段 + 既有 admin pytest 零改动复跑全绿</td><td>§4.2 零变化声明 + §5 映射 + 走查条 9</td><td>☑ 规格落点（T3 执行）</td></tr>
+        <tr><td>〔REQ-038 验收 2〕造数聚合数值断言（成本=tokens×单价精确值/命中率数值/缺失→缺失标注）</td><td>§4.1 聚合公式 + §4.2 T3 用例清单</td><td>☑ 规格落点（T3 执行）</td></tr>
+        <tr><td>〔REQ-038 验收 3〕普通用户访问遥测端点 403 且不泄露任何数据</td><td>§4.1 门禁行（get_admin_user，响应体零遥测字段）+ 走查条 41</td><td>☑ 规格落点（T3 执行）</td></tr>
+        <tr><td>〔REQ-038 验收 4〕design-iter-15 走查清单留档（亮/暗 + 缺失态 + 单价未配置态）</td><td>7.2 全清单；条 22/27/37 缺失态、条 22/23 单价未配置态、条 42 双主题</td><td>☑ 已随稿（T3 执行留档）</td></tr>
+      </table>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">7.2 走查清单（design-iter-15，44 条；勾选框供 T3 自查与 QA 取证）</div>
+      <table>
+        <tr><th style="width:26px">过</th><th style="width:36px">序号</th><th>断言面</th><th>触点</th><th>期望表现（= 验收口径；浅 = tokens 浅值 / 暗 = tokens 暗值）</th><th style="width:56px">样件</th><th style="width:92px">零回退引用</th></tr>
+        <tr><td><input type="checkbox"></td><td>1</td><td>[零]</td><td>页面框架</td><td>灰底 <code>--c-bg</code> + 白卡 <code>--c-surface</code>；内容列 min(1080px,100%-48px)；遥测面板在既有 adm-body 内，框架零变化</td><td>1.1</td><td>iter-12#1</td></tr>
+        <tr><td><input type="checkbox"></td><td>2</td><td>[零]</td><td>顶栏</td><td>52px 顶栏结构与文案零变化（品牌 + 「管理后台」徽标 + 主题钮 + 返回主界面）</td><td>1.1</td><td>iter-12#2 / iter-8#5</td></tr>
+        <tr><td><input type="checkbox"></td><td>3</td><td>[零]</td><td>概览四卡</td><td>四卡区位置（tabs 上方常驻）、口径、三态进度零变化；三个 tab 均可见</td><td>1.1</td><td>iter-12#3~7/10/11</td></tr>
+        <tr><td><input type="checkbox"></td><td>4</td><td>[零][文]</td><td>警示条</td><td>仅 near/burst 渲染；near/burst 文案逐字零回退（本稿常态样件不渲染，口径声明断言）</td><td>—</td><td>iter-12#8/9 / iter-8#9~11</td></tr>
+        <tr><td><input type="checkbox"></td><td>5</td><td>[零]</td><td>搜索开关行</td><td>位置（统计卡区后、tabs 前）、形态、说明文案、switch 组件零变化</td><td>1.1</td><td>iter-14#25~31</td></tr>
+        <tr><td><input type="checkbox"></td><td>6</td><td>[几][零]</td><td>tabs 加法</td><td>2 → 3 段：「用户列表」「用量列表」文案/选中样式（primary-l/primary/500，高 32px）/radiogroup 语义零变化；「遥测」段同款选中样式；段间无额外分隔</td><td>1.1</td><td>iter-12#2（加法）</td></tr>
+        <tr><td><input type="checkbox"></td><td>7</td><td>[零]</td><td>用户列表面板</td><td>搜索/分页/封禁/解封/调配额/模态/toast 全能力复跑原清单不回退</td><td>占位引用</td><td>iter-12#12~36</td></tr>
+        <tr><td><input type="checkbox"></td><td>8</td><td>[零]</td><td>用量列表面板</td><td>筛选/排序/分页/缺失标注/空态全能力复跑原清单不回退</td><td>占位引用</td><td>iter-12#37~43</td></tr>
+        <tr><td><input type="checkbox"></td><td>9</td><td>[零]</td><td>端点兼容</td><td>六端点 + PUT settings 形状零变化；既有 admin pytest 零改动复跑全绿；遥测为新增端点</td><td>§4.2</td><td>iter-12#51/52</td></tr>
+        <tr><td><input type="checkbox"></td><td>10</td><td>[零]</td><td>403/入口/横幅</td><td>403 卡、入口可见性、封禁登录横幅复跑原清单不回退</td><td>—</td><td>iter-12#44~46</td></tr>
+        <tr><td><input type="checkbox"></td><td>11</td><td>[文][几]</td><td>时间窗分段</td><td>三段文案逐字 T24（近 7 天/近 14 天/近 30 天）；高 32px、选中 primary-l/primary/500（分段控件既有形态）；默认「近 7 天」</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>12</td><td>[文]</td><td>保留期注记</td><td>工具行右端逐字 T25「遥测明细保留 90 天，超期数据自动清理」12px text-3（定夺⑤语义呈现；retention_days 由响应供数）</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>13</td><td>[行]</td><td>时间语义</td><td><b>行为 · 时间感知</b>：窗口右端点 = 服务器本地今日——响应 <code>date_to</code> 与 usage_daily.day 同口径（quota.today）；今日有数据时 daily 含今日行（pytest + 真浏览器断言「响应含当日日期」）</td><td>§4.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>14</td><td>[行]</td><td>窗口切换</td><td><b>行为 · 交互位置</b>：切换时间窗仅重载遥测面板内容（请求期间显加载态）；tab 停留在「遥测」、窗口选择保留；不触发其他面板请求</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>15</td><td>[几]</td><td>遥测卡容器</td><td>卡 A/B/C/D 均：surface + 1px border + 圆角 12px（r-lg）+ shadow-1 + padding 16px 20px（computed）；相邻卡间距恒 16px；并排双卡 grid 等宽 gap 16px；面板上距 tabs 12px</td><td>1.1/6</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>16</td><td>[文]</td><td>卡 A 标题区</td><td>标题逐字 T2 + 副题逐字 T3；标题 13px/600 text-1，副题 12px text-3</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>17</td><td>[文][几]</td><td>卡 A 大数值</td><td>label 逐字 T4；数值 20px/600 tabular-nums，格式「¥ + 4 位小数」；右侧注含当日日期与「统一 key」</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>18</td><td>[文][几]</td><td>分项三列</td><td>label 逐字 T5（输入/输出/缓存命中）；三列等宽栅格 gap 16px；分项内面板 subtle-bg + border + r-md + padding 10/12；tokens 13px/500 tabular，小计 12px text-2「¥4 位小数」</td><td>1.1/6</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>19</td><td>[行]</td><td>成本口径</td><td><b>行为 · 数值正确</b>：成本 = Σtokens×单价÷1e6 三项分项（仅 unified 行）；造数精确值断言（REQ-038 验收 2，pytest）；前端显示 = 后端值 4 位小数截显（不做前端再计算）</td><td>§4.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>20</td><td>[文]</td><td>单价行</td><td>label 逐字 T6 + 值格式 T7（「¥N / 1M tokens」×3）+ 说明逐字 T8；<b>admin 只读：全稿无单价编辑入口</b>（无输入框/按钮/模态——存在性断言）</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>21</td><td>[文]</td><td>自填行</td><td>逐字 T9：「自填模式（用户自带密钥）：tokens X · 不计成本」+「不计成本」徽标；「用户自带密钥」五字不差（定夺⑥明示口径）；自填 tokens 列入展示且不计入任何成本数字</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>22</td><td>[文][几]</td><td>单价未配置态</td><td>大数值与小计显「—」、tokens 如实显示；warning 提示逐字 T10（warning-l 底 + 左缘 3px warning，padding 8/12，r-md，12px）；单价行值逐字 T11（warning 色）；<b>不出现任何成本数字</b>（铁律 5）；其余卡区不受影响</td><td>1.1（切态）/6.2</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>23</td><td>[行]</td><td>未配置不估算</td><td><b>行为 · 如实性</b>：单价未配置时后端 cost_* 恒 null、前端恒「—」——变异断言（配置态翻转后 DOM 无 ¥ 数字残留）</td><td>1.1/§4.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>24</td><td>[文]</td><td>卡 B 标题区</td><td>标题逐字 T12 + 说明逐字 T13（公式与「仅统计上游返回缓存字段的调用」）</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>25</td><td>[行]</td><td>命中率数值</td><td><b>行为 · 数值正确</b>：窗口合计与按日命中率 = Σhit/(Σhit+Σmiss)（造数断言，REQ-038 验收 2）；格式 NN.N%</td><td>§4.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>26</td><td>[几]</td><td>卡 B 按日行</td><td>四列（日期/命中/未命中/命中率）；th 12px/500 text-3 subtle-bg 底、padding 10/16；td padding 12/16；数字列右对齐 tabular；行 hover hover-bg</td><td>1.1/6</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>27</td><td>[文][行]</td><td>缓存缺失日</td><td><b>行为 · 如实性</b>：该日缓存字段全 NULL → 两 tokens 列「—」+ 命中率列缺失徽标逐字 T15（warning-l/warning，高 20px）——<b>永不显 0</b>；合法 0 值（首现 miss 日 hit=0）如实显 0（T0 取证语义）</td><td>1.1（切 nocache）</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>28</td><td>[文]</td><td>缓存全缺失态</td><td>窗口合计位显缺失徽标 T15（不显 0%、不显 NaN）；说明 T13 常驻自释口径</td><td>1.1（切 nocache）</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>29</td><td>[行]</td><td>部分缺失口径</td><td><b>行为 · 口径</b>：混合日（带字段行 + NULL 行并存）命中率仅按带字段行聚合、不另弹提示（定夺⑤，CHG-009 4.3 时段级判定）——pytest 造数断言</td><td>§3.1/§4.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>30</td><td>[文]</td><td>卡 C 标题区</td><td>标题逐字 T16 + 说明逐字 T17（含「本视图即搜索用量面板」——暂缓池主题包⑤承载声明）</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>31</td><td>[文][几]</td><td>卡 C 表格</td><td>表头逐字 T18；次数/平均耗时右对齐 tabular；th/td 规格同条 26</td><td>1.1/6</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>32</td><td>[文][几]</td><td>状态徽标</td><td>四态逐字 T19；色组合：成功 subtle-bg/success/border、失败 danger-l/danger、超时 warning-l/warning、已取消 hover-bg/text-2；胶囊高 20px/12px·500（徽章家族既有形态）</td><td>1.1/6</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>33</td><td>[行]</td><td>工具聚合口径</td><td><b>行为 · 数值正确</b>：按 tool_name×status 聚合 count 与 avg_duration_ms（造数断言）；排序固定 tool_name ASC, status ASC；search 行即搜索用量面板数据</td><td>§4.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>34</td><td>[文]</td><td>卡 C 空态</td><td>窗口内零 tool 行 → 逐字 T20「窗口内无工具调用记录」（非错误态）</td><td>1.1（切 empty）</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>35</td><td>[文][几]</td><td>卡 D 明细表</td><td>标题逐字 T21 + 六列表头逐字 T22；「自填 tokens（不计成本）」列名括号六字不差；日期列 text-1/500 tabular；数字列右对齐</td><td>1.1/6</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>36</td><td>[行]</td><td>明细列口径</td><td><b>行为 · 口径</b>：输入/输出/缓存命中 = unified Σ；成本列单价未配置 → 「—」；缓存缺失日缓存列「—」+ title「上游未返回缓存字段」；自填列 = self Σtokens_total 独立成列</td><td>1.1/§4.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>37</td><td>[文][几]</td><td>缺失时段琥珀行</td><td>窗口有缺口日 → 卡 D 顶部逐字 T23（iter-12 用量表口径沿用）；warning-l/warning，padding 8/14，r-md，12px；无数据日不造空行（不估算补齐，铁律 5）</td><td>1.1（切 gap）/6</td><td>iter-12#42 同文</td></tr>
+        <tr><td><input type="checkbox"></td><td>38</td><td>[文]</td><td>加载态一帧</td><td><b>加载态一帧取证</b>（v1.4.10 B）：mock 慢响应下运行时截取 spinner + 逐字 T26「正在加载遥测数据…」帧；不以模板零改动替代</td><td>1.1（切 loading）</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>39</td><td>[文][行]</td><td>失败态</td><td>danger-l banner 逐字 T27 + 「重试」按钮；<b>行为 · 交互位置</b>：重试保留当前时间窗选择（不清状态，REQ-007 重试语义沿用）</td><td>1.1（切 error）</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>40</td><td>[文]</td><td>空窗口态</td><td>窗口零遥测行 → 面板整体空盒逐字 T28（dashed border + surface，非错误态）；工具行与时间窗保留可切换</td><td>1.1（切 empty）</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>41</td><td>[行]</td><td>遥测端点 403</td><td><b>行为 · 门禁</b>：普通用户 GET /api/admin/telemetry → 403 且响应体零遥测字段（pytest，REQ-038 验收 3）；普通用户界面 DOM 无遥测 tab（在 AdminView 403 守卫之内）；普通用户任何界面/接口获取不到遥测数据（REQ-025 验收 5 延伸）</td><td>§4.1</td><td>iter-12#44 同族</td></tr>
+        <tr><td><input type="checkbox"></td><td>42</td><td>[零]</td><td>亮暗双主题</td><td>全部条目浅/暗各过一遍；§6 两组锁定帧暗色无亮色残留；关键文字令牌断言（text-1/2/3 与 warning/primary 族）；正文对比度 ≥4.5:1（tokens v1.3 计算值）</td><td>6.1/6.2</td><td>iter-12#48</td></tr>
+        <tr><td><input type="checkbox"></td><td>43</td><td>[零]</td><td>样件数据</td><td>全部演示数值（tokens/成本/命中率/工具次数）为虚构；线上数值只由 telemetry 表机器采集渲染，不手填不编造（铁律 5）</td><td>头部声明</td><td>iter-12#49</td></tr>
+        <tr><td><input type="checkbox"></td><td>44</td><td>[零]</td><td>适用性</td><td>移动端不适用（admin 桌面优先，表格 overflow-x 横滚保护沿 iter-12 精神）；趋势图表不做（数值表格口径，REQ-029/CHG-004 延续）；不做自动刷新轮询</td><td>§4.2</td><td>iter-12#50</td></tr>
+      </table>
+      <div class="ann">共 <b>44</b> 条（零回退组 1~10 / 工具行与时间语义 11~14 / 成本卡 15~23 / 命中率 24~29 / 工具用量 30~34 /
+      明细表 35~37 / 状态与门禁 38~41 / 全局 42~44）。断言面计数：[文] 19 条、[几] 11 条、[行] 13 条、[零] 15 条（一条可多标）。
+      零回退组（末列非「—」）复验时对照原清单期望逐条取证；行为类由 T3 pytest/vitest 或手工走查留档（plans/iter-15-verify.md）。
+      <b>所有条目须在浅色与暗色双主题下各过一遍</b>（承载口径 = §6 说明）。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">8</span>CEO 定夺项（6 项 —— 附推荐，随基线拍板）</h2>
+    <div class="sec-desc">沿 iter-1~14 固化模式：设计师给推荐方案与理由 → CEO 拍板 → 固化为决策记录，T3 按定案实现。本稿全部样件已按「推荐」落形。</div>
+
+    <table>
+      <tr><th style="width:40px">编号</th><th>问题</th><th>选项与推荐（样件已按推荐落形）</th><th>理由 / 备选（未采纳留档）</th></tr>
+      <tr>
+        <td>①</td>
+        <td>遥测视图载体（REQ-038「形态随 design-iter-15」；加法扩展纪律：不重排既有四卡与表格）</td>
+        <td><b>推荐：AdminView 既有分段 tabs 加第三段「遥测」</b>——新面板与用户/用量面板同级；四卡/警示条/开关行原位常驻</td>
+        <td>零新路由、零新入口（403 守卫与后台框架天然复用）；与 iter-12「单页多 tab」形态一致；管理员心智：治理与观测同一后台。<br>备选 A（未采纳）：独立路由 /admin/telemetry——新增路由与入口面，超出加法幅度；备选 B（未采纳）：概览区再嵌一排遥测卡——四卡之上再堆叠，正撞 CEO CHG-006「堆砌无体验」痛点，且窗口聚合与「今日」快照口径混排</td>
+      </tr>
+      <tr>
+        <td>②</td>
+        <td>遥测聚合端点形状（沿 iter-12/14 overview 加法扩展先例；REQ-038 验收 1 六端点零变化门槛）</td>
+        <td><b>推荐：新增只读端点 GET /api/admin/telemetry?days=N</b>（§4.1 全形状定案）；既有六端点 + PUT settings 零触达</td>
+        <td>窗口聚合（daily 数组 + 工具表）无法塞进 overview 的今日快照形状；新端点 = 加法中的加法（既有端点逐字节不动，19+ 既有用例零改动的最稳路径）。<br>备选（未采纳）：overview 加 telemetry 嵌套字段——overview 消费方全部感知形状膨胀，且今日快照与 N 日窗口语义混居一端点</td>
+      </tr>
+      <tr>
+        <td>③</td>
+        <td>单价单位与显示精度（定夺⑥已定「.env 单价三变量、admin 只读」，单位与精度为设计参数）</td>
+        <td><b>推荐：元 / 1M tokens（与 DeepSeek/GLM 上游计费单位一致）；前端恒 4 位小数，后端计算保留 6 位</b>；变量名 <code>AI_CHAT_PRICE_INPUT/OUTPUT/CACHE_HIT</code></td>
+        <td>1M tokens 是上游账单单位，部署者照账单填值零换算；日成本量级在 ¥0.x~¥xx，4 位小数够分辨缓存命中的小额收益又不噪。<br>备选（未采纳）：元/千 tokens——与上游账单单位不符，部署者心算换算易错</td>
+      </tr>
+      <tr>
+        <td>④</td>
+        <td>时间窗选择形态（REQ-038 主流程「按日查看」；保留期 90 天为上界）</td>
+        <td><b>推荐：近 7 / 14 / 30 天三档分段（days∈[1,90]，默认 7，越界 422）</b>；右端点恒为服务器本地今日</td>
+        <td>遥测是聚合观测视图（非逐日翻账）——三档覆盖日常/周度/月度复盘；≤90 保留期天然满足；分段控件为既有登记形态零新组件。自由日期范围已由用量列表承载（不重复）。<br>备选（未采纳）：date_from/date_to 自由区间——与用量表筛选重复建设，且遥测聚合语义（窗口合计命中率）在任意碎片区间意义弱</td>
+      </tr>
+      <tr>
+        <td>⑤</td>
+        <td>缓存字段部分缺失口径（T0 事实：DeepSeek 恒返回、GLM 类自填无字段 → NULL；混合日如何聚合）</td>
+        <td><b>推荐：日级聚合仅计带字段行（Σhit/(Σhit+Σmiss)）+ 卡 B 说明常驻自释；整天无带字段行 → 该日显「缺失」</b>（CHG-009 4.3「任一侧缺失该时段显缺失」的时段级落地）</td>
+        <td>统一 key（DeepSeek）数据永远可见可算，自填 NULL 行不污染分母——缺失判定粒度 = 时段聚合结果，与 CHG-009 4.3 原文一致。<br>备选（未采纳）：任一行缺失即整天显缺失——过严，混合部署下 DeepSeek 侧命中率永远不可见，违背 B1「量化分割降本」目标</td>
+      </tr>
+      <tr>
+        <td>⑥</td>
+        <td>单价未配置时的成本卡行为（REQ-038 异常分支「不估算并提示未配置」的落形细节）</td>
+        <td><b>推荐：tokens 如实显示、成本位显「—」、warning 提示 T10（含三变量名与重启指引）；命中率/工具用量区不受影响</b></td>
+        <td>数据面（tokens）是机器真值不该因配置缺失隐藏；估算面（成本）无单价即无定义，「—」+ 指引是不造数的唯一诚实形态（铁律 5）。<br>备选（未采纳）：内置默认单价估算——造数，且默认价与部署者实际账单不符会产生错误决策依据</td>
+      </tr>
+    </table>
+
+    <div class="spec" style="margin-top:16px;">
+      <div class="spec-title">令牌 / 组件 / 卫生评估结论</div>
+      <table>
+        <tr><th style="width:190px">项</th><th>结论</th></tr>
+        <tr><td>新令牌</td><td><b>无提案</b>——零新增令牌、零自造色值（产品组件一律 var()；缺失语义 = warning 族既有、中性徽标 = hover-bg/text-2 既有、表格/卡片/分段/胶囊均为登记形态）</td></tr>
+        <tr><td>components.md</td><td><b>零新增组件形态</b>——遥测卡 = 统计卡家族变体（同规格参数）、明细表 = 表格卡家族、徽标 = 徽章家族、时间窗 = 分段控件；无需登记动作</td></tr>
+        <tr><td>卫生（铁律 5 / REQ-031 口径）</td><td>遥测端点响应与前端不含 key、不含消息内容、不含工具结果全文（telemetry 表本身即卫生表，REQ-037 验收 5）；单价变量值仅存于 .env 与遥测 price 块（admin 可见），不入日志</td></tr>
+        <tr><td>design/proto</td><td><b>不同步</b>（proto 定位 iter-1 核心闭环原型，遥测为 admin 面，沿 CHG-006/009 影响评估口径）</td></tr>
+      </table>
+    </div>
+
+    <div class="ann" style="margin-top:16px;">
+      <b>基线声明</b>：本稿为 iter-15 T1 交付物，呈 CEO 评审；批准后由主会话打 tag <code>design-iter-15</code> 并将 spec REQ-038「涉及页面」
+      措辞由「呈批待基线」更新为「已基线」。基线后任何改动须先登记变更，不接受「顺手改」。设计稿基线批准权限归 CEO，本稿不自行打 tag、不提交 git。
+      <b>卫生项已办</b>：spec REQ-038「涉及页面」指针已随本稿产出零滞后回填（v1.4.10 A 防线；NCR-iter12-001 教训——不等批准再回填）。
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (s) { return document.querySelector(s); };
+  var $$ = function (s) { return Array.prototype.slice.call(document.querySelectorAll(s)); };
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  function fmt(n) { return Number(n).toLocaleString('zh-Hans-CN'); }
+  function money(n) { return n == null ? '—' : '¥' + Number(n).toFixed(4); }
+  function pct(r) { return r == null ? null : (r * 100).toFixed(1) + '%'; }
+
+  /* ================= 主题（演示控制；锁定帧 force-* 不随动） ================= */
+  var TK_KEY = 'mm-demo-theme';
+  function applyTheme(dark) {
+    $$('.tk').forEach(function (t) {
+      if (t.classList.contains('force-light') || t.classList.contains('force-dark')) return;
+      t.classList.toggle('dark', dark);
+    });
+    $('#btnLight').classList.toggle('on', !dark);
+    $('#btnDark').classList.toggle('on', dark);
+  }
+  $('#btnLight').addEventListener('click', function () { applyTheme(false); try { localStorage.setItem(TK_KEY, 'light'); } catch (e) {} });
+  $('#btnDark').addEventListener('click', function () { applyTheme(true); try { localStorage.setItem(TK_KEY, 'dark'); } catch (e) {} });
+  try { if (localStorage.getItem(TK_KEY) === 'dark') applyTheme(true); } catch (e) {}
+
+  /* ================= 遥测演示数据（全虚构，铁律 5；成本由 tokens×单价机器计算，口径与 §4.1 一致） ================= */
+  var TODAY = '2026-08-19'; /* 服务器本地今日（演示锚点） */
+  var PRICE = { input: 2.0, output: 8.0, cache_hit: 0.5 }; /* 元 / 1M tokens（样件值 = T7） */
+  function dayStr(back) {
+    var d = new Date(2026, 7, 19); /* 2026-08-19 */
+    d.setDate(d.getDate() - back);
+    var m = String(d.getMonth() + 1).padStart(2, '0');
+    var dd = String(d.getDate()).padStart(2, '0');
+    return d.getFullYear() + '-' + m + '-' + dd;
+  }
+  function mkDay(back) {
+    /* 确定性伪值：量级合理、逐日有波动（演示用） */
+    var s = (back * 37) % 23;
+    var prompt = 120000 + s * 6200;
+    var completion = 30000 + ((s * 13) % 9) * 2600;
+    var hit = back === 6 ? 0 : Math.round(prompt * (0.32 + (s % 5) * 0.09)); /* 最早一天首现 miss：hit=0 为合法真值 */
+    return { day: dayStr(back), prompt: prompt, completion: completion, hit: hit, miss: prompt - hit, self: 8000 + s * 420 };
+  }
+  function costOf(d) {
+    return {
+      ci: d.prompt * PRICE.input / 1e6,
+      co: d.completion * PRICE.output / 1e6,
+      cc: d.hit * PRICE.cache_hit / 1e6
+    };
+  }
+  function mkTools() {
+    return [
+      { name: 'demo_weather', status: 'ok', count: 2, avg: 350 },
+      { name: 'echo', status: 'ok', count: 5, avg: 6 },
+      { name: 'search', status: 'ok', count: 42, avg: 2130 },
+      { name: 'search', status: 'error', count: 3, avg: 890 },
+      { name: 'search', status: 'timeout', count: 1, avg: 10000 }
+    ];
+  }
+  var ST_PILL = { ok: ['pill-ok', '成功'], error: ['pill-err', '失败'], timeout: ['pill-to', '超时'], cancelled: ['pill-cancel', '已取消'] };
+  var ICO_COIN = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.7"/><path d="M12 7.5v9M9.5 9.8c.6-.8 1.5-1.2 2.5-1.2 1.4 0 2.5.8 2.5 2 0 2.6-5 1.6-5 4 0 1.2 1.1 2 2.5 2 1 0 1.9-.4 2.5-1.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+  var ICO_CACHE = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 3 4 7v10l8 4 8-4V7l-8-4z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M4 7l8 4 8-4M12 11v10" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+  var ICO_TOOL = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4 2.6-2.6z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+  var ICO_LIST = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M4 5h16M4 12h16M4 19h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
+
+  /* ================= 遥测面板渲染（七态） ================= */
+  var tel = { win: 7, state: 'normal' };
+
+  function renderCostCard(daily, priced) {
+    var t = daily[daily.length - 1] || null; /* 今日行（若存在） */
+    var bigHtml, bdHtml, priceHtml;
+    if (!t) {
+      bigHtml = '<div class="tc-big-row"><span class="tc-big-label">今日成本估算</span><span class="tc-big">—</span><span class="tc-big-sub">' + TODAY + ' · 今日暂无遥测行</span></div>';
+    } else if (priced) {
+      var c = costOf(t);
+      bigHtml = '<div class="tc-big-row"><span class="tc-big-label">今日成本估算</span><span class="tc-big">' + money(c.ci + c.co + c.cc) + '</span><span class="tc-big-sub">' + esc(t.day) + ' · 统一 key</span></div>';
+    } else {
+      bigHtml = '<div class="tc-big-row"><span class="tc-big-label">今日成本估算</span><span class="tc-big">—</span><span class="tc-big-sub">' + esc(t.day) + ' · 统一 key</span></div>';
+    }
+    if (t) {
+      var c2 = priced ? costOf(t) : { ci: null, co: null, cc: null };
+      bdHtml = '<div class="bd-grid">' +
+        '<div class="bd-item"><div class="bd-label">输入</div><div class="bd-tokens">' + fmt(t.prompt) + ' tokens</div><div class="bd-cost">' + money(c2.ci) + '</div></div>' +
+        '<div class="bd-item"><div class="bd-label">输出</div><div class="bd-tokens">' + fmt(t.completion) + ' tokens</div><div class="bd-cost">' + money(c2.co) + '</div></div>' +
+        '<div class="bd-item"><div class="bd-label">缓存命中</div><div class="bd-tokens">' + fmt(t.hit) + ' tokens</div><div class="bd-cost">' + money(c2.cc) + '</div></div>' +
+        '</div>';
+    } else { bdHtml = ''; }
+    if (priced) {
+      priceHtml = '<div class="kv-row"><span class="kv-label">单价（只读）</span><span class="kv-val">输入 ¥' + PRICE.input + ' / 1M tokens · 输出 ¥' + PRICE.output + ' / 1M tokens · 缓存命中 ¥' + PRICE.cache_hit + ' / 1M tokens</span><span class="kv-note">单价由 backend/.env 三变量 AI_CHAT_PRICE_* 注入，admin 只读</span></div>';
+    } else {
+      priceHtml = '<div class="kv-row"><span class="kv-label">单价（只读）</span><span class="kv-val" style="color:var(--c-warning);">单价三变量未配置</span><span class="kv-note">单价由 backend/.env 三变量 AI_CHAT_PRICE_* 注入，admin 只读</span></div>' +
+        '<div class="warn-hint">单价未配置：请在 backend/.env 配置 AI_CHAT_PRICE_INPUT / AI_CHAT_PRICE_OUTPUT / AI_CHAT_PRICE_CACHE_HIT 并重启后端，即可启用每日成本估算</div>';
+    }
+    var selfTok = 0; daily.forEach(function (d) { selfTok += d.self; });
+    var selfHtml = '<div class="kv-row" title="成本口径：部署者真实支出；自填模式使用用户自己的密钥，成本归用户"><span class="kv-label">自填模式（用户自带密钥）</span><span class="kv-val">tokens ' + fmt(selfTok) + ' · 不计成本</span><span class="pill pill-nocost">不计成本</span></div>';
+    return '<div class="tel-card"><div class="tc-head"><span class="tc-ico">' + ICO_COIN + '</span>每日成本估算</div>' +
+      '<div class="tc-sub">仅统一 key 模式计成本；自填模式 tokens 不计成本</div>' + bigHtml + bdHtml + priceHtml + selfHtml + '</div>';
+  }
+
+  function renderCacheCard(daily) {
+    var sumHit = 0, sumMiss = 0, any = false;
+    daily.forEach(function (d) { if (d.hit != null) { sumHit += d.hit; sumMiss += d.miss; any = true; } });
+    var total = any ? pct(sumHit / (sumHit + sumMiss)) : null;
+    var rows = daily.slice().reverse().map(function (d) {
+      if (d.hit == null) {
+        return '<tr><td class="day-cell">' + esc(d.day) + '</td><td class="num">—</td><td class="num">—</td><td class="num"><span class="pill pill-miss">缺失</span></td></tr>';
+      }
+      var r = (d.hit + d.miss) > 0 ? d.hit / (d.hit + d.miss) : 0;
+      return '<tr><td class="day-cell">' + esc(d.day) + '</td><td class="num mono">' + fmt(d.hit) + '</td><td class="num mono">' + fmt(d.miss) + '</td><td class="num mono">' + pct(r) + '</td></tr>';
+    }).join('');
+    return '<div class="tel-card"><div class="tc-head"><span class="tc-ico">' + ICO_CACHE + '</span>缓存命中率</div>' +
+      '<div class="tc-sub">命中率 = Σ缓存命中 tokens ÷（Σ命中 + Σ未命中）· 仅统计上游返回缓存字段的调用</div>' +
+      '<div class="tc-big-row"><span class="tc-big-label">窗口合计命中率</span>' +
+      (total == null ? '<span class="pill pill-miss">缺失</span>' : '<span class="tc-big">' + total + '</span>') + '</div>' +
+      '<div class="tbl-in-card"><table class="adm-table"><thead><tr><th>日期</th><th class="num">缓存命中 tokens</th><th class="num">未命中 tokens</th><th class="num">命中率</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  }
+
+  function renderToolCard(tools) {
+    var body;
+    if (!tools.length) {
+      body = '<div style="padding:24px 0;text-align:center;color:var(--c-text-3);font-size:12px;">窗口内无工具调用记录</div>';
+    } else {
+      body = '<div class="tbl-in-card"><table class="adm-table"><thead><tr><th>工具名</th><th>状态</th><th class="num">次数</th><th class="num">平均耗时</th></tr></thead><tbody>' +
+        tools.map(function (t) {
+          var p = ST_PILL[t.status];
+          return '<tr><td style="color:var(--c-text-1);font-weight:500;">' + esc(t.name) + '</td><td><span class="pill ' + p[0] + '">' + p[1] + '</span></td><td class="num mono">' + fmt(t.count) + '</td><td class="num mono">' + fmt(t.avg) + ' ms</td></tr>';
+        }).join('') + '</tbody></table></div>';
+    }
+    return '<div class="tel-card"><div class="tc-head"><span class="tc-ico">' + ICO_TOOL + '</span>工具用量</div>' +
+      '<div class="tc-sub">按工具名 × 状态聚合；search 为当前唯一生产工具（本视图即搜索用量面板）</div>' + body + '</div>';
+  }
+
+  function renderDetailCard(daily, priced, hasGap, winDays) {
+    var gapHtml = hasGap ? '<div class="gap-note">部分时段无统计数据：仅显示已有数据（不估算补齐）</div>' : '';
+    var rows = daily.slice().reverse().map(function (d) {
+      var c = priced ? costOf(d) : null;
+      var total = c ? (c.ci + c.co + c.cc) : null;
+      var hitCell = d.hit == null ? '<td class="num" title="上游未返回缓存字段">—</td>' : '<td class="num mono">' + fmt(d.hit) + '</td>';
+      return '<tr><td class="day-cell">' + esc(d.day) + '</td><td class="num mono">' + fmt(d.prompt) + '</td><td class="num mono">' + fmt(d.completion) + '</td>' + hitCell +
+        '<td class="num mono">' + money(total) + '</td><td class="num mono">' + fmt(d.self) + '</td></tr>';
+    }).join('');
+    return '<div class="tel-card"><div class="tc-head"><span class="tc-ico">' + ICO_LIST + '</span>按日成本明细</div>' + gapHtml +
+      '<div class="tbl-in-card"><table class="adm-table"><thead><tr><th>日期</th><th class="num">输入 tokens</th><th class="num">输出 tokens</th><th class="num">缓存命中 tokens</th><th class="num">成本估算</th><th class="num">自填 tokens（不计成本）</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  }
+
+  function renderToolbar() {
+    return '<div class="tel-toolbar"><div class="win-seg" role="radiogroup" aria-label="遥测时间窗">' +
+      [7, 14, 30].map(function (n) {
+        return '<button data-win="' + n + '" role="radio" aria-checked="' + (tel.win === n) + '" class="' + (tel.win === n ? 'on' : '') + '">近 ' + n + ' 天</button>';
+      }).join('') + '</div><span class="retention-note">遥测明细保留 90 天，超期数据自动清理</span></div>';
+  }
+
+  function renderTel(host) {
+    var st = tel.state;
+    if (st === 'loading') { host.innerHTML = renderToolbar() + '<div class="adm-state"><span class="spin-p"></span>正在加载遥测数据…</div>'; bindWin(host); return; }
+    if (st === 'error') { host.innerHTML = renderToolbar() + '<div class="err-banner">遥测数据加载失败 <button class="btn-ghost" data-retry>重试</button></div>'; bindWin(host); bindRetry(host); return; }
+    /* 构造窗口数据 */
+    var days = [];
+    for (var b = tel.win - 1; b >= 0; b--) days.push(mkDay(b));
+    var priced = st !== 'noprice';
+    if (st === 'nocache') days.forEach(function (d) { d.hit = null; d.miss = null; });
+    var hasGap = false;
+    if (st === 'gap') { days.splice(Math.floor(days.length / 2), 1); hasGap = true; }
+    if (st === 'empty') {
+      host.innerHTML = renderToolbar() + '<div class="empty-box">窗口内无遥测数据<div class="e-hint">——新部署或尚无对话的日子属正常现象</div></div>';
+      bindWin(host); return;
+    }
+    var html = renderToolbar() + renderCostCard(days, priced) +
+      '<div class="tel-2col">' + renderCacheCard(days) + renderToolCard(st === 'nocache' ? mkTools() : mkTools()) + '</div>' +
+      '<div style="height:16px;"></div>' + renderDetailCard(days, priced, hasGap, tel.win);
+    host.innerHTML = html;
+    bindWin(host);
+  }
+  function bindWin(host) {
+    Array.prototype.slice.call(host.querySelectorAll('.win-seg button')).forEach(function (b) {
+      b.addEventListener('click', function () { tel.win = Number(b.getAttribute('data-win')); renderTel(host); });
+    });
+  }
+  function bindRetry(host) {
+    var r = host.querySelector('[data-retry]');
+    if (r) r.addEventListener('click', function () { tel.state = 'normal'; syncStateRadios(); renderTel(host); });
+  }
+  function syncStateRadios() {
+    $$('input[name=telState]').forEach(function (x) { x.checked = x.value === tel.state; });
+  }
+
+  var telArea = $('#telArea');
+  $$('input[name=telState]').forEach(function (r) {
+    r.addEventListener('change', function () { tel.state = r.value; renderTel(telArea); });
+  });
+  renderTel(telArea);
+
+  /* ================= tabs（主样件：三个面板切换） ================= */
+  function setTab(which) {
+    $('#tabUsersBtn').classList.toggle('on', which === 'users');
+    $('#tabUsageBtn').classList.toggle('on', which === 'usage');
+    $('#tabTelBtn').classList.toggle('on', which === 'tel');
+    $('#tabUsersBtn').setAttribute('aria-checked', which === 'users');
+    $('#tabUsageBtn').setAttribute('aria-checked', which === 'usage');
+    $('#tabTelBtn').setAttribute('aria-checked', which === 'tel');
+    $('#panelUsers').style.display = which === 'users' ? '' : 'none';
+    $('#panelUsage').style.display = which === 'usage' ? '' : 'none';
+    $('#panelTel').style.display = which === 'tel' ? '' : 'none';
+  }
+  $('#tabUsersBtn').addEventListener('click', function () { setTab('users'); });
+  $('#tabUsageBtn').addEventListener('click', function () { setTab('usage'); });
+  $('#tabTelBtn').addEventListener('click', function () { setTab('tel'); });
+
+  /* ================= 锁定帧（6.1 正常态 / 6.2 单价未配置态 × 亮暗） ================= */
+  function lockFrame(host, st, win) {
+    var saved = { state: tel.state, win: tel.win };
+    tel.state = st; tel.win = win;
+    /* 锁定帧内不渲染工具行分段按钮交互（静态）：直接渲染 */
+    renderTel(host);
+    tel.state = saved.state; tel.win = saved.win;
+  }
+  lockFrame($('#lock1L'), 'normal', 7);
+  lockFrame($('#lock1D'), 'normal', 7);
+  lockFrame($('#lock2L'), 'noprice', 7);
+  lockFrame($('#lock2D'), 'noprice', 7);
+})();
+</script>
+</body>
+</html>
