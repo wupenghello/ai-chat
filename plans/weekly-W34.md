@@ -66,8 +66,19 @@
 - **T2**：后端搜索工具——search 注册（Tavily 客户端/白名单 + DNS 双段校验/10s/32KiB 截断/归一化五字段 + sources）+ admin 开关（迁移 v7 + overview + PUT /api/admin/settings）+ profiles tools_enabled API；pytest 182→220（+38），既有 182 例零改动；真实 Tavily 冒烟 2 例。
 - **T3**：前端——SourceCard 引用卡 + MessageBubble 接线 + ToggleSwitch + AdminView 搜索开关 + SettingsForm 档案开关第五字段；vitest 301/301 + build + guard；真实 Chrome 走查 56 PASS/0 FAIL（REQ-035 验收 1 达成）；当轮修复产品缺陷 1 项（段间 4px→8px）。
 - **QA 审计**：有条件通过 3 NCR（001 周报空 / 002 DEF-033 补登 / 003 tailoring 版本滞后），已整改；6 OBS。
-- **Code Review**：待产出 + CEO 过目（G4 前置）。
-- **待办**：Code Review → G4 复盘 → 推送远端（本地提交待推）。
+- **待办**：CEO 过目落痕 → G4 复盘 → 推送远端（本地提交待推）。
+
+**Code Review（G4 前置，2026-08-18 产出待 CEO 过目）**：iter-14 全量 review（c2ac216..HEAD，12 笔 / 41 文件 / +4587−62）。
+
+**三问结论**：
+
+1. **有无偷换需求范围**：无。REQ-035 验收 1~5 逐条对应（降级/开关 payload/出网/截断/真实 Tavily 走查）、REQ-032 引用卡承载不新增 block 段类型、REQ-031 出网治理 A2 面收口（白名单 + DNS 解析双段）、REQ-025 admin 开关逐字（StrictBool 422/幂等/403）、REQ-014 档案开关兑现定夺①；真实天气工具零实现（全仓 grep 零命中，和风凭据仅存 .env 备用）；「上标联动」按定夺③定案纯来源列表卡、未越界。
+2. **有无明显隐患**：无阻塞缺陷。search 安全面（白名单模块常量不可绕过 + 前缀伪装域测试、DNS 解析期核验真实、注入转义 + 字面分界、截断、key 全程零明文）、admin 开关三态门控（PUT 后下一回合运行时生效、统一 key 恒开、key 缺失可存不注册）、前端 XSS 面（SourceCard textContent 直排不入 Markdown 管线）均真实覆盖。**5 项非阻塞已知取舍留档**：①DNS 解析 TOCTOU（白名单固定域实际攻击面零，远期用户可控 URL 工具再上钉扎）②注入防护为 prompt 级软防护（CHG 4.5-⑥ 定义口径）③截断标注后略超 32KiB（约 +21 字节）④Tavily 成本不入 usage_daily（属 B1 遥测范围，LLM token 成本如实累计）⑤「不支持 tools」引导未单独建 pytest 用例（走查条 36 已验直达）。
+3. **测试是否真实覆盖**：真实。pytest 220 本机复跑全绿（假端点全 mock 不依赖真实 key/额度）、vitest 301 全绿、走查 56 条逐字/几何/加载态/双主题 getComputedStyle 实测（条 40 几何断言当场捕获段间 4px 偏差 → DEF-033 当轮修复）。
+
+**轻微硬化建议（非阻塞，可不动）**：SourceCard `:href` 未校验 URL scheme（Tavily 可信 API 仅返 http/https，风险极低）；verify §2 分组计数口径已留档说明。
+
+> CEO 过目结论：{{待落痕}}
 
 ## 技术债
 
