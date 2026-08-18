@@ -58,6 +58,17 @@
 > CEO 过目结论：**认可**（2026-08-18 CEO「可以，下一步吧」——无异议；三条非阻塞已知取舍留档接受：守卫并发窗口 / 流截断兜底语义 / 连接期失败计费口径）
 
 
+## iter-14（A2 联网搜索，2026-08-18 计划批准并 T0~T3 全交付；Σ8 = S+M+L+M）
+
+- **计划**：Σ8（余量 2 不顶格）——T0 OBS-2 前置取证（S）+ T1 design-iter-14（M）+ T2 后端搜索（L）+ T3 前端引用卡与开关（M）。定夺：Tavily 起步（博查备选，SearXNG 不做）/ 搜索 key 入 backend/.env / 真实天气工具不纳入留 B1（和风凭据+专属 Host 已冒烟验证备存 .env）。
+- **T0**：QA OBS-2 闭环——自填端点（mode=self）真实回合取证（demo_weather 真实执行 + 事件序全帧 + usage 回合口径），留档 verify §T0。
+- **T1**：design-iter-14 基线（8 定夺全按推荐：引用卡/降级文案逐字/admin 开关 + API 口径/档案开关 UI/微参数 10s·5 条·默认折叠；走查清单 42 条；tag design-iter-14；spec 指针回填零滞后 + OBS-3 闭环 + components.md v1.3 toggle switch 登记）。
+- **T2**：后端搜索工具——search 注册（Tavily 客户端/白名单 + DNS 双段校验/10s/32KiB 截断/归一化五字段 + sources）+ admin 开关（迁移 v7 + overview + PUT /api/admin/settings）+ profiles tools_enabled API；pytest 182→220（+38），既有 182 例零改动；真实 Tavily 冒烟 2 例。
+- **T3**：前端——SourceCard 引用卡 + MessageBubble 接线 + ToggleSwitch + AdminView 搜索开关 + SettingsForm 档案开关第五字段；vitest 301/301 + build + guard；真实 Chrome 走查 56 PASS/0 FAIL（REQ-035 验收 1 达成）；当轮修复产品缺陷 1 项（段间 4px→8px）。
+- **QA 审计**：有条件通过 3 NCR（001 周报空 / 002 DEF-033 补登 / 003 tailoring 版本滞后），已整改；6 OBS。
+- **Code Review**：待产出 + CEO 过目（G4 前置）。
+- **待办**：Code Review → G4 复盘 → 推送远端（本地提交待推）。
+
 ## 技术债
 
 - 无新增
