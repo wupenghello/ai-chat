@@ -1,6 +1,6 @@
-# iter-14 验证留档（T0 段 + T2 段）
+# iter-14 验证留档（T0 段 + T2 段 + T3 段）
 
-> T0 = QA OBS-2 前置取证（plans/iter-14.md T0 行）：自填端点真实回合联调补账。T1（design-iter-14 基线）交付物在 design/iter-14/（基线声明见其 §11）。T2 = 后端搜索工具接入（2026-08-18，本文件 §T2）。T3 前端随后补登。
+> T0 = QA OBS-2 前置取证（plans/iter-14.md T0 行）：自填端点真实回合联调补账。T1（design-iter-14 基线）交付物在 design/iter-14/（基线声明见其 §11）。T2 = 后端搜索工具接入（2026-08-18，本文件 §T2）。T3 = 前端引用卡与开关 UI（2026-08-18，本文件 §T3）。
 
 ## T0 自填端点真实回合联调取证（2026-08-18 执行并验证）
 
@@ -135,3 +135,49 @@ T0 交付：OBS-2 补账闭环（取补做路径、不裁剪），iter-13 QA 审
 - **观察①（非缺陷，B1 素材）**：真实回合中模型自主连续发起 3 次 search（逐步收窄查询），单回合 4 次上游调用 tokens 16087——步数护栏（10）内合法，token 成本随搜索次数线性增长；结果摘要文本体量（5 条 × ~1.4k 字符）为 design §7「1~2k token」预估的偏上沿。B1 prompt 分割+遥测时再评估是否约束「单回合搜索次数」。
 - **观察②**：冒烟例 1 脚本尾部 `RuntimeError: Event loop is closed` 为取证脚本自身清理顺序（第二次 asyncio.run 关闭客户端）问题，非产品路径缺陷，产品代码无此路径（应用内 client 随 lifespan 单循环关闭）。
 - **已知边界**：出网校验为「请求前独立 DNS 解析 + 白名单判定」，httpx 连接期自解析存在理论 TOCTOU 窗口（固定白名单域 api.tavily.com 下攻击面实际为零——攻击者无法控制 Tavily 域解析）；登记不隐瞒，远期接入用户可控 URL 工具时再上解析钉扎。
+
+---
+
+## T3 前端引用卡与开关 UI（2026-08-18 实现并验证）
+
+### 1. 交付范围（对照 plans/iter-14.md T3 行 ①~⑤ + design-iter-14 §2/§4/§5 逐条）
+
+| 项 | 落点 |
+|---|---|
+| ① 引用来源卡渲染 | `src/components/SourceCard.vue`（次级面板家族新成员：subtle-bg + 1px border + 10px 圆角；头部行「引用来源 · N 条」+ chevron 折叠；展开区条目五字段 title/url/site_name/date_published/snippet，缺字段不塌——title 缺 hostname 兜底、都缺连分隔点省略、无 snippet 紧凑形态；textContent 直排不进 Markdown 管线防注入；条数 slice(0,5) 兜底）+ `src/api/client.ts` SourceItem 类型 |
+| ② 消费接线 | `src/components/MessageBubble.vue`（`sourcesOf`：配对 tool_result 含非空 sources 且 status=ok → 紧随工具卡渲染 SourceCard，blocks 顺序自然结果、渲染层派生不落库；`showDegrade`：search error/timeout 且有后续文本段 → 降级引导条「搜索未成功，以下为模型直接回答」） |
+| ③ ToggleSwitch 通用开关 | `src/components/ToggleSwitch.vue`（36×20 轨道 + 16px 白滑块 + 1px 描边，开态 translateX 16px；button + role=switch + aria-checked；Enter/Space 原生；零新令牌——design §4.2 登记新形态） |
+| ④ admin 搜索开关 | `src/views/AdminView.vue`（sw-row 统计卡区后、tabs 前：globe icon + 「联网搜索」+ 说明 12px text-3；D6 key 缺失附注 warning 色替换常显说明；点击 PUT /api/admin/settings → 态翻转 + D5 toast 逐字；失败 toast 错误 + 开关回弹）+ `src/api/backend.ts` adminUpdateSearchEnabled |
+| ⑤ 档案「支持工具」第五字段 | `src/components/SettingsForm.vue`（档案添加/编辑模态 API Key 后：field-label「支持工具」+ D7 hint + ToggleSwitch；新建默认开、编辑回显 tools_enabled 实值；随「保存档案」一并提交无独立保存钮）+ 列表行 p-sub 尾「 · 工具已关」（开态不显示）+ `src/stores/settings.ts` toolsEnabled 映射（旧后端窗口期缺省按开） |
+| 质量门槛 | vitest 301/301 + guard:style + 生产构建（三关）；后端 pytest 220/220 零改动复跑；真实 Chrome 走查 56/56 |
+
+### 2. 测试证据
+
+- **前端 vitest：301/301 全绿**（components 新增 SourceCard.spec / ToggleSwitch.spec 等；`npm test`）、`npm run guard:style` 通过（无令牌自引用、无未豁免裸色值）、`npm run build` 通过（vue-tsc + vite，128 模块）。
+- **后端 pytest：220/220 全绿**（`cd backend && .venv/bin/python -m pytest -q`；既有 220 例零改动复跑——T2 新增的 test_search.py 38 例未受前端改动影响）。
+- **真实 Chrome 走查：56 PASS / 0 FAIL**（`node scripts/e2e-walkthrough-14.mjs`，design-iter-14 §8.2 42 条清单浏览器适用条目全覆盖 + 逐字/几何/加载态/双主题断言面；10 截图 `/tmp/e2e14/shots/`）。
+
+### 3. 验收条款对照（plans/iter-14.md T3 行 / REQ-035 验收 1 / REQ-032 验收 4 / REQ-025 / REQ-014）
+
+| 验收条款 | 证据 |
+|---|---|
+| REQ-035 验收 1（时效性真实问题 → 真实 search → 工具步骤卡 + 引用来源卡 + 回答核验） | 走查阶段 B：真实 Tavily 回合——运行中帧（spinner +「运行中」+「（等待结果…）」）→ 流式中帧（引用卡前置可见 +「正在生成…」+ 光标）→ 终态（search 卡「完成」+ 引用卡默认折叠 + 回答非空）→ 条目核验（真实 Tavily 5 条、真实域链接、hostname/site 降级呈现，零 example.com）。§4 走查留档 |
+| REQ-032 验收 4（引用卡 design-iter-14 走查留档） | §4 走查清单 1~14（引用卡形态）+ 15~17（双来源承载）逐条 PASS；亮/暗双主题、几何 computed 断言、样件文案逐字、加载态一帧均留档 |
+| REQ-025 A2 开关 UI 复验（admin 开关操作生效；关闭后普通用户直答降级无错误提示） | 走查条 25/26/28/29/30/31（开关行形态/switch 几何/D5 toast/D6 附注/overview 加法字段/PUT 幂等）+ 条 24/D4（admin 关闭 → 无 search 卡无引用卡无引导条）；「模型不知其存在」口径走查通过 |
+| REQ-014 开关 UI 走查（默认开/关闭态/引导路径） | 走查条 32/33/34/34b（第五字段位置与回显/D7 hint 逐字/列表行「工具已关」/新建默认开）+ 条 36（上游报不支持 tools → REQ-007 既有映射气泡 +「前往高级设置」直达，不新建映射） |
+| 存量零回退复验 | 走查条 1/1b（消息流框架/用户气泡右对齐/v1 存量逐字 Markdown 管线）+ 条 13/20/41/41b（blocks 顺序/复制派生不落库/导出与侧栏索引零适配） |
+
+### 4. 走查留档（scripts/e2e-walkthrough-14.mjs，56 条，2026-08-18 实跑）
+
+- **服务**：自起后端 uvicorn（`AI_CHAT_DB_PATH=/tmp/ai-chat-walkthrough-14.db` 独立库，key 经环境变量注入——统一 key = 根 `.env` VITE_API_KEY → `AI_CHAT_UNIFIED_KEY`，搜索 key = 根 `.env` AI_CHAT_SEARCH_KEY；真实 key 仅进程环境/内存传递，不入日志/留档/提交）+ 前端 Vite dev（5179 → proxy 8802）。两阶段：A 不带搜索 key（D6 key 缺失态）+ B 带搜索 key（真实 Tavily 回合）。
+- **覆盖**：design-iter-14 §8.2 42 条清单浏览器适用条目全部；逐字断言面（条 4/18/22/28/29/33）、几何断言面（条 2/3/7/9/10/19/26/40）、加载态一帧（条 39）、双主题承载（条 37/38）。
+- **首轮 FAIL 处置（诚实登记，沿 iter-12 先例）**：脚本为前序实现代理所写但从未运行，首次实跑暴露 16 项 FAIL——**15 项为脚本断言/选择器问题，非产品缺陷**（注册 201 vs 200、条 6 键盘折叠后条 7~11 未复展开、条 11 点击后未等 Vue 重渲染、条 22 空结果卡按 textContent 定位而历史卡折叠、档案区 `.acct` 应点 `.dd-trigger`、暗色引用卡误在无引用卡的降级会话取证、暗色 switch 在 page.goto 重载后主题被复位、条 36 造数后未重载侧栏 + `TEXT` 辅助函数误入 page.evaluate 上下文）；已逐条修正脚本。
+- **产品缺陷 1 项（当轮修复 + 单独提交 + 如实登记）**：条 40「工具卡与引用卡段间 8px」实测 4px——`.tool-card`/`.source-card` 均 `margin: 4px 0` 而 `.bubble.assistant` 为 block 流，相邻外边距塌陷为 max(4,4)=4px，与 design-iter-14 §2「段间距…与配对工具卡之间 8px」及 design-iter-13 §3「段间 8px」均不符（iter-13 走查 51 条仅以 `<22px` 宽松断言未捕获）。修复：两组件 `margin: 4px 0` → `8px 0`（相邻卡片塌陷后即 8px，文本↔卡片亦 8px，对齐两稿设计），vitest/guard/build/pytest 全绿复跑，走查条 40 复验 8px 通过。
+- **真实搜索取证**：REQ-035 验收 1 阶段 B 真实 Tavily 回合——真实来源链接（fishersama.com / api-docs.deepseek.com / www.bentoml.com 等真实域，零 example.com）、元信息 hostname/site 降级呈现；模型回答可核验。全程 key 零明文。
+
+### 5. 偏差与观察（如实登记）
+
+- **零产品代码缺陷（修复后）**；走查首轮发现并当轮修复的 1 项产品缺陷见 §4（段间 4px→8px 对齐设计，非设计翻案）。
+- **观察①（沿用 T2 观察①，B1 素材）**：真实回合模型自主发起 search 并以「search{query}…ms 完成」文本复述工具调用——工具卡文本并入气泡 textContent，正文核验需剔除工具卡文本（脚本已按此处理）。
+- **已知边界（沿 iter-13 走查口径）**：真实回合用 admin 账号（walkthrough-admin），admin 关闭搜索后模型仍持有 echo/demo_weather 演示工具，故「无感降级」断言锚定为「无 search 卡/无引用卡/无引导条」（条 24/D4 实测 searchCards=["echo"] 但无 search），非「零工具卡」——演示工具为 A1 遗留在位、非本迭代产物。
+
