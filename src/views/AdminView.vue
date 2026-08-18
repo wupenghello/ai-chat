@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import {
   backend,
   type AdminOverview,
+  type AdminTelemetry,
   type AdminUsagePage,
   type AdminUserRow,
   type AdminUsersPage,
@@ -32,7 +33,7 @@ const { toggleTheme } = useTheme()
 
 const isAdmin = computed(() => auth.user?.is_admin === true)
 
-const tab = ref<'users' | 'usage'>('users')
+const tab = ref<'users' | 'usage' | 'telemetry'>('users')
 
 function errMsg(e: unknown, fallback = '操作失败'): string {
   return e instanceof Error && e.message ? e.message : fallback
@@ -345,6 +346,85 @@ function gotoUsagePage(n: number) {
   void loadUsage()
 }
 
+// ---- 遥测面板（REQ-038，iter-15 T3；design-iter-15 §1~3 遥测视图四区）----
+const telDays = ref<7 | 14 | 30>(7)
+const telData = ref<AdminTelemetry | null>(null)
+const telLoading = ref(false)
+const telError = ref('')
+let telSeq = 0 // 请求序号：窗口快速切换时仅接受最新一次响应（竞态防护）
+
+async function loadTelemetry() {
+  const seq = ++telSeq
+  telLoading.value = true
+  telError.value = ''
+  try {
+    const data = await backend.adminTelemetry(telDays.value)
+    if (seq !== telSeq) return
+    telData.value = data
+  } catch {
+    if (seq !== telSeq) return
+    telError.value = '遥测数据加载失败' // T27 逐字固定文案（底层错误细节不上卡面）
+  } finally {
+    if (seq === telSeq) telLoading.value = false
+  }
+}
+
+/** 窗口切换仅重载遥测面板（保留 tab 与选择，不触发其他面板请求，走查条 14） */
+function switchTelDays(n: 7 | 14 | 30) {
+  if (telDays.value === n && !telError.value) return
+  telDays.value = n
+  void loadTelemetry()
+}
+
+/** 进入遥测 tab 时拉取一次（§4.2 前端请求面口径）；此后仅窗口切换重拉 */
+function openTelemetry() {
+  tab.value = 'telemetry'
+  if (!telData.value || telError.value) void loadTelemetry()
+}
+
+/** 窗口合计命中率 = Σ命中 ÷（Σ命中 + Σ未命中），仅计带字段日（卡 B 说明常驻自释） */
+const telWindowRate = computed<number | null>(() => {
+  let hit = 0
+  let total = 0
+  let any = false
+  for (const d of telData.value?.daily ?? []) {
+    if (d.cache_hit_tokens != null && d.cache_miss_tokens != null) {
+      hit += d.cache_hit_tokens
+      total += d.cache_hit_tokens + d.cache_miss_tokens
+      any = true
+    }
+  }
+  if (!any) return null
+  return total > 0 ? hit / total : 0
+})
+
+/** 缺失时段：后端仅列有数据日，窗口天数与列出日数比对（不估算补齐，铁律 5） */
+const telHasGap = computed(() => {
+  const t = telData.value
+  return !!t && t.daily.length < t.window.days
+})
+
+/** 空窗口：零遥测行（面板整体空盒 T28，非错误态） */
+const telEmpty = computed(() => {
+  const t = telData.value
+  return !!t && t.daily.length === 0 && t.tools.length === 0
+})
+
+const TEL_STATUS_TEXT: Record<string, string> = {
+  ok: '成功',
+  error: '失败',
+  timeout: '超时',
+  cancelled: '已取消',
+}
+
+function fmtMoney(n: number | null): string {
+  return n == null ? '—' : `¥${n.toFixed(4)}`
+}
+
+function fmtRate(r: number | null): string {
+  return r == null ? '—' : `${(r * 100).toFixed(1)}%`
+}
+
 onMounted(() => {
   if (isAdmin.value) {
     void loadUsers()
@@ -451,6 +531,10 @@ onBeforeUnmount(() => {
         </button>
         <button type="button" role="radio" :aria-checked="tab === 'usage'" :class="{ on: tab === 'usage' }" @click="tab = 'usage'">
           用量列表
+        </button>
+        <!-- REQ-038（iter-15 T3）：第三 tab 加法扩展（前两段零变化，radiogroup 语义沿用） -->
+        <button type="button" role="radio" :aria-checked="tab === 'telemetry'" :class="{ on: tab === 'telemetry' }" @click="openTelemetry">
+          遥测
         </button>
       </div>
 
@@ -620,6 +704,179 @@ onBeforeUnmount(() => {
                 <button v-else type="button" class="pg-btn" :class="{ on: p === usageCurrent }" @click="gotoUsagePage(p)">{{ p }}</button>
               </template>
               <button type="button" class="pg-btn" :disabled="usageCurrent === usagePageCount" aria-label="下一页" @click="gotoUsagePage(usageCurrent + 1)">›</button>
+            </div>
+          </div>
+        </template>
+      </section>
+
+      <!-- REQ-038（iter-15 T3，design-iter-15 §1~3）：遥测面板——工具行 + 卡 A 每日成本估算
+           + 双卡并排（卡 B 命中率 / 卡 C 工具用量）+ 卡 D 按日成本明细；两异常形态与三辅助态 -->
+      <section v-show="tab === 'telemetry'" class="panel">
+        <div class="tel-toolbar">
+          <div class="win-seg" role="radiogroup" aria-label="遥测时间窗">
+            <button
+              v-for="n in ([7, 14, 30] as const)"
+              :key="n"
+              type="button"
+              role="radio"
+              :aria-checked="telDays === n"
+              :class="{ on: telDays === n }"
+              @click="switchTelDays(n)"
+            >
+              近 {{ n }} 天
+            </button>
+          </div>
+          <span v-if="telData" class="retention-note">遥测明细保留 {{ telData.retention_days }} 天，超期数据自动清理</span>
+        </div>
+
+        <div v-if="telLoading" class="state-hint"><span class="spinner" aria-hidden="true" />正在加载遥测数据…</div>
+        <div v-else-if="telError" class="err-banner">
+          {{ telError }}
+          <button type="button" class="btn-ghost" @click="loadTelemetry">重试</button>
+        </div>
+        <div v-else-if="telData && telEmpty" class="tel-empty">
+          <div>窗口内无遥测数据</div>
+          <div class="t-hint">——新部署或尚无对话的日子属正常现象</div>
+        </div>
+
+        <template v-else-if="telData">
+          <!-- 卡 A 每日成本估算 -->
+          <div class="tel-card">
+            <div class="tc-head">每日成本估算</div>
+            <div class="tc-sub">仅统一 key 模式计成本；自填模式 tokens 不计成本</div>
+            <div class="tc-big-row">
+              <span class="tc-big-label">今日成本估算</span>
+              <span class="tc-big">{{ telData.daily.some((d) => d.day === telData!.window.date_to) ? fmtMoney(telData.today_cost.cost_total) : '—' }}</span>
+              <span class="tc-big-sub">{{ telData.window.date_to }} · {{ telData.daily.some((d) => d.day === telData!.window.date_to) ? '统一 key' : '今日暂无遥测行' }}</span>
+            </div>
+            <div class="bd-grid">
+              <div class="bd-item">
+                <div class="bd-label">输入</div>
+                <div class="bd-tokens">{{ fmtNum(telData.today_cost.tokens_prompt) }} tokens</div>
+                <div class="bd-cost">{{ fmtMoney(telData.today_cost.cost_input) }}</div>
+              </div>
+              <div class="bd-item">
+                <div class="bd-label">输出</div>
+                <div class="bd-tokens">{{ fmtNum(telData.today_cost.tokens_completion) }} tokens</div>
+                <div class="bd-cost">{{ fmtMoney(telData.today_cost.cost_output) }}</div>
+              </div>
+              <div class="bd-item">
+                <div class="bd-label">缓存命中</div>
+                <div class="bd-tokens">{{ telData.today_cost.cache_hit_tokens == null ? '—' : `${fmtNum(telData.today_cost.cache_hit_tokens)} tokens` }}</div>
+                <div class="bd-cost">{{ fmtMoney(telData.today_cost.cost_cache_hit) }}</div>
+              </div>
+            </div>
+            <div class="kv-row">
+              <span class="kv-label">单价（只读）</span>
+              <template v-if="telData.price.configured">
+                <span class="kv-val">输入 ¥{{ telData.price.input_per_mtok }} / 1M tokens · 输出 ¥{{ telData.price.output_per_mtok }} / 1M tokens · 缓存命中 ¥{{ telData.price.cache_hit_per_mtok }} / 1M tokens</span>
+              </template>
+              <span v-else class="kv-val kv-miss">单价三变量未配置</span>
+              <span class="kv-note">单价由 backend/.env 三变量 AI_CHAT_PRICE_* 注入，admin 只读</span>
+            </div>
+            <div v-if="!telData.price.configured" class="warn-hint">
+              单价未配置：请在 backend/.env 配置 AI_CHAT_PRICE_INPUT / AI_CHAT_PRICE_OUTPUT / AI_CHAT_PRICE_CACHE_HIT 并重启后端，即可启用每日成本估算
+            </div>
+            <div class="kv-row" title="成本口径：部署者真实支出；自填模式使用用户自己的密钥，成本归用户">
+              <span class="kv-val">自填模式（用户自带密钥）：tokens {{ fmtNum(telData.daily.reduce((s, d) => s + d.self_tokens_total, 0)) }} · 不计成本</span>
+              <span class="pill nocost">不计成本</span>
+            </div>
+          </div>
+
+          <!-- 双卡并排：卡 B 缓存命中率 / 卡 C 工具用量 -->
+          <div class="tel-2col">
+            <div class="tel-card">
+              <div class="tc-head">缓存命中率</div>
+              <div class="tc-sub">命中率 = Σ缓存命中 tokens ÷（Σ命中 + Σ未命中）· 仅统计上游返回缓存字段的调用</div>
+              <div class="tc-big-row">
+                <span class="tc-big-label">窗口合计命中率</span>
+                <span v-if="telWindowRate == null" class="pill miss">缺失</span>
+                <span v-else class="tc-big">{{ fmtRate(telWindowRate) }}</span>
+              </div>
+              <div class="tbl-in-card">
+                <table class="adm-table tel-table">
+                  <thead>
+                    <tr>
+                      <th>日期</th>
+                      <th class="num">缓存命中 tokens</th>
+                      <th class="num">未命中 tokens</th>
+                      <th class="num">命中率</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="d in telData.daily" :key="d.day">
+                      <td class="day-cell">{{ d.day }}</td>
+                      <template v-if="d.cache_hit_tokens == null || d.cache_miss_tokens == null">
+                        <td class="num">—</td>
+                        <td class="num">—</td>
+                        <td class="num"><span class="pill miss">缺失</span></td>
+                      </template>
+                      <template v-else>
+                        <td class="num">{{ fmtNum(d.cache_hit_tokens) }}</td>
+                        <td class="num">{{ fmtNum(d.cache_miss_tokens) }}</td>
+                        <td class="num">{{ fmtRate(d.cache_rate) }}</td>
+                      </template>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="tel-card">
+              <div class="tc-head">工具用量</div>
+              <div class="tc-sub">按工具名 × 状态聚合；search 为当前唯一生产工具（本视图即搜索用量面板）</div>
+              <div v-if="telData.tools.length === 0" class="tc-empty">窗口内无工具调用记录</div>
+              <div v-else class="tbl-in-card">
+                <table class="adm-table tel-table">
+                  <thead>
+                    <tr>
+                      <th>工具名</th>
+                      <th>状态</th>
+                      <th class="num">次数</th>
+                      <th class="num">平均耗时</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="t in telData.tools" :key="`${t.tool_name}-${t.status}`">
+                      <td class="day-cell">{{ t.tool_name }}</td>
+                      <td><span class="pill" :class="`st-${t.status}`">{{ TEL_STATUS_TEXT[t.status] }}</span></td>
+                      <td class="num">{{ fmtNum(t.count) }}</td>
+                      <td class="num">{{ fmtNum(t.avg_duration_ms) }} ms</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- 卡 D 按日成本明细 -->
+          <div class="tel-card">
+            <div class="tc-head">按日成本明细</div>
+            <div v-if="telHasGap" class="gap-note">部分时段无统计数据：仅显示已有数据（不估算补齐）</div>
+            <div class="tbl-in-card">
+              <table class="adm-table tel-table">
+                <thead>
+                  <tr>
+                    <th>日期</th>
+                    <th class="num">输入 tokens</th>
+                    <th class="num">输出 tokens</th>
+                    <th class="num">缓存命中 tokens</th>
+                    <th class="num">成本估算</th>
+                    <th class="num">自填 tokens（不计成本）</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="d in telData.daily" :key="d.day">
+                    <td class="day-cell">{{ d.day }}</td>
+                    <td class="num">{{ fmtNum(d.tokens_prompt) }}</td>
+                    <td class="num">{{ fmtNum(d.tokens_completion) }}</td>
+                    <td v-if="d.cache_hit_tokens == null" class="num" title="上游未返回缓存字段">—</td>
+                    <td v-else class="num">{{ fmtNum(d.cache_hit_tokens) }}</td>
+                    <td class="num">{{ fmtMoney(d.cost_total) }}</td>
+                    <td class="num">{{ fmtNum(d.self_tokens_total) }}</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </template>
@@ -1080,6 +1337,248 @@ th.sortable {
   color: var(--c-text-3);
   border: 1px dashed var(--c-border);
   border-radius: 8px;
+}
+
+/* ---- REQ-038（iter-15 T3，design-iter-15 §1~3）：遥测视图（零新增令牌，全 var()） ---- */
+/* 工具行：时间窗分段（分段控件既有形态）+ 右端保留期注记 */
+.tel-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.win-seg {
+  display: inline-flex;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--c-surface);
+}
+.win-seg button {
+  height: 32px;
+  padding: 0 14px;
+  border: none;
+  background: none;
+  font-size: 13px;
+  color: var(--c-text-2);
+  cursor: pointer;
+}
+.win-seg button:hover {
+  color: var(--c-text-1);
+  background: var(--c-hover-bg);
+}
+.win-seg button.on {
+  background: var(--c-primary-l);
+  color: var(--c-primary);
+  font-weight: 500;
+}
+.retention-note {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--c-text-3);
+}
+/* 遥测卡（统计卡家族：surface + 1px border + r-lg 12px + shadow-1 + padding 16/20） */
+.tel-card {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-1);
+  padding: 16px 20px;
+  margin-bottom: 16px;
+  min-width: 0;
+}
+.tc-head {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-text-1);
+}
+.tc-sub {
+  font-size: 12px;
+  color: var(--c-text-3);
+  margin-top: 2px;
+}
+.tc-big-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.tc-big-label {
+  font-size: 12px;
+  color: var(--c-text-3);
+}
+.tc-big {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--c-text-1);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+}
+.tc-big-sub {
+  font-size: 12px;
+  color: var(--c-text-3);
+  font-variant-numeric: tabular-nums;
+}
+/* 分项三列（输入/输出/缓存命中）：等宽栅格 gap 16 */
+.bd-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 12px;
+}
+.bd-item {
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  background: var(--c-subtle-bg);
+  padding: 10px 12px;
+  min-width: 0;
+}
+.bd-label {
+  font-size: 12px;
+  color: var(--c-text-3);
+}
+.bd-tokens {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--c-text-1);
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+.bd-cost {
+  font-size: 12px;
+  color: var(--c-text-2);
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+/* 单价行（admin 只读）与自填行 */
+.kv-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 10px;
+  margin-top: 12px;
+  border-top: 1px solid var(--c-border);
+  font-size: 12px;
+  color: var(--c-text-3);
+}
+.kv-label {
+  font-weight: 500;
+  color: var(--c-text-2);
+  flex: none;
+}
+.kv-val {
+  color: var(--c-text-2);
+  font-variant-numeric: tabular-nums;
+}
+.kv-miss {
+  color: var(--c-warning);
+}
+.kv-note {
+  color: var(--c-text-3);
+}
+/* 单价未配置提示（warning 族：warning-l 底 + 左缘 3px warning，沿 site-bar 警示语言） */
+.warn-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--c-warning-l);
+  border-left: 3px solid var(--c-warning);
+  color: var(--c-warning);
+  font-size: 12px;
+  line-height: 1.7;
+}
+/* 双卡并排（命中率 + 工具用量）：grid 等宽 gap 16 */
+.tel-2col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.tel-2col .tel-card {
+  margin-bottom: 0;
+}
+/* 遥测表格（表格卡家族：tbl-in-card + adm-table 规格照搬） */
+.tbl-in-card {
+  margin-top: 12px;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.tel-table td {
+  font-variant-numeric: tabular-nums;
+}
+/* 数字列表头右对齐（.adm-table th 左对齐规则特异性更高，遥测表内显式覆盖，条 26） */
+.tel-table th.num {
+  text-align: right;
+}
+.tel-table .day-cell {
+  color: var(--c-text-1);
+  font-weight: 500;
+}
+/* 遥测区徽标（胶囊 20px 家族既有形态；作用域内清零既有 margin-left） */
+.tel-card .pill,
+.tc-big-row .pill {
+  margin-left: 0;
+}
+.pill.miss {
+  background: var(--c-warning-l);
+  color: var(--c-warning);
+}
+.pill.nocost {
+  background: var(--c-subtle-bg);
+  color: var(--c-text-2);
+  border: 1px solid var(--c-border);
+}
+.pill.st-ok {
+  background: var(--c-subtle-bg);
+  color: var(--c-success);
+  border: 1px solid var(--c-border);
+}
+.pill.st-error {
+  background: var(--c-danger-l);
+  color: var(--c-danger);
+}
+.pill.st-timeout {
+  background: var(--c-warning-l);
+  color: var(--c-warning);
+}
+.pill.st-cancelled {
+  background: var(--c-hover-bg);
+  color: var(--c-text-2);
+}
+.tc-empty {
+  padding: 24px 0;
+  text-align: center;
+  color: var(--c-text-3);
+  font-size: 12px;
+}
+/* 遥测区缺失时段琥珀行（gap-note 口径照搬，卡内顶部：margin 翻转） */
+.tel-card .gap-note {
+  margin-top: 12px;
+  margin-bottom: 0;
+}
+/* 空窗口态（dashed border + surface，非错误态） */
+.tel-empty {
+  padding: 40px 0;
+  text-align: center;
+  color: var(--c-text-3);
+  font-size: 13px;
+  border: 1px dashed var(--c-border);
+  border-radius: 8px;
+  background: var(--c-surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.tel-empty .t-hint {
+  font-size: 12px;
 }
 
 /* ---- 用户搜索框（§2.1：260×32 + icon + 清除钮 + 焦点环） ---- */

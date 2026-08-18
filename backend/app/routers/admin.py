@@ -11,13 +11,14 @@
   请求/token 为全模式当日合计，无记录即 0，不估算补齐（铁律 5）
 """
 
+from datetime import datetime, timedelta
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from pydantic.types import StrictBool
 
-from app import quota
+from app import quota, telemetry
 from app.config import Settings, get_settings
 from app.db import DatabaseDep, is_search_enabled, set_search_enabled
 from app.routers.auth import CurrentUser, UserOut
@@ -295,4 +296,153 @@ def overview(
         "today_tokens": int(used["tok"]),
         "search_enabled": is_search_enabled(conn),
         "search_key_configured": bool(settings.search_key),
+    }
+
+
+# ---------- REQ-038（iter-15 T3）：遥测聚合端点（design-iter-15 §5 口径逐字实现） ----------
+# 加法扩展：既有六端点 + PUT settings 形状零变化（REQ-038 验收 1）；本端点只读、
+# 全机器聚合无手工修正入口（铁律 5）；缺失与未配置不估算不造数（NULL→null、cost_* null）。
+
+def _price_configured(settings: Settings) -> bool:
+    """单价三变量全已配置且非负（design-iter-15 §5：元/1M tokens 非负小数；
+    任一缺失/非法 → configured=false → 成本不估算并提示）。"""
+    prices = (settings.price_input, settings.price_output, settings.price_cache_hit)
+    return all(p is not None and p >= 0 for p in prices)
+
+
+@router.get("/telemetry")
+def telemetry_view(
+    admin: AdminUser,
+    conn: DatabaseDep,
+    settings: Annotated[Settings, Depends(get_settings)],
+    days: int = Query(default=7, ge=1, le=90),
+) -> dict[str, object]:
+    """遥测聚合视图（CHG-009 REQ-038；design-iter-15 §5 定案形状逐字）。
+
+    - 时间窗 = 截至服务器本地今日（quota.today 口径，与 usage_daily.day/telemetry.day 同源）
+      的近 N 个自然日；days 整数 1~90 默认 7，越界/非整数 422
+    - 门禁 get_admin_user（与既有六端点同一依赖）：非 admin → 403，响应体零遥测字段
+    - 成本 = Σtokens×单价÷1e6 三项分项，仅 mode='unified' llm 行（定夺⑥）；
+      单价未配置 → price.configured=false 且全部 cost_* 为 null（tokens 如实）
+    - cache_rate = Σhit/(Σhit+Σmiss)，日级仅计带缓存字段行（定夺⑤部分缺失口径）；
+      整天无带字段行 → cache_* 与 cache_rate 为 null（前端显「缺失」，永不显 0）
+    - daily 仅列有数据日（缺失时段由前端以窗口天数比对判定）；
+      tools = GROUP BY tool_name,status，排序固定 tool_name ASC, status ASC（确定性）
+    """
+    date_to = quota.today()
+    date_from = (datetime.now() - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+    window = (date_from, date_to)
+
+    llm_rows = conn.execute(
+        "SELECT day, mode, tokens_prompt, tokens_completion, tokens_total, "
+        "cache_hit_tokens, cache_miss_tokens FROM telemetry "
+        "WHERE kind = 'llm' AND day >= ? AND day <= ?",
+        window,
+    ).fetchall()
+    tool_rows = conn.execute(
+        "SELECT day, tool_name, status, latency_ms FROM telemetry "
+        "WHERE kind = 'tool' AND day >= ? AND day <= ?",
+        window,
+    ).fetchall()
+
+    # 按日聚合：llm 行供成本/命中率，tool 行仅贡献「有数据日」（零 llm 行的工具日亦列出）
+    acc: dict[str, dict] = {}
+
+    def _day(day: str) -> dict:
+        return acc.setdefault(day, {
+            "prompt": 0, "completion": 0, "self": 0,
+            "hit": 0, "miss": 0, "has_cache": False,       # 显示口径：全模式带字段行
+            "cost_hit": 0,                                   # 成本口径：仅 unified 带字段行
+        })
+
+    for r in llm_rows:
+        d = _day(r["day"])
+        if r["mode"] == quota.MODE_UNIFIED:
+            d["prompt"] += r["tokens_prompt"] or 0
+            d["completion"] += r["tokens_completion"] or 0
+            if r["cache_hit_tokens"] is not None:
+                d["cost_hit"] += r["cache_hit_tokens"]
+        else:
+            d["self"] += r["tokens_total"] or 0
+        if r["cache_hit_tokens"] is not None:
+            d["hit"] += r["cache_hit_tokens"]
+            d["miss"] += r["cache_miss_tokens"] or 0
+            d["has_cache"] = True
+    for r in tool_rows:
+        _day(r["day"])
+
+    configured = _price_configured(settings)
+    pin, pout, phit = settings.price_input, settings.price_output, settings.price_cache_hit
+
+    def _cost6(prompt: int, completion: int, cost_hit: int) -> dict:
+        """成本三分项 + 合计（后端保留 6 位小数；单价未配置 → 全 null，tokens 不受影响）。"""
+        if not configured:
+            return {"input": None, "output": None, "cache_hit": None, "total": None}
+        ci = round(prompt * pin / 1_000_000, 6)
+        co = round(completion * pout / 1_000_000, 6)
+        cc = round(cost_hit * phit / 1_000_000, 6)
+        return {"input": ci, "output": co, "cache_hit": cc, "total": round(ci + co + cc, 6)}
+
+    daily = []
+    for day in sorted(acc, reverse=True):
+        d = acc[day]
+        cost = _cost6(d["prompt"], d["completion"], d["cost_hit"])
+        if d["has_cache"]:
+            denom = d["hit"] + d["miss"]
+            rate = round(d["hit"] / denom, 6) if denom > 0 else 0.0
+            hit, miss = d["hit"], d["miss"]
+        else:  # 整天无带字段行 → null（前端显「缺失」，永不显 0；铁律 5）
+            rate, hit, miss = None, None, None
+        daily.append({
+            "day": day,
+            "tokens_prompt": d["prompt"],
+            "tokens_completion": d["completion"],
+            "cache_hit_tokens": hit,
+            "cache_miss_tokens": miss,
+            "cache_rate": rate,
+            "cost_total": cost["total"],
+            "self_tokens_total": d["self"],
+        })
+
+    t = acc.get(date_to)
+    cost = _cost6(*(t["prompt"], t["completion"], t["cost_hit"]) if t else (0, 0, 0))
+    if t is None:
+        # 今日零遥测行：tokens 真值 0（无调用即无 tokens/无命中，非造数）；缓存列同显 0
+        today_cost: dict[str, object] = {"cache_hit_tokens": 0}
+    else:
+        # 今日有行但整天无带字段行 → null（与 daily 缺失口径一致，永不显 0）
+        today_cost = {"cache_hit_tokens": t["hit"] if t["has_cache"] else None}
+    today_cost.update({
+        "day": date_to,
+        "tokens_prompt": t["prompt"] if t else 0,
+        "tokens_completion": t["completion"] if t else 0,
+        "cost_input": cost["input"],
+        "cost_output": cost["output"],
+        "cost_cache_hit": cost["cache_hit"],
+        "cost_total": cost["total"],
+        "self_tokens_total": t["self"] if t else 0,
+    })
+
+    tools_acc: dict[tuple[str, str], list[int]] = {}
+    for r in tool_rows:
+        item = tools_acc.setdefault((r["tool_name"], r["status"]), [0, 0])
+        item[0] += 1
+        item[1] += r["latency_ms"]
+    tools = [
+        {"tool_name": name, "status": st, "count": n, "avg_duration_ms": round(total / n)}
+        for (name, st), (n, total) in sorted(tools_acc.items())
+    ]
+
+    return {
+        "window": {"days": days, "date_from": date_from, "date_to": date_to},
+        "price": {
+            "configured": configured,
+            "input_per_mtok": settings.price_input,
+            "output_per_mtok": settings.price_output,
+            "cache_hit_per_mtok": settings.price_cache_hit,
+        },
+        "today_cost": today_cost,
+        "daily": daily,
+        "tools": tools,
+        "retention_days": telemetry.RETENTION_DAYS,
     }

@@ -177,6 +177,50 @@ export interface ServerProfile {
   tools_enabled?: boolean
 }
 
+/** REQ-038（iter-15 T3）：遥测聚合响应（design-iter-15 §5 定案形状逐字）。
+ *  缺失与未配置语义（铁律 5）：缓存列 NULL → null（显「缺失」，永不显 0）；
+ *  单价未配置 → price.configured=false 且全部 cost_* 为 null（tokens 如实）。 */
+export interface AdminTelemetry {
+  window: { days: number; date_from: string; date_to: string }
+  price: {
+    configured: boolean
+    input_per_mtok: number | null
+    output_per_mtok: number | null
+    cache_hit_per_mtok: number | null
+  }
+  today_cost: {
+    day: string
+    tokens_prompt: number
+    tokens_completion: number
+    cache_hit_tokens: number | null
+    cost_input: number | null
+    cost_output: number | null
+    cost_cache_hit: number | null
+    cost_total: number | null
+    self_tokens_total: number
+  }
+  /** 仅列有数据日（缺失时段由前端以窗口天数比对判定）；日期降序 */
+  daily: Array<{
+    day: string
+    tokens_prompt: number
+    tokens_completion: number
+    cache_hit_tokens: number | null
+    cache_miss_tokens: number | null
+    /** null = 该日缓存字段缺失（整天无带字段行） */
+    cache_rate: number | null
+    cost_total: number | null
+    self_tokens_total: number
+  }>
+  /** GROUP BY tool_name,status；排序固定 tool_name ASC, status ASC（确定性） */
+  tools: Array<{
+    tool_name: string
+    status: 'ok' | 'error' | 'timeout' | 'cancelled'
+    count: number
+    avg_duration_ms: number
+  }>
+  retention_days: number
+}
+
 export interface ProfilePayload {
   name: string
   base_url: string
@@ -212,6 +256,9 @@ export const backend = {
   // REQ-025（iter-8 T2）+ REQ-029（iter-12 T1/T2）：管理后台（非管理员一律 403，服务端为安全边界）
   adminUsers: () => request<AdminUserRow[]>('GET', '/api/admin/users'), // 无参数 = 纯列表全量（§4.1 兼容形态，用量筛选下拉数据源）
   adminOverview: () => request<AdminOverview>('GET', '/api/admin/overview'),
+  // REQ-038（iter-15 T3）：遥测聚合（design-iter-15 §5；days 整数 1~90，越界/非整数后端 422）
+  adminTelemetry: (days: number) =>
+    request<AdminTelemetry>('GET', `/api/admin/telemetry?days=${days}`),
   // iter-14 T3（design-iter-14 §6.1 定夺⑥）：admin 联网搜索开关写入（下一回合生效；非 admin 403 / 非 422 由后端承载）
   adminUpdateSearchEnabled: (searchEnabled: boolean) =>
     request<{ search_enabled: boolean }>('PUT', '/api/admin/settings', { search_enabled: searchEnabled }),

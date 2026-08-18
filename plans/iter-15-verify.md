@@ -286,3 +286,59 @@ HTTP 429
   3. endpoint='legacy' 值随 schema 保留（历史/取证行），下线后不再新增。
   4. 单价单位元/百万 token，成本 = Σtokens × 单价 ÷ 1e6（后端 6 位小数随 T3）。
 - **观察**：T1 留档未落 plans/iter-15-verify.md（设计基线产物在 design/iter-15/ + spec 指针回填，tag 由主会话打）——本 T2 段按合同以 design-iter-15 §5 为 API 口径核对输入，逐字一致性已核（端点归 T3 实现，T2 数据层形状与之无冲突）。
+
+---
+
+## T3 admin 遥测面板与全局回归收口（2026-08-19 执行）
+
+> T3 = plans/iter-15.md T3 行四交付面：① admin.py 遥测聚合端点（加法扩展）② AdminView 遥测视图（design-iter-15 §1~3）③ 403 门禁沿 get_admin_user ④ 全局回归基线 B1 面收口。实现输入：design-iter-15 §5 API 口径（逐字）+ §1~3 视图规格 + §2 文案登记表 T1~T28 + §4 状态矩阵 + §7.2 走查 44 条；数据层 = T2 交付的 telemetry 表（零改动只读消费）。
+
+### 1. 验收条款对照（REQ-038 验收 1~4 逐条）
+
+| 验收 | 断言 | 证据 | 判定 |
+|---|---|---|---|
+| 1 REQ-025/029 口径零回退：六端点形状零变化或仅加法字段 + 既有 admin pytest 零改动复跑全绿 | 遥测为**纯新增端点** GET /api/admin/telemetry（既有六端点 + PUT settings 代码零触达）；test_admin.py **逐字节零改动**（git diff 为空取证）复跑全绿 | `git diff -- backend/tests/test_admin.py backend/app/quota.py` 为空；239 全绿内含 test_admin 全部既有用例；走查条 9（自动化承载标注） | ✅ |
+| 2 聚合一致性：造数已知 telemetry 行集 → 数值断言（成本=tokens×单价精确值 / 命中率数值 / 缺失→缺失标注） | pytest 直插造数：成本三分项 = tokens×单价÷1e6 六位小数精确等式（0.3/0.24/0.025/0.565/0.77）；命中率 0.333333/0.5/0.3（混合日仅计带字段行）；缓存 NULL → cache_hit/miss/rate 全 null；无数据日不列 daily；工具 count/均值/确定性排序逐值断言 | test_admin_telemetry::test_遥测_造数聚合_成本命中率工具精确值 + test_缺失语义 + test_混合日（本段 §4 清单） | ✅ |
+| 3 普通用户访问遥测端点 403 且不泄露任何数据 | 非 admin GET → 403 且响应体键集 == {"detail"}（零遥测字段）；未登录 401；普通用户界面 DOM 无遥测节点（tab 在 AdminView 403 守卫之内） | test_admin_telemetry::test_遥测_普通用户_403_响应体零遥测字段；走查条 10/41（浏览器实测 keys=["detail"]）；AdminTelemetry.spec 403 用例 | ✅ |
+| 4 design-iter-15 走查清单留档（亮/暗双主题 + 缺失态 + 单价未配置态） | scripts/e2e-walkthrough-15.mjs 脚本化走查 **58 PASS / 0 FAIL**（44 条清单全覆盖：浏览器实测 48 条记录 + 自动化用例承载标注 10 条）；截图 8 帧（亮暗双主题 + 空窗口/缓存全缺失/缺失时段/加载/失败/单价未配置亮暗） | 本段 §3；/tmp/e2e15/shots/00~07 | ✅ |
+
+### 2. 实现要点（对合同四交付面）
+
+| 交付面 | 落地 |
+|---|---|
+| ① 聚合端点 | `backend/app/routers/admin.py` 新增 `telemetry_view`（只读，`days: int = Query(7, ge=1, le=90)` 越界/非整数 422；门禁 AdminUser 同一依赖）：窗口 = quota.today 口径近 N 自然日；成本三分项仅 mode='unified' llm 行（Σtokens×单价÷1e6，round 6 位；缓存成本基数 = unified 带字段行 Σhit）；cache_rate = Σhit/(Σhit+Σmiss) 日级仅计带字段行（定夺⑤），整天无带字段行 → cache 三字段 null；daily 仅列有数据日（tool-only 日亦列，unified 列真值 0）降序；今日无行 today_cost 全真值 0；tools 按 (tool_name,status) 聚合并固定 ASC 排序、均值四舍五入整数；price.configured = 三变量全非 None 且非负；retention_days 取 telemetry.RETENTION_DAYS（90）。响应形状与 design-iter-15 §5 示例逐字一致 |
+| ② 遥测视图 | `src/views/AdminView.vue` 加法扩展：tab 2→3（radiogroup 语义沿用，前两段零变化）；进入遥测 tab 惰性拉取、窗口切换仅重拉遥测面板（seq 竞态护栏）；工具行（近 7/14/30 天分段 + retention_days 供数注记）→ 卡 A（大数值 ¥4 位小数直显后端值 + 三分项 + 单价只读行 + 自填行 T9）→ 双卡并排（卡 B 命中率四列表 / 卡 C 工具用量四列表）→ 卡 D 六列明细；七态全落形（正常/缺失时段琥珀行 T23/单价未配置 T10·T11·成本「—」/缓存全缺失徽标/空窗口 T28/加载 T26/失败 T27 重试保留窗口）；0 与缺失视觉语言分离；文案逐字对照 §2 登记表 T1~T28；`src/api/backend.ts` 增 AdminTelemetry 类型 + adminTelemetry 调用（403 沿既有 request 错误处理） |
+| ③ 403 门禁 | 端点层 get_admin_user（响应体零遥测字段）+ 界面层 isAdmin 守卫（普通用户 DOM 无遥测节点、不发起请求）——双保险沿用，零新增守卫代码 |
+| ④ 全局回归收口 | 前端 305 存量零改动复跑全绿（AdminView.spec 等既有 spec 文件零触达；新增独立 AdminTelemetry.spec.ts）；后端 231 存量零改动复跑全绿（test_admin/test_quota 等零触达；新增独立 test_admin_telemetry.py）；功能性删除为零（本任务无改写无退役）；guard:style 通过（零新增令牌、零裸色值）；生产构建通过 |
+
+### 3. 走查留档（design-iter-15 §7.2 清单 44 条 → 脚本 58 条记录）
+
+执行方式：`scripts/e2e-walkthrough-15.mjs`（沿 iter-13/14 先例：自起独立后端 8803 + vite 5180 + /tmp 独立库；puppeteer-core 驱动本机 Chrome；**零 key 处理**——遥测视图只读，造数经 backend/.venv/bin/python 直插 telemetry 表，样件全虚构铁律 5）。
+
+- **数据态覆盖**：空窗口（造数前实测）→ 缓存字段全缺失（day0~6 缓存 NULL）→ 缺失时段（day7 缺口，窗口 14/30 触发琥珀行）→ 部分缺失混合（day8~13 带字段行与 NULL 日并存，窗口合计 40.0% 仅计带字段行）→ 单价未配置（后端 B 阶段不带单价变量同库重启）→ 加载帧（请求拦截延迟 1500ms 运行时取证）→ 失败态（请求拦截 abort + 重试保留窗口选择复跑）。
+- **双主题承载（条 42）**：浅色逐条 + 暗色全元素亮色残留扫描（遥测面板零残留）+ 关键文字令牌断言（surface #1E2026 / text-1 #E6EAF0 / 琥珀 #38290F+#EDA23B）+ 对比度声明（tokens v1.3 计算值）。
+- **[文] 逐字断言**：T1~T28 关键项浏览器逐字（T2/T3/T4/T5/T6/T7/T8/T9/T10/T11/T12/T13/T15/T16/T17/T18/T19/T21/T22/T23/T24/T25/T26/T27/T28）。
+- **[几] 几何断言**：卡容器 16/20·圆角 12·双卡 grid 等宽 gap16·面板距 tabs 12 / th 10/16·td 12/16·数字列右对齐 tabular / 大数值 20px·600·tabular / 胶囊高 20 / 分段高 32 / 琥珀行 8/14 / warn-hint 8/12。
+- **[行] 行为断言**：时间语义（date_to = 服务器本地今日 2026-08-19，daily 含今日行）/ 窗口切换恰 1 次遥测请求、tab 与选择保留 / 成本与命中率数值 = 后端机器值直显（前端零再计算）/ 重试保留窗口 / 未配置 DOM 无 ¥ 数字残留（变异断言）/ 403 零泄露 / 零轮询（2.5s 无新增请求）。
+- **结果：58 PASS / 0 FAIL**（浏览器实测 48 记录 + 自动化承载标注 10 记录：条 4/7/8/9/19/25/27/33/34/43 及前端七态用例组）。
+- **截图**（/tmp/e2e15/shots/）：00-empty-window-light / 01-win7-nocache-light（缓存全缺失态）/ 02-win14-gap-mixed-light（缺失时段+混合）/ 03-win14-dark / 04-loading-frame / 05-win14-after-retry-light / 06-noprice-light（单价未配置态）/ 07-noprice-dark。
+- **过程缺陷**：DEF-036（遥测表 th.num 左对齐偏离条 26，走查首轮发现当轮修复——`.tel-table th.num` 显式覆盖，复验 58/58）。
+
+### 4. 测试数字（机器采集）与用例清单
+
+| 项 | 数 |
+|---|---|
+| 存量基线（T2 收口） | pytest 231 / vitest 305 |
+| 新增后端 test_admin_telemetry.py（纯新文件，既有用例零改动） | +8 |
+| 新增前端 AdminTelemetry.spec.ts（纯新文件，既有 spec 零触达） | +19 |
+| **收口实测** | **pytest 239 passed + ruff clean；vitest 324 passed；guard:style 通过；生产构建通过**；改写用例 0、功能性删除 0 |
+
+后端新增 8 例：造数聚合精确值（成本三分项/命中率/工具排序/仅列有数据日/retention）· 缺失语义（NULL→null、无数据日不列、今日无行真值 0）· 混合日仅计带字段行 · 单价未配置（configured=false + cost_* null + tokens 如实）· days 边界（1/90 过、0/91/abc/7.5/-3 → 422、默认 7）· 普通用户 403 零泄露 + 未登录 401 · 时间语义（date_to=quota.today、daily 含今日行）· 空窗口。
+
+前端新增 19 例：tab 加法与惰性拉取 · 切回前 tab 零变化 · 普通用户 DOM 无遥测节点 · 工具行 T24/T25 · 卡 A T2~T5 + 大数值 4 位小数直显 · 单价行 T6/T7/T8 + 无编辑入口 · 自填行 T9 · 卡 B T12~T14 + 窗口合计 NN.N% · 卡 C T16~T19 四态徽标 · 卡 D T21/T22 + T23 琥珀行 · 单价未配置（成本全「—」+ T10/T11 + 无 ¥ 残留 + 命中率不受影响）· 今日无遥测行 · 缓存全缺失（徽标不显 0%/NaN）· 合法 0 与缺失区分 · 空窗口 T28 · 卡 C 空态 T20 · 加载 T26 · 失败 T27 + 重试保留窗口 · 窗口切换仅重拉遥测。
+
+### 5. 缺陷与遗留
+
+- **新登记**：DEF-036（遥测表 th.num 对齐，走查首轮发现当轮修复，复验全绿）。
+- **遗留（迭代收口面）**：无功能性遗留。度量口径提示——遥测面板成本为**估算值**（tokens×部署单价），与上游账单的最终对账以账单为准（spec REQ-038 描述句口径，非本期范围）；明细行下钻视图为 B1+ 候选（design-iter-15 §1 不做清单已登记）。
+- **观察**：走查脚本断言发现 daily 降序首行为今日（脚本首版误断言首行为最旧日，属脚本问题非产品缺陷，已修脚本复跑全绿）——与 T0 观察③同款「脚本断言自纠」如实登记。
