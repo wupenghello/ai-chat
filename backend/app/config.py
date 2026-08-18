@@ -33,6 +33,15 @@ class Settings(BaseSettings):
     # （AI_CHAT_SEARCH_KEY，与统一 key 三变量同法）；空 = 未配置 → search 工具不注册
     # （admin 开关状态可存，key 与开关分离，design §6.1）；不入 git/日志/响应体
     search_key: str = ""
+    # CHG-009/REQ-036（iter-15 T2）：产品人设 = system[0] 静态前缀内容物，跨全部用户全部请求
+    # 字节恒定（T0 中性默认稿 CEO 审签定稿，全文留档 plans/iter-15-verify.md T0 §4）；
+    # 空 = 回退基线 v5 单 system 形态（回归锚点）。多行值在 .env 以双引号包裹
+    product_persona: str = ""
+    # CHG-009/REQ-038 单价三变量（定夺⑥：admin 只读、成本口径仅计统一 key 模式）：单位
+    # 元/百万 token（DeepSeek 计价口径）；None = 未配置 → 成本不估算并提示（不造数，铁律 5）
+    price_input: float | None = None
+    price_output: float | None = None
+    price_cache_hit: float | None = None
 
 
 @lru_cache

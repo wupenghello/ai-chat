@@ -1,26 +1,26 @@
-"""流式代理（REQ-023，iter-7 T1/T2）：OpenAI 兼容 chat completions 经服务端转发。
+"""对话入口（回合端点，CHG-007/CHG-009）：POST /api/chat/turn 为唯一对话入口。
 
-- 模式路由（T2 起，REQ-018）：每请求读该用户当前生效档案——有 = 自填模式（档案三要素
-  转发），无 = 统一 key 模式（.env 三变量，design-iter-7 定夺①）；「当前生效」在请求开始时
-  读取，生成中切换档案天然「当前回复旧配置跑完、下一次请求生效」（CHG-002）
-- 错误映射文案 = design-iter-7 §3.1 定稿；上游 401/403 映射为 502
-  （避免与 Cookie 会话失效的 401 混淆触发前端跳登录）
-- 上游流中断：向流末尾补 upstream_interrupted 帧，前端转「生成中断」标注（REQ-001/003）
-- 密钥安全：发往上游的请求头全新构造（绝不透传 Cookie），任何响应/日志不含 key
+- 定夺④（CHG-009，iter-15 T2）：旧透传端点 POST /api/chat/completions 已随 B1 下线删除，
+  回合端点成为唯一对话入口；本文件原「流式代理（REQ-023）」透传层随之退役。
+  下线序列与取证（legacy 行流量取证 → 端点删除 404 → test_proxy 16 例退役映射 →
+  proxy_smoke 迁 turn）留档 plans/iter-15-verify.md T2 段。
+- 模式路由（REQ-018）：每回合规该用户当前生效档案——有 = 自填模式（档案三要素），
+  无 = 统一 key 模式（.env 三变量，design-iter-7 定夺①）。
+- 密钥安全：发往上游的请求头全新构造（绝不透传 Cookie），任何响应/日志不含 key。
 """
 
 import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
-from typing import Annotated, Literal
+from typing import Annotated, Any
 
 import httpx
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from app import agent, quota
+from app import agent, quota, telemetry
 from app.config import Settings, get_settings
 from app.db import DatabaseDep, is_search_enabled
 from app.routers.auth import CurrentUser
@@ -29,18 +29,6 @@ from app.tools import tools_for_user
 router = APIRouter(prefix="/api", tags=["chat"])
 
 logger = logging.getLogger("ai-chat.quota")
-
-_INTERRUPTED_FRAME = b'data: {"upstream_interrupted": true}\n\n'
-
-
-class ChatMessage(BaseModel):
-    role: Literal["system", "user", "assistant"]
-    content: str
-
-
-class ChatCompletionRequest(BaseModel):
-    messages: list[ChatMessage]
-    stream: bool = True  # 本端点只支持流式（spec 主流程）；字段保留兼容显式 stream=true
 
 
 class TurnRequest(BaseModel):
@@ -83,89 +71,6 @@ def _error(
     return JSONResponse(body, status_code=status)
 
 
-@router.post("/chat/completions")
-async def chat_completions(
-    body: ChatCompletionRequest,
-    user: CurrentUser,
-    request: Request,
-    conn: DatabaseDep,
-    settings: Annotated[Settings, Depends(get_settings)],
-) -> Response:
-    # REQ-024（iter-8 T1）配额检查位：按用户当前密钥模式档位校验，不足时在此直接拒绝（不调用上游）；
-    # 档位联动口径见 app/quota.py（同日总消耗对当前档位限额判定）
-    resolved = _resolve_upstream(conn, user, settings)
-    if resolved is None or (resolved[0] is None and not resolved[2]):
-        return _error(503, "unified_key_missing", "服务端未配置统一密钥，请联系管理员")
-    profile, base_url, api_key, model = resolved
-
-    mode = quota.MODE_SELF if profile is not None else quota.MODE_UNIFIED
-    day, blocked = quota.check_and_consume(conn, user.id, mode, settings)
-    if blocked is not None:
-        # REQ-024 验收取证：被拦截请求未抵达上游（服务端日志可观测）
-        status_code, code, detail = blocked
-        logger.info("chat blocked user_id=%s mode=%s code=%s", user.id, mode, code)
-        return _error(status_code, code, detail)
-
-    upstream: httpx.AsyncClient = request.app.state.http
-    payload = {
-        "model": model,
-        "messages": [m.model_dump() for m in body.messages],
-        "stream": True,
-        # usage 帧请上游压轴下发（OpenAI 兼容），token 用量据此落库（REQ-025 统计口径）
-        "stream_options": {"include_usage": True},
-    }
-    try:
-        resp = await upstream.send(
-            upstream.build_request(
-                "POST",
-                f"{base_url}/chat/completions",
-                json=payload,
-                headers={"Authorization": f"Bearer {api_key}", "Accept": "text/event-stream"},
-            ),
-            stream=True,
-        )
-    except httpx.TimeoutException:
-        return _error(504, "upstream_timeout", "请求超时，请稍后重试")
-    except httpx.HTTPError:
-        return _error(502, "upstream_unreachable", "上游服务暂时不可用，请稍后重试")
-
-    if resp.status_code in (401, 403):
-        status = resp.status_code
-        await resp.aclose()
-        return _error(
-            502, "upstream_auth", "请求失败：API 密钥无效，请检查高级设置中的供应商配置", status
-        )
-    if resp.status_code == 429:
-        await resp.aclose()
-        return _error(429, "upstream_rate_limited", "请求过于频繁，已被限流。请稍后重试", 429)
-    if resp.status_code >= 400:
-        status = resp.status_code
-        await resp.aclose()
-        return _error(502, "upstream_error", "上游服务暂时不可用，请稍后重试", status)
-
-    logger.info(
-        "chat forwarded user_id=%s mode=%s upstream_status=%s", user.id, mode, resp.status_code
-    )
-
-    async def relay() -> AsyncIterator[bytes]:
-        raw = bytearray()
-        try:
-            async for chunk in resp.aiter_raw():
-                raw += chunk
-                yield chunk
-        except httpx.HTTPError:
-            yield _INTERRUPTED_FRAME
-        finally:
-            await resp.aclose()
-            # 逐字节透传不变，仅在旁路累积观测 usage 帧（不改写字节）；
-            # day = 请求时 check_and_consume 落账自然日，跨零点流 token 仍归请求日
-            # （Code Review 观察项①）
-            tokens = quota.extract_total_tokens(bytes(raw))
-            quota.record_tokens(request.app.state.db_path, user.id, mode, tokens, day)
-
-    return StreamingResponse(relay(), media_type="text/event-stream")
-
-
 @router.post("/chat/turn")
 async def chat_turn(
     body: TurnRequest,
@@ -195,7 +100,9 @@ async def chat_turn(
     day, blocked = quota.check_and_consume(conn, user.id, mode, settings)
     if blocked is not None:
         status_code, code, detail = blocked
-        logger.info("turn blocked user_id=%s mode=%s code=%s", user.id, mode, code)
+        # 配额拦截取证标记沿 REQ-024 既有口径「chat blocked」（iter-8 定稿；定夺④下线后
+        # 回合端点为唯一对话入口，标记统一承继——test_quota 零改动复跑的断言面）
+        logger.info("chat blocked user_id=%s mode=%s code=%s", user.id, mode, code)
         return _error(status_code, code, detail)
 
     try:
@@ -205,7 +112,12 @@ async def chat_turn(
     except (json.JSONDecodeError, ValueError):
         doc = {"messages": []}  # 沿现有「无法读取」容错口径，空历史参与组装
     history = agent.wire_messages_from_doc(doc)
-    messages = agent.assemble_context(history, body.message, body.system_prompt or None)
+    # CHG-009/REQ-036（iter-15 T2）：两段式分区——system[0] 静态前缀（产品人设，
+    # .env 注入，跨请求字节恒定）+ system[1] 动态尾区；人设留空回退基线 v5 单 system 形态
+    messages = agent.assemble_context(
+        history, body.message, body.system_prompt or None,
+        product_persona=settings.product_persona,
+    )
 
     # 工具可用性（design-iter-14 §6.2/§6.3）：自填档案「支持工具」开关（定夺①，默认开；
     # 统一 key 恒开）× admin 联网搜索总开关（KV 落库，回合受理时实时读——PUT 后下一回合
@@ -220,6 +132,24 @@ async def chat_turn(
     def record_usage(calls: int, tokens: int) -> None:
         # 回合结束/断连后落账 tokens（定夺⑧：已抵上游则回合已计，tokens 记已发生部分）
         quota.record_tokens(request.app.state.db_path, user.id, mode, tokens, day)
+
+    def telemetry_sink(row: dict[str, Any]) -> None:
+        # CHG-009/REQ-037（iter-15 T2）：请求级遥测落库——turn 端点 llm/tool 行（turn_id 关联）；
+        # 写入面自身吞 sqlite 异常（主路径隔离），此处仅补公共维度字段
+        common = {"day": day, "user_id": user.id, "mode": mode,
+                  "turn_id": row.get("turn_id"), "endpoint": "turn"}
+        if row["kind"] == "llm":
+            telemetry.record_llm(
+                request.app.state.db_path, **common,
+                step=row["step"], model=row["model"], latency_ms=row["latency_ms"],
+                status=row["status"], usage=row.get("usage"), error_code=row.get("error_code"),
+            )
+        else:
+            telemetry.record_tool(
+                request.app.state.db_path, **common,
+                step=row["step"], tool_name=row["tool_name"],
+                latency_ms=row["latency_ms"], status=row["status"],
+            )
 
     upstream: httpx.AsyncClient = request.app.state.http
     logger.info("turn accepted user_id=%s mode=%s session_id=%s tools=%s",
@@ -238,6 +168,7 @@ async def chat_turn(
             step_timeout=settings.agent_step_timeout,
             tool_result_limit=settings.tool_result_limit,
             on_finish=record_usage,
+            telemetry_sink=telemetry_sink,
         ):
             yield ("data: " + json.dumps(ev, ensure_ascii=False) + "\n\n").encode()
 

@@ -12,7 +12,7 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 MIGRATIONS: dict[int, str] = {
     1: """
@@ -109,6 +109,35 @@ MIGRATIONS: dict[int, str] = {
         key   TEXT PRIMARY KEY,
         value TEXT NOT NULL
     );
+    """,
+    # iter-15 T2（CHG-009 REQ-037，迁移编号说明见 changes.md CHG-009 内容 4.4）：
+    # telemetry 请求级明细表——每次上游 LLM 调用一行（kind=llm）/ 每次工具执行一行（kind=tool）；
+    # 机器采集（铁律 5）：token 分项/缓存字段上游不返回记 NULL；明细保留 90 天惰性清理
+    # （定夺⑤，app/telemetry.py）；既有 usage_daily 回合/token 落账零变化（并行新轨）。
+    # schema 全文与 CHG-009 内容 4.2 拟稿逐字一致
+    8: """
+    CREATE TABLE telemetry (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        day TEXT NOT NULL,                 -- 自然日（服务器本地时区，同 usage_daily 口径）
+        ts TEXT NOT NULL DEFAULT (datetime('now')),
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        mode TEXT NOT NULL,                -- 'unified' | 'self'
+        turn_id TEXT,                      -- 回合关联；旧透传端点（若保留期）为 NULL
+        endpoint TEXT NOT NULL,            -- 'turn' | 'legacy'
+        kind TEXT NOT NULL,                -- 'llm'（上游调用行）| 'tool'（工具执行行）
+        step INTEGER,                      -- llm 行：回合内步序
+        model TEXT,                        -- llm 行：上游模型名
+        latency_ms INTEGER NOT NULL,
+        status TEXT NOT NULL,              -- ok | error | timeout | cancelled
+        tokens_prompt INTEGER,             -- 上游不返回 → NULL（不造数）
+        tokens_completion INTEGER,
+        tokens_total INTEGER,
+        cache_hit_tokens INTEGER,          -- 上游不返回 → NULL（铁律 5：显示缺失）
+        cache_miss_tokens INTEGER,
+        tool_name TEXT,                    -- tool 行：工具名
+        error_code TEXT                    -- status != ok 时机器可读码（沿 §3.1 映射码体系）
+    );
+    CREATE INDEX idx_telemetry_day ON telemetry(day, user_id);
     """,
 }
 

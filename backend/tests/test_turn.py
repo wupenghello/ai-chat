@@ -280,18 +280,26 @@ def test_组装_系统段恒含当前时间行():
     assert ctx2[0]["content"] == f"你是助手\n\n{_now_line()}"  # 有则拼接其后
 
 
-def test_组装等价_系统提示词首位加最近20轮(tmp):
+def test_组装等价_空配置回退与基线v5逐字段等价(tmp):
+    """REQ-036 验收 5 / REQ-033 验收 1 新口径（CHG-009 改写）。
+
+    改写映射登记见 plans/iter-15-verify T2 段。
+
+    旧用例「组装等价_系统提示词首位加最近20轮」断言 system 首位 = 用户提示词 + 时间行 +
+    最近 20 轮逐字段等价；新口径：静态前缀空配置 → 请求体 system 部分与基线 v5 形态
+    逐字段等价（回归锚点）。分区在位形态断言见 REQ-036 验收 1/2/3 各用例。
+    """
     def handler(_req, n):
         return _sse(text_then_done("ok", 10))
 
-    with turn_app(tmp, handler) as (c, seen):
+    with turn_app(tmp, handler, settings_extra={"product_persona": ""}) as (c, seen):
         register(c, "alice")
         _put_session(c, "s1", _mk_turns(30))  # 30 轮存量（不含本条新消息）
         evs = _events(c, "s1", "current question", system_prompt="你是助手")
         assert evs[-1]["reason"] == "done"
 
         msgs = _upstream_messages(seen[-1])
-        # CHG-008（2026-08-18）：系统段恒存在 = 用户系统提示词 + 当前时间行（时间动态，正则断言）
+        # 基线 v5 形态（CHG-008）：单条 system = 用户系统提示词 + 当前时间行（时间动态，正则断言）
         assert msgs[0]["role"] == "system"
         assert msgs[0]["content"].startswith("你是助手\n\n当前时间：")
         time_pat = r"当前时间：\d{4}-\d{2}-\d{2}（周[一二三四五六日]）\d{2}:\d{2}（北京时间）"
@@ -303,7 +311,113 @@ def test_组装等价_系统提示词首位加最近20轮(tmp):
             role = "user" if i % 2 == 0 else "assistant"
             expected.append({"role": role, "content": f"msg{i}"})
         expected.append({"role": "user", "content": "current question"})
-        assert msgs == expected  # 逐字段等价（验收 6；系统段外逐字）
+        assert msgs == expected  # 逐字段等价（系统段外逐字）
+
+
+# ---------- REQ-036：两段式分区（CHG-009 定夺②策略一） ----------
+
+PERSONA = "产品人设样件：跨请求字节恒定的静态前缀内容物。"
+
+
+def test_分区_静态前缀跨用户跨会话跨时刻字节恒定(tmp):
+    """REQ-036 验收 1：任意两回合 system[0] content 逐字节相同（MockTransport 捕获比对）。"""
+    from app import agent as agent_mod
+
+    def handler(_req, n):
+        return _sse(text_then_done("ok", 10))
+
+    with turn_app(tmp, handler, settings_extra={"product_persona": PERSONA}) as (c, seen):
+        register(c, "root")  # 首注册 = admin
+        _put_session(c, "s1", [])
+        _events(c, "s1", "第一个问题")
+        c.post("/api/auth/logout")
+        register(c, "bob")  # 不同用户
+        _put_session(c, "s2", [])
+        # 不同时刻：时间行跨两次请求不同（_now_line 按请求序号给两个不同值）
+        times = ["当前时间：2026-08-19（周三）09:00（北京时间）",
+                 "当前时间：2026-08-19（周三）21:30（北京时间）"]
+        original = agent_mod._now_line
+        agent_mod._now_line = lambda: times[min(len(seen), 1)]
+        try:
+            _events(c, "s2", "第二个问题")
+        finally:
+            agent_mod._now_line = original
+
+        first, second = _upstream_messages(seen[0]), _upstream_messages(seen[1])
+        assert first[0] == {"role": "system", "content": PERSONA}
+        assert second[0] == {"role": "system", "content": PERSONA}
+        # 逐字节相同（跨用户/跨会话/跨时刻）
+        assert first[0]["content"].encode() == second[0]["content"].encode()
+
+
+def test_分区_动态尾区完整性与隔离(tmp):
+    """REQ-036 验收 2：用户提示词与时间行仅在 system[1]；system[0] 检索不到二者。"""
+    def handler(_req, n):
+        return _sse(text_then_done("ok", 10))
+
+    with turn_app(tmp, handler, settings_extra={"product_persona": PERSONA}) as (c, seen):
+        register(c, "alice")
+        _put_session(c, "s1", [])
+        _events(c, "s1", "q", system_prompt="你是简洁的翻译助手")
+        msgs = _upstream_messages(seen[-1])
+
+        assert msgs[0]["content"] == PERSONA
+        assert msgs[1]["role"] == "system"
+        assert msgs[1]["content"].startswith("你是简洁的翻译助手\n\n当前时间：")
+        # 隔离：system[0] 检索不到时间串与用户提示词
+        assert "当前时间" not in msgs[0]["content"]
+        assert "你是简洁的翻译助手" not in msgs[0]["content"]
+        # 完整性：非 system 消息段不含时间行/用户提示词（仅动态尾区承载）
+        rest = [m for m in msgs[2:] if m["role"] != "system"]
+        assert all("当前时间：" not in m["content"] for m in rest if isinstance(m["content"], str))
+
+
+def test_分区_用户提示词留空_动态尾区仅时间行(tmp):
+    """REQ-036 异常分支：用户系统提示词留空 → 动态尾区仅含时间行（现状口径不变）。"""
+    def handler(_req, n):
+        return _sse(text_then_done("ok", 10))
+
+    with turn_app(tmp, handler, settings_extra={"product_persona": PERSONA}) as (c, seen):
+        register(c, "alice")
+        _put_session(c, "s1", [])
+        _events(c, "s1", "q")
+        msgs = _upstream_messages(seen[-1])
+        assert msgs[0]["content"] == PERSONA
+        assert re.fullmatch(
+            r"当前时间：\d{4}-\d{2}-\d{2}（周[一二三四五六日]）\d{2}:\d{2}（北京时间）",
+            msgs[1]["content"])
+
+
+def test_分区_第30轮窗口零变化_仍仅最近20轮(tmp):
+    """REQ-036 验收 3 + REQ-002 复验：分区在位时 20 轮窗口与 user 锚定截断零变化。"""
+    def handler(_req, n):
+        return _sse(text_then_done("ok", 10))
+
+    with turn_app(tmp, handler, settings_extra={"product_persona": PERSONA}) as (c, seen):
+        register(c, "alice")
+        _put_session(c, "s1", _mk_turns(30))
+        _events(c, "s1", "current question")
+        msgs = _upstream_messages(seen[-1])
+        assert msgs[0]["content"] == PERSONA and msgs[1]["role"] == "system"
+        window = msgs[2:]
+        # 最近 20 轮 = 第 12 轮 user 起（m22..m59 共 38 条）+ 本条 user（当轮尚无 assistant）
+        assert len(window) == 39
+        assert window[0] == {"role": "user", "content": "msg22"}
+        assert window[-1] == {"role": "user", "content": "current question"}
+
+
+def test_分区_超20轮系统提示词仍在动态尾区段首位(tmp):
+    """REQ-008 验收 3（CHG-009 分区改口径）：超 20 轮时用户提示词在动态尾区段首位、不被截断。"""
+    def handler(_req, n):
+        return _sse(text_then_done("ok", 10))
+
+    with turn_app(tmp, handler, settings_extra={"product_persona": PERSONA}) as (c, seen):
+        register(c, "alice")
+        _put_session(c, "s1", _mk_turns(25))
+        _events(c, "s1", "q", system_prompt="你是简洁的翻译助手")
+        msgs = _upstream_messages(seen[-1])
+        assert msgs[0]["content"] == PERSONA  # 静态前缀段在其前
+        assert msgs[1]["content"].startswith("你是简洁的翻译助手\n\n当前时间：")  # 动态尾区段首位
 
 
 def test_组装_库内已含本条消息_不重复追加(tmp):
@@ -557,3 +671,135 @@ def test_断连取消_上游连接关闭_无第二次调用(tmp):
             " WHERE mode='unified'").fetchone()
         conn.close()
         assert row == (1, 1)  # 定夺⑧：回合受理即计（已抵上游）
+
+
+# ---------- 旧透传端点退役映射：回合端点等价口径收编用例 ----------
+# （定夺④方案 A 下线执行，test_proxy 16 例退役映射登记见 plans/iter-15-verify T2 段；
+# 以下为旧断言在回合端点的等价收编面，功能性删除为零口径的承接）
+
+def test_turn_未登录_401(tmp):
+    """退役映射收编（旧 TestAuthGate::test_未登录_401）：鉴权门禁同源。"""
+    def handler(_req, n):
+        raise AssertionError("未登录请求不得抵达上游")
+
+    with turn_app(tmp, handler) as (c, seen):
+        r = c.post("/api/chat/turn", json={"session_id": "s", "message": "q"})
+        assert r.status_code == 401
+        assert seen == []
+
+
+def test_turn_统一密钥未配置_503_引导文案(tmp):
+    """退役映射收编（旧 TestUnifiedMode::test_统一密钥未配置_503_引导文案）。"""
+    def handler(_req, n):
+        raise AssertionError("未配置密钥不得调用上游")
+
+    with turn_app(tmp, handler, settings_extra={"unified_key": ""}) as (c, seen):
+        register(c, "alice")
+        _put_session(c, "s1", [])
+        r = c.post("/api/chat/turn", json={"session_id": "s1", "message": "q"})
+        assert r.status_code == 503
+        body = r.json()
+        assert body["code"] == "unified_key_missing"
+        assert body["detail"] == "服务端未配置统一密钥，请联系管理员"
+        assert seen == []
+
+
+def test_turn_载荷_model取服务端配置(tmp):
+    """退役映射收编（旧 TestUnifiedMode::test_转发请求_模型取服务端配置_body_model_被忽略）：
+    回合端点请求体本无 model 字段（TurnRequest），模型恒取服务端配置。"""
+    def handler(_req, n):
+        return _sse(text_then_done("ok", 10))
+
+    with turn_app(tmp, handler) as (c, seen):
+        register(c, "alice")
+        _put_session(c, "s1", [])
+        _events(c, "s1", "q")
+        (req,) = seen
+        assert str(req.url) == f"{UPSTREAM}/chat/completions"
+        assert req.headers["authorization"] == f"Bearer {UNIFIED_KEY}"
+        payload = json.loads(req.content)
+        assert payload["model"] == UNIFIED_MODEL
+        assert payload["stream_options"] == {"include_usage": True}
+
+
+def test_turn_自填档案_路由到档案上游与密钥_回退统一key(tmp):
+    """退役映射收编（旧 TestProfileRouting 两例）：生效档案路由 + 回退统一 key。"""
+    def handler(_req, n):
+        return _sse(text_then_done("ok", 10))
+
+    with turn_app(tmp, handler) as (c, seen):
+        register(c, "alice")
+        r = c.post("/api/profiles", json={"name": "GLM", "base_url": "http://glm.test/v1",
+                                          "model": "glm-5.3", "api_key": "sk-glm-test"})
+        assert r.status_code == 201
+        pid = r.json()["id"]
+        assert c.post(f"/api/profiles/{pid}/activate").status_code == 200
+        _put_session(c, "s1", [])
+        _events(c, "s1", "q")
+        (req,) = seen
+        assert str(req.url) == "http://glm.test/v1/chat/completions"
+        assert req.headers["authorization"] == "Bearer sk-glm-test"
+        assert json.loads(req.content)["model"] == "glm-5.3"
+
+        # 删除生效档案 → 回退统一 key 路由
+        c.delete("/api/profiles/active")
+        _events(c, "s1", "q2")
+        req2 = seen[-1]
+        assert str(req2.url) == f"{UPSTREAM}/chat/completions"
+        assert req2.headers["authorization"] == f"Bearer {UNIFIED_KEY}"
+        assert json.loads(req2.content)["model"] == UNIFIED_MODEL
+
+
+@pytest.mark.parametrize("exc", [httpx.ConnectTimeout("upstream timeout"),
+                                 httpx.ConnectError("connection refused")])
+def test_turn_上游连接异常_error事件(tmp, exc):
+    """退役映射收编（旧 test_上游超时_504 / test_上游连接失败_502_unreachable）。
+
+    回合端点以 SSE error 事件承载（HTTP 层恒 200 流式，语义码同源 §3.1）。"""
+    def handler(_req, n):
+        raise exc
+
+    expected = "upstream_timeout" if isinstance(exc, httpx.TimeoutException) \
+        else "upstream_unreachable"
+
+    with turn_app(tmp, handler) as (c, seen):
+        sid = _plain(c, seen)
+        evs = _events(c, sid, "q")
+        assert [e["type"] for e in evs] == ["turn.start", "turn.step", "error", "usage", "turn.end"]
+        assert evs[2]["code"] == expected
+        assert evs[-1] == {"type": "turn.end", "reason": "error"}
+
+
+def test_turn_上游流中断_error事件_回合不崩(tmp):
+    """退役映射收编（旧 TestStreamInterrupt::test_上游流中断_补帧_已收内容保留）：
+    回合端点语义 = 中断映射 upstream_unreachable error 事件（SSE v2 无补帧机制，事件表口径）。"""
+    def handler(_req, n):
+        async def gen():
+            yield _frame({"choices": [{"delta": {"content": "部分"}}]}).encode()
+            raise httpx.ReadError("upstream dropped")
+
+        return httpx.Response(200, content=gen())
+
+    with turn_app(tmp, handler) as (c, seen):
+        sid = _plain(c, seen)
+        evs = _events(c, sid, "q")
+        types = [e["type"] for e in evs]
+        assert types == ["turn.start", "turn.step", "text.delta", "error", "usage", "turn.end"]
+        assert evs[3]["code"] == "upstream_unreachable"
+        assert evs[-1] == {"type": "turn.end", "reason": "error"}
+
+
+def test_turn_旧透传端点已下线_404(tmp):
+    """定夺④下线执行取证：/api/chat/completions 已删除，请求 404（回合端点为唯一对话入口）。
+
+    保留为回归守卫：防止旧透传端点被静默恢复（双轨维护面回潮）。
+    """
+    def handler(_req, n):
+        raise AssertionError("已下线端点不得有上游调用")
+
+    with turn_app(tmp, handler) as (c, seen):
+        register(c, "alice")
+        r = c.post("/api/chat/completions",
+                   json={"messages": [{"role": "user", "content": "你好"}]})
+        assert r.status_code == 404
+        assert seen == []

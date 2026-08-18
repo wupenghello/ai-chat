@@ -142,6 +142,7 @@ def assemble_context(
     system_prompt: str | None,
     *,
     max_turns: int = MAX_CONTEXT_TURNS,
+    product_persona: str = "",
 ) -> list[dict[str, Any]]:
     """服务端上下文组装（REQ-033，规则照搬前端 buildContext）：系统提示词 + 最近 20 轮。
 
@@ -149,6 +150,10 @@ def assemble_context(
     不留悬空 assistant（对齐旧「丢弃截断后悬空的 assistant」）。去重护栏：前端
     「先 PUT 再发回合」流向下库内已含本条用户消息，不重复追加。
     CHG-008（2026-08-18 CEO 验收走查反馈）：系统段恒存在 = 用户系统提示词（如有）+ 当前时间行。
+    CHG-009/REQ-036（iter-15 T2，定夺②策略一）：system 段两段式分区——
+    system[0] = 静态前缀（产品人设，跨请求字节恒定）+ system[1] = 动态尾区
+    （用户提示词如有 + 时间行）；product_persona 为空 → 回退基线 v5 单 system 形态
+    （回归锚点）。20 轮窗口与 user 锚定截断零变化；tools 字段不文本化进 system（定夺③）。
     """
     msgs = [m for m in history if m.get("role") != "system"]
     if not (msgs and msgs[-1].get("role") == "user" and msgs[-1].get("content") == message):
@@ -156,8 +161,11 @@ def assemble_context(
     turn_starts = [i for i, m in enumerate(msgs) if m.get("role") == "user"]
     start = turn_starts[-max_turns] if len(turn_starts) > max_turns else 0
     selected = msgs[start:]
-    sys_content = f"{system_prompt}\n\n{_now_line()}" if system_prompt else _now_line()
-    return [{"role": "system", "content": sys_content}] + selected
+    dynamic_tail = f"{system_prompt}\n\n{_now_line()}" if system_prompt else _now_line()
+    if product_persona:
+        return ([{"role": "system", "content": product_persona},
+                 {"role": "system", "content": dynamic_tail}] + selected)
+    return [{"role": "system", "content": dynamic_tail}] + selected
 
 
 # ---------- 上游流式调用（SSE 解析重组：文本增量 + tool_calls 分片重组 + usage） ----------
@@ -175,6 +183,8 @@ class UpstreamCall:
         self._api_key = api_key
         self._resp: httpx.Response | None = None
         self.usage = 0
+        # usage 帧原文（REQ-037 T2：token 分项/缓存字段映射的采集源；无帧 = 空 dict）
+        self.usage_detail: dict[str, Any] = {}
         self.texts: list[str] = []
         self.tool_calls: list[dict[str, str]] = []
 
@@ -217,6 +227,7 @@ class UpstreamCall:
                         usage = obj.get("usage")
                         if isinstance(usage, dict):
                             self.usage = int(usage.get("total_tokens") or 0)
+                            self.usage_detail = usage  # 原文留存：分项/缓存字段随遥测落库
                         choices = obj.get("choices") or []
                         if not choices:
                             continue
@@ -260,12 +271,17 @@ async def run_turn(
     step_timeout: float,
     tool_result_limit: int,
     on_finish: Callable[[int, int], None] | None = None,
+    telemetry_sink: Callable[[dict[str, Any]], None] | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """回合事件生成器（SSE v2，CHG-007 4.1 事件表）。
 
     断连取消：Starlette 取消本生成器 → CancelledError 在 yield 点抛入 → finally 取消
     进行中的上游调用（工具协程受 wait_for 约束随步超时/取消终止，无孤儿任务）；
     on_finish(calls, tokens) 以已发生部分落账（定夺⑧：回合受理即计、tokens 如实累计）。
+
+    CHG-009/REQ-037（iter-15 T2）：telemetry_sink 接收请求级遥测行——每次上游调用终态
+    （ok/error/timeout/cancelled）一行 kind=llm，每次工具执行终态一行 kind=tool；
+    sink 异常不影响主路径（双保险：写入面自身亦吞 sqlite 异常）。
     """
     turn_id = uuid.uuid4().hex[:12]
     yield {"type": "turn.start", "session_id": session_id, "turn_id": turn_id}
@@ -285,6 +301,19 @@ async def run_turn(
             if on_finish is not None:
                 on_finish(calls, tokens)
 
+    def _emit(row: dict[str, Any]) -> None:
+        if telemetry_sink is None:
+            return
+        try:
+            telemetry_sink(row)
+        except Exception:  # noqa: BLE001 —— 遥测故障不阻塞回合主路径（REQ-037 验收 4）
+            logger.warning("telemetry sink failed kind=%s", row.get("kind"), exc_info=True)
+
+    # 断连取消时补 cancelled 行的在途状态（llm 行在流式窗口内尚未落库时置位）
+    pending_call: UpstreamCall | None = None
+    pending_step = 0
+    pending_started = 0.0
+
     try:
         for step in range(1, max_steps + 1):
             yield {"type": "turn.step", "step": step, "max_steps": max_steps}
@@ -300,6 +329,9 @@ async def run_turn(
             call = UpstreamCall(client, base_url, api_key)
             active = call
             deadline = time.monotonic() + step_timeout
+            started = time.monotonic()
+            call_status, call_code, call_event = "ok", None, None
+            pending_call, pending_step, pending_started = call, step, started
             try:
                 it = call.stream(payload)
                 try:
@@ -315,24 +347,32 @@ async def run_turn(
                 finally:
                     await it.aclose()
             except UpstreamStatusError as exc:
-                yield _upstream_error_event(exc.status)
-                reason = "error"
-                break
+                call_event = _upstream_error_event(exc.status)
+                call_status, call_code = "error", call_event["code"]
             except httpx.TimeoutException:
-                yield _UPSTREAM_TIMEOUT_EVENT  # 连接期超时（§3.1：504 upstream_timeout 同文案）
-                reason = "error"
-                break
+                # 连接期超时（§3.1：504 upstream_timeout 同文案）
+                call_event = _UPSTREAM_TIMEOUT_EVENT
+                call_status, call_code = "timeout", "upstream_timeout"
             except (StepTimeout, TimeoutError):
-                yield _UPSTREAM_TIMEOUT_EVENT  # 护栏②：上游单步超时（wait_for 到期）
-                reason = "error"
-                break
+                call_event = _UPSTREAM_TIMEOUT_EVENT  # 护栏②：上游单步超时（wait_for 到期）
+                call_status, call_code = "timeout", "upstream_timeout"
             except httpx.HTTPError:
-                yield _UPSTREAM_UNREACHABLE_EVENT
-                reason = "error"
-                break
+                call_event = _UPSTREAM_UNREACHABLE_EVENT
+                call_status, call_code = "error", "upstream_unreachable"
             finally:
                 await call.aclose()
                 active = None
+
+            # 遥测行先于后续 yield 落库：其后任何时点断连，本调用均已有终态行
+            pending_call = None
+            _emit({"kind": "llm", "turn_id": turn_id, "step": step, "model": model,
+                   "latency_ms": int((time.monotonic() - started) * 1000),
+                   "status": call_status, "usage": call.usage_detail,
+                   "error_code": call_code})
+            if call_event is not None:
+                yield call_event
+                reason = "error"
+                break
 
             calls += 1
             tokens += call.usage
@@ -363,6 +403,10 @@ async def run_turn(
                     execution = await toolsgw.execute_tool(
                         defn, tc["arguments"], limit=tool_result_limit
                     )
+                # 工具执行遥测行（REQ-037 主流程 2）：与网关日志四字段同源并存
+                _emit({"kind": "tool", "turn_id": turn_id, "step": step,
+                       "tool_name": tc["name"], "latency_ms": execution.duration_ms,
+                       "status": execution.status})
                 # tool.result 事件（design-iter-14 §6.4 加法扩展）：搜索结果双视角——
                 # result 文本给模型、sources 数组给前端引用卡（可选字段，仅 ok 且非空携带；
                 # 老前端遇未知字段忽略不崩，iter-13 §4.1 前向兼容口径）
@@ -383,6 +427,16 @@ async def run_turn(
                 })
         yield {"type": "usage", "requests": calls, "tokens": tokens}
         yield {"type": "turn.end", "reason": reason}
+    except (asyncio.CancelledError, GeneratorExit):
+        # 断连取消：在途上游调用补 cancelled 行（tokens 计已发生部分，REQ-037 异常分支；
+        # 与 REQ-034 定夺⑧同口径），同步写入不引入新 await 点；两终态路径
+        # （anyio 任务取消 / 生成器关闭）均补行后原样重抛
+        if pending_call is not None:
+            _emit({"kind": "llm", "turn_id": turn_id, "step": pending_step, "model": model,
+                   "latency_ms": int((time.monotonic() - pending_started) * 1000),
+                   "status": "cancelled", "usage": pending_call.usage_detail,
+                   "error_code": None})
+        raise
     finally:
         if active is not None:
             await active.aclose()
