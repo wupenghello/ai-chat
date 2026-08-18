@@ -120,6 +120,8 @@ describe('settings store（REQ-018 iter-7 T2：档案服务端源）', () => {
       base_url: 'https://api.test/', // 前端只 trim；尾斜杠归一在服务端 validator
       model: 'm1',
       api_key: 'sk-live-1234',
+      // iter-14 T3 载荷加法扩展（design-iter-14 §6.3）：tools_enabled 缺省 true 显式随表单提交（映射登记）
+      tools_enabled: true,
     })
     expect(s.profiles).toHaveLength(1)
   })
@@ -140,6 +142,8 @@ describe('settings store（REQ-018 iter-7 T2：档案服务端源）', () => {
       base_url: 'https://api.test',
       model: 'm2',
       api_key: '',
+      // iter-14 T3 载荷加法扩展（design-iter-14 §6.3）：编辑显式传值覆盖（映射登记）
+      tools_enabled: true,
     })
     expect(s.profiles[0].name).toBe('A2')
   })

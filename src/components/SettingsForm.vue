@@ -10,6 +10,7 @@ import { clearPendingOps } from '../db/persistence'
 import ConfirmModal from './ConfirmModal.vue'
 import KeyModeCard from './KeyModeCard.vue'
 import DeleteAccountModal from './DeleteAccountModal.vue'
+import ToggleSwitch from './ToggleSwitch.vue'
 
 const settings = useSettingsStore()
 const toast = useToastStore()
@@ -149,7 +150,9 @@ onMounted(async () => {
 // ---- REQ-018 供应商档案（iter-7 T2：存服务端）+ REQ-014 v3 模式卡 ----
 const editing = ref(false)
 const editingId = ref<string | null>(null) // null = 添加（id 由服务端生成）
-const form = reactive<ProfileInput>({ name: '', baseUrl: '', model: '', apiKey: '' })
+// iter-14 T3：toolsEnabled 在表单内恒为 boolean（新建默认开 / 编辑回显实值）——以表单类型收窄可选字段
+type ProfileForm = ProfileInput & { toolsEnabled: boolean }
+const form = reactive<ProfileForm>({ name: '', baseUrl: '', model: '', apiKey: '', toolsEnabled: true })
 const errors = ref<Partial<Record<keyof ProfileInput, string>>>({})
 const pendingDelete = ref<{ id: string; name: string } | null>(null)
 
@@ -165,15 +168,17 @@ function hostOf(baseUrl: string) {
 
 function openAdd() {
   editingId.value = null
-  Object.assign(form, { name: '', baseUrl: '', model: '', apiKey: '' })
+  // 「支持工具」新建默认开（design-iter-14 §5：后端 DEFAULT 1 在位；统一 key 恒开——本字段仅自填档案）
+  Object.assign(form, { name: '', baseUrl: '', model: '', apiKey: '', toolsEnabled: true })
   errors.value = {}
   editing.value = true
 }
 
-function openEdit(p: { id: string; name: string; baseUrl: string; model: string }) {
+function openEdit(p: { id: string; name: string; baseUrl: string; model: string; toolsEnabled?: boolean }) {
   editingId.value = p.id
-  // 密钥不回显（design-iter-7 §2.2 安全条款）：留空 = 沿用服务端已存 key
-  Object.assign(form, { name: p.name, baseUrl: p.baseUrl, model: p.model, apiKey: '' })
+  // 密钥不回显（design-iter-7 §2.2 安全条款）：留空 = 沿用服务端已存 key；
+  // 「支持工具」回显 tools_enabled 实值（design-iter-14 §5）
+  Object.assign(form, { name: p.name, baseUrl: p.baseUrl, model: p.model, apiKey: '', toolsEnabled: p.toolsEnabled ?? true })
   errors.value = {}
   editing.value = true
 }
@@ -453,7 +458,7 @@ async function confirmDeleteAccount(password: string) {
         >
           <div class="p-info">
             <span class="p-name">{{ p.name }}</span>
-            <span class="p-sub">{{ hostOf(p.baseUrl) }} · {{ p.model }} · {{ p.apiKeyMasked }}</span>
+            <span class="p-sub">{{ hostOf(p.baseUrl) }} · {{ p.model }} · {{ p.apiKeyMasked }}<template v-if="p.toolsEnabled === false"> · 工具已关</template></span>
           </div>
           <span
             v-if="p.id === settings.activeProfileId"
@@ -666,6 +671,15 @@ async function confirmDeleteAccount(password: string) {
           <span v-if="errors.apiKey" class="field-error">{{ errors.apiKey }}</span>
           <span v-else class="field-hint">{{ isEdit ? '出于安全，已保存的密钥不回显；留空 = 沿用原密钥' : '填写后仅上传服务端保存，界面不再回显明文' }}</span>
         </label>
+        <!-- iter-14 T3（design-iter-14 §5，REQ-014 定夺①）：第五字段「支持工具」——
+             新建默认开 / 编辑回显实值；随「保存档案」一并提交，无独立保存钮；统一 key 恒开不涉此字段 -->
+        <div class="tools-field">
+          <div class="tf-info">
+            <span class="field-label">支持工具</span>
+            <span class="field-hint">关闭后，使用此档案的对话不携带工具（如联网搜索），AI 直接回答</span>
+          </div>
+          <ToggleSwitch v-model="form.toolsEnabled" label="支持工具开关" />
+        </div>
         <div class="actions">
           <button type="button" class="btn" @click="editing = false">取消</button>
           <button type="button" class="btn btn-primary" @click="saveProfile">{{ isEdit ? '保存修改' : '保存档案' }}</button>
@@ -900,6 +914,22 @@ async function confirmDeleteAccount(password: string) {
 .field-hint {
   font-size: 12px;
   color: var(--c-text-3);
+}
+/* iter-14 T3：档案「支持工具」第五字段（design-iter-14 §5）——左标签 + D7 hint、右开关，带边框行容器 */
+.tools-field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+}
+.tools-field .tf-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 /* REQ-008 对话设置分组（design-iter-2：分组线 + 标签）；「前往高级设置」分区直达高亮（§4.3） */
 .section-label {

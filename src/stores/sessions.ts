@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { runChatTurn, type Block, type MessageContent } from '../api/client'
+import { runChatTurn, type Block, type MessageContent, type SourceItem } from '../api/client'
 import { useAuthStore } from './auth'
 import { useSettingsStore } from './settings'
 import * as db from '../db/persistence'
@@ -295,13 +295,17 @@ export const useSessionsStore = defineStore('sessions', {
                   status: 'ok' | 'error' | 'timeout'
                   result: string
                   duration_ms: number
+                  sources?: SourceItem[]
                 }
+                // iter-14 T3（design-iter-14 §6.4）：sources 随 tool_result 段进 blocks——
+                // 落库随 PUT 整档透传保真；仅 ok 且非空时后端携带，前端原样接收（可选字段零适配）
                 blocks.push({
                   type: 'tool_result',
                   tool_call_id: e.tool_call_id,
                   status: e.status,
                   result: e.result,
                   duration_ms: e.duration_ms,
+                  ...(e.sources && e.sources.length > 0 ? { sources: e.sources } : {}),
                 })
               }
               // 其余事件（turn.start/step/usage/未知 type）不驱动 UI（design-iter-13 §4.1）

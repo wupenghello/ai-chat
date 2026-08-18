@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
 import type { Message } from '../stores/sessions'
-import { contentBlocks, contentText, type Block, type ToolResultBlock } from '../api/client'
+import { contentBlocks, contentText, type Block, type SourceItem, type ToolCallBlock, type ToolResultBlock } from '../api/client'
 import { renderMarkdown } from '../utils/markdown'
 import ToolStepCard from './ToolStepCard.vue'
+import SourceCard from './SourceCard.vue'
 
 const props = defineProps<{ message: Message; followingCount?: number }>()
 const emit = defineEmits<{ edit: [id: string, text: string]; toggleVersion: [forkId: string] }>()
@@ -27,6 +28,23 @@ const results = computed(() => {
   return map
 })
 const renderedOf = (text: string) => renderMarkdown(text)
+
+// iter-14 T3（design-iter-14 §2.1）：配对 tool_result 含非空 sources 且 status=ok →
+// 紧随工具卡渲染引用来源卡（渲染层派生，blocks 数组零新增段类型；缺失/空/≠ok 一律无卡）
+function sourcesOf(call: ToolCallBlock): SourceItem[] | null {
+  const r = results.value.get(call.tool_call_id)
+  return r && r.status === 'ok' && r.sources && r.sources.length > 0 ? r.sources : null
+}
+
+// D1 降级引导条（design-iter-14 §3，逐字文案）：search 工具 error/timeout 且消息仍有
+// 后续文本段（直答）→ 失败卡之后、直答首段之前渲染 warning 条；渲染层派生不落库
+// （派生规则确定性：历史重渲染一致；error 与 timeout 共用一句，诊断详情在工具卡结果区）
+function showDegrade(call: ToolCallBlock, index: number): boolean {
+  if (call.name !== 'search') return false
+  const r = results.value.get(call.tool_call_id)
+  if (!r || (r.status !== 'error' && r.status !== 'timeout')) return false
+  return blocks.value.slice(index + 1).some((x) => x.type === 'text' && x.text.trim().length > 0)
+}
 
 async function copyToClipboard(text: string): Promise<boolean> {
   try {
@@ -135,12 +153,17 @@ function onEditKey(e: KeyboardEvent) {
         <template v-else>
           <template v-for="(b, i) in blocks" :key="i">
             <div v-if="b.type === 'text'" class="md" v-html="renderedOf(b.text)" @click="onCopy"></div>
-            <ToolStepCard
-              v-else-if="b.type === 'tool_call'"
-              :call="b"
-              :result="results.get(b.tool_call_id)"
-              :live="message.status === 'generating'"
-            />
+            <template v-else-if="b.type === 'tool_call'">
+              <ToolStepCard
+                :call="b"
+                :result="results.get(b.tool_call_id)"
+                :live="message.status === 'generating'"
+              />
+              <!-- 引用来源卡：紧跟 search 工具卡之后、回答首段之前（§2.1 位置 = blocks 顺序自然结果） -->
+              <SourceCard v-if="sourcesOf(b)" :sources="sourcesOf(b)!" />
+              <!-- D1 降级引导条（§3）：失败/超时且有后续直答文本段；渲染层派生不落库、导出/复制不含 -->
+              <div v-if="showDegrade(b, i)" class="degrade-note" role="note">搜索未成功，以下为模型直接回答</div>
+            </template>
           </template>
         </template>
 
@@ -276,6 +299,20 @@ function onEditKey(e: KeyboardEvent) {
   background: var(--c-warning-l);
   border-radius: 999px;
   padding: 2px 10px;
+}
+/* iter-14 D1 降级引导条（design-iter-14 §3 逐字）：warning-l 底 + 左缘 3px warning +
+   13px warning 字 + padding 8px 12px + 8px 圆角；宽度包裹内容（block 级可见性） */
+.degrade-note {
+  margin: 4px 0;
+  width: fit-content;
+  max-width: 100%;
+  border-left: 3px solid var(--c-warning);
+  background: var(--c-warning-l);
+  color: var(--c-warning);
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 8px 12px;
+  border-radius: 8px;
 }
 /* CHG-003：消息下方操作栏——icon-only、hover 出 tooltip；复制/修改 hover 才显示，版本箭头常显 */
 .action-row {

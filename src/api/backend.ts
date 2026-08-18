@@ -130,7 +130,9 @@ export interface AdminUsageRow {
   tokens: number
 }
 
-/** REQ-025（iter-8 T2）：全站配额条数据 + REQ-029（iter-12 T1）统计卡三指标（design-iter-12 §4.3，定夺④） */
+/** REQ-025（iter-8 T2）：全站配额条数据 + REQ-029（iter-12 T1）统计卡三指标（design-iter-12 §4.3，定夺④）。
+ *  iter-14 T2 加法扩展（design-iter-14 §6.1）：search_enabled / search_key_configured
+ *  （可选——旧后端窗口期不携带时前端按默认开处理，D6 附注仅在显式 false 时呈现）。 */
 export interface AdminOverview {
   day: string
   unified_used: number
@@ -139,6 +141,10 @@ export interface AdminOverview {
   total_users: number
   today_requests: number
   today_tokens: number
+  /** admin 联网搜索整体开关（KV 落库实值，默认开） */
+  search_enabled?: boolean
+  /** 搜索密钥是否已配置（只报有无，不泄露 key 内容） */
+  search_key_configured?: boolean
 }
 
 /** REQ-029（iter-12 T1）：用户列表分页信封（design-iter-12 §4.1，定夺①——传参才返回） */
@@ -158,7 +164,8 @@ export interface AdminUsagePage {
   distinct_days: number
 }
 
-/** 服务端供应商档案视图（REQ-018 iter-7 T2）：key 只有掩码，明文绝不下发前端 */
+/** 服务端供应商档案视图（REQ-018 iter-7 T2）：key 只有掩码，明文绝不下发前端。
+ *  iter-14 T2 加法扩展（design-iter-14 §6.3）：tools_enabled（可选——旧后端窗口期缺省按开处理）。 */
 export interface ServerProfile {
   id: string
   name: string
@@ -166,6 +173,8 @@ export interface ServerProfile {
   model: string
   api_key_masked: string
   is_active: boolean
+  /** 「支持工具」能力开关（默认开；关闭后使用此档案的对话不携带工具） */
+  tools_enabled?: boolean
 }
 
 export interface ProfilePayload {
@@ -173,6 +182,8 @@ export interface ProfilePayload {
   base_url: string
   model: string
   api_key: string
+  /** 可选布尔（§6.3）：新建缺省 true / 编辑传值覆盖（api_key「留空 = 沿用」同精神） */
+  tools_enabled?: boolean
 }
 
 export const backend = {
@@ -201,6 +212,9 @@ export const backend = {
   // REQ-025（iter-8 T2）+ REQ-029（iter-12 T1/T2）：管理后台（非管理员一律 403，服务端为安全边界）
   adminUsers: () => request<AdminUserRow[]>('GET', '/api/admin/users'), // 无参数 = 纯列表全量（§4.1 兼容形态，用量筛选下拉数据源）
   adminOverview: () => request<AdminOverview>('GET', '/api/admin/overview'),
+  // iter-14 T3（design-iter-14 §6.1 定夺⑥）：admin 联网搜索开关写入（下一回合生效；非 admin 403 / 非 422 由后端承载）
+  adminUpdateSearchEnabled: (searchEnabled: boolean) =>
+    request<{ search_enabled: boolean }>('PUT', '/api/admin/settings', { search_enabled: searchEnabled }),
   adminUsersPage: (params: { search?: string; limit?: number; offset?: number }) => {
     const q = new URLSearchParams()
     if (params.search != null) q.set('search', params.search)

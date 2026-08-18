@@ -17,6 +17,7 @@ const backendMock = vi.hoisted(() => ({
   adminUsersPage: vi.fn(),
   adminOverview: vi.fn(),
   adminUsagePage: vi.fn(),
+  adminUpdateSearchEnabled: vi.fn(),
   banUser: vi.fn(),
   unbanUser: vi.fn(),
   setUserQuota: vi.fn(),
@@ -90,6 +91,7 @@ beforeEach(() => {
   backendMock.adminUsersPage.mockResolvedValue(usersPageFixture())
   backendMock.adminOverview.mockResolvedValue(overviewFixture(100))
   backendMock.adminUsagePage.mockResolvedValue(usagePageFixture([]))
+  backendMock.adminUpdateSearchEnabled.mockResolvedValue({ search_enabled: false })
   backendMock.banUser.mockResolvedValue({ detail: 'ok' })
   backendMock.unbanUser.mockResolvedValue({ detail: 'ok' })
   backendMock.setUserQuota.mockResolvedValue({ user_id: 2, quota_override: 5 })
@@ -472,5 +474,74 @@ describe('用量列表（design-iter-12 §3，筛选沿用 + 排序后端化定�
     expect(w.text()).toContain('共 0 条')
     expect(usagePanel.find('.tbl-card').exists()).toBe(false)
     expect(usagePanel.find('.page-row').exists()).toBe(false)
+  })
+})
+
+describe('联网搜索开关行（iter-14 T3，design-iter-14 §4，REQ-025 A2 复验）', () => {
+  function overviewWithSearch(searchEnabled: boolean, keyConfigured: boolean) {
+    return { ...overviewFixture(100), search_enabled: searchEnabled, search_key_configured: keyConfigured }
+  }
+
+  it('开关行形态与位置：统计卡区后、tabs 前；标题 + 常显说明逐字 + switch 默认开', async () => {
+    backendMock.adminOverview.mockResolvedValue(overviewWithSearch(true, true))
+    const { w } = await mountView()
+    const row = w.find('.sw-row')
+    expect(row.exists()).toBe(true)
+    expect(row.text()).toContain('联网搜索')
+    expect(row.find('.sw-desc').text()).toBe('开启后 AI 可自动联网搜索并在回答前展示来源引用；关闭后 AI 直接回答，用户无感知')
+    expect(row.find('.tsw').attributes('aria-checked')).toBe('true')
+    expect(row.find('.tsw').attributes('aria-label')).toBe('联网搜索开关')
+    // 位置：.adm-body 内 .stat-grid 之后、.adm-tabs 之前（§4.1 唯一新增区）
+    const sections = w.find('.adm-body').findAll(':scope > *')
+    const classes = sections.map((s) => s.classes().join('.'))
+    expect(classes.indexOf('stat-grid')).toBeLessThan(classes.indexOf('sw-row'))
+    expect(classes.indexOf('sw-row')).toBeLessThan(classes.indexOf('adm-tabs'))
+  })
+
+  it('点击关闭：PUT search_enabled=false + 态翻转 + D5 toast「已关闭联网搜索」逐字；再点开启 toast 逐字', async () => {
+    backendMock.adminOverview.mockResolvedValue(overviewWithSearch(true, true))
+    const { w } = await mountView()
+    await w.find('.sw-row .tsw').trigger('click')
+    await flushPromises()
+    expect(backendMock.adminUpdateSearchEnabled).toHaveBeenCalledWith(false)
+    expect(w.find('.sw-row .tsw').attributes('aria-checked')).toBe('false')
+    expect(useToastStore().items.some((t) => t.message === '已关闭联网搜索')).toBe(true)
+
+    backendMock.adminUpdateSearchEnabled.mockResolvedValue({ search_enabled: true })
+    await w.find('.sw-row .tsw').trigger('click')
+    await flushPromises()
+    expect(backendMock.adminUpdateSearchEnabled).toHaveBeenLastCalledWith(true)
+    expect(w.find('.sw-row .tsw').attributes('aria-checked')).toBe('true')
+    expect(useToastStore().items.some((t) => t.message === '已开启联网搜索')).toBe(true)
+  })
+
+  it('PUT 失败：toast 错误、开关回弹（本地态不变）；不做确认弹窗', async () => {
+    backendMock.adminOverview.mockResolvedValue(overviewWithSearch(true, true))
+    backendMock.adminUpdateSearchEnabled.mockRejectedValue(new Error('请求失败（500）'))
+    const { w } = await mountView()
+    await w.find('.sw-row .tsw').trigger('click')
+    await flushPromises()
+    expect(w.find('.sw-row .tsw').attributes('aria-checked')).toBe('true') // 回弹
+    expect(useToastStore().items.some((t) => t.message === '请求失败（500）')).toBe(true)
+    expect(w.findComponent({ name: 'ConfirmModal' }).props('open')).toBe(false) // 可逆操作无确认
+  })
+
+  it('key 缺失（D6 逐字）：说明区替换为 warning 附注，开关仍可操作（状态先存）', async () => {
+    backendMock.adminOverview.mockResolvedValue(overviewWithSearch(true, false))
+    const { w } = await mountView()
+    const desc = w.find('.sw-desc')
+    expect(desc.text()).toBe('搜索密钥未配置：请在服务端 backend/.env 中设置 AI_CHAT_SEARCH_KEY 并重启后端，开启后才会生效')
+    expect(desc.classes()).toContain('miss')
+    backendMock.adminUpdateSearchEnabled.mockResolvedValue({ search_enabled: false })
+    await w.find('.sw-row .tsw').trigger('click')
+    await flushPromises()
+    expect(backendMock.adminUpdateSearchEnabled).toHaveBeenCalledWith(false) // 仍可操作
+  })
+
+  it('回退档零破坏：旧 overview（无 A2 字段）按默认开呈现，D6 不显示', async () => {
+    const { w } = await mountView() // overviewFixture 不含 A2 字段
+    expect(w.find('.sw-row .tsw').attributes('aria-checked')).toBe('true')
+    expect(w.find('.sw-desc').classes()).not.toContain('miss')
+    expect(w.find('.sw-desc').text()).toContain('开启后 AI 可自动联网搜索')
   })
 })

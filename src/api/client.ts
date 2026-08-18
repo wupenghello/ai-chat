@@ -21,13 +21,26 @@ export interface ToolCallBlock {
   name: string
   arguments: string
 }
-/** 工具结果段（result 为网关截断后文本，前端原样渲染） */
+/**
+ * 引用来源条目（iter-14 T3，design-iter-14 §2.1/§6.4）：title/url 必有，其余可选——
+ * 搜索 API 归一化形状；textContent 直排消费（不进 Markdown 管线），未知字段忽略。
+ */
+export interface SourceItem {
+  title: string
+  url: string
+  snippet?: string
+  site_name?: string
+  date_published?: string
+}
+/** 工具结果段（result 为网关截断后文本，前端原样渲染；sources 为可选来源数组——引用卡数据面） */
 export interface ToolResultBlock {
   type: 'tool_result'
   tool_call_id: string
   status: 'ok' | 'error' | 'timeout'
   result: string
   duration_ms?: number
+  /** 仅 ok 且非空携带（后端 §6.4）；老会话无此字段 → 无引用卡 */
+  sources?: SourceItem[]
 }
 export type Block = TextBlock | ToolCallBlock | ToolResultBlock
 
@@ -52,7 +65,7 @@ export type TurnEvent =
   | { type: 'turn.start'; session_id: string; turn_id: string }
   | { type: 'text.delta'; text: string }
   | { type: 'tool.call'; tool_call_id: string; name: string; arguments: string }
-  | { type: 'tool.result'; tool_call_id: string; status: 'ok' | 'error' | 'timeout'; result: string; duration_ms: number }
+  | { type: 'tool.result'; tool_call_id: string; status: 'ok' | 'error' | 'timeout'; result: string; duration_ms: number; sources?: SourceItem[] }
   | { type: 'turn.step'; step: number; max_steps: number }
   | { type: 'usage'; requests: number; tokens: number }
   | { type: 'turn.end'; reason: 'done' | 'max_steps' | 'aborted' | 'error' }

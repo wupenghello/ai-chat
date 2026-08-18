@@ -15,6 +15,7 @@ import { highlightSegments } from '../utils/search'
 import BrandMark from '../components/BrandMark.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import AppToast from '../components/AppToast.vue'
+import ToggleSwitch from '../components/ToggleSwitch.vue'
 
 /**
  * REQ-025（iter-8 T2）+ REQ-029（iter-12 T2）：管理员后台——design-iter-12 §1~§3。
@@ -195,8 +196,32 @@ async function loadMeta() {
       backend.adminUsers(),
       backend.adminOverview(),
     ])
+    // iter-14 T3（design-iter-14 §4.1/§6.1）：开关态随 overview 加法字段读取（零新增请求）；
+    // 旧后端窗口期缺省按开（REQ-025 默认开口径）
+    searchEnabled.value = overview.value?.search_enabled ?? true
   } catch {
     // 概览/下拉失败不阻塞列表主流程：卡片区与下拉按既有数据继续渲染
+  }
+}
+
+// ---- iter-14 T3：联网搜索开关行（design-iter-14 §4.1，REQ-025 A2 句）----
+const searchEnabled = ref(true)
+/** D6 附注触发：search_key_configured 显式 false（key 与开关分离——状态先存，key 配置后即生效） */
+const searchKeyMissing = computed(() => overview.value?.search_key_configured === false)
+
+const SEARCH_DESC_ON = '开启后 AI 可自动联网搜索并在回答前展示来源引用；关闭后 AI 直接回答，用户无感知'
+const SEARCH_DESC_MISS = '搜索密钥未配置：请在服务端 backend/.env 中设置 AI_CHAT_SEARCH_KEY 并重启后端，开启后才会生效'
+
+/** 点击 → PUT /api/admin/settings → 成功：态翻转 + D5 toast（逐字）；失败：toast 错误、开关回弹。
+ *  不做确认弹窗（可逆操作，沿「解封直接生效」先例）；下一回合生效（§6.2 运行时语义）。 */
+async function toggleSearch() {
+  const next = !searchEnabled.value
+  try {
+    await backend.adminUpdateSearchEnabled(next)
+    searchEnabled.value = next
+    toast.push(next ? '已开启联网搜索' : '已关闭联网搜索')
+  } catch (e) {
+    toast.push(errMsg(e))
   }
 }
 
@@ -404,6 +429,20 @@ onBeforeUnmount(() => {
       <!-- 定夺⑤：near/burst 页面级警示条（文案逐字沿用 iter-8#10/#11 口径）；常态条退役 -->
       <div v-if="overview && siteState !== 'normal'" class="site-bar" :class="siteState">
         统一 key 每日总量 {{ fmtNum(overview.unified_daily_total) }} · 今日已用 {{ fmtNum(overview.unified_used) }}<template v-if="siteState === 'near'">（已接近上限，请关注消耗）</template><template v-else>—— <b>已暂停全站新对话请求，明日 00:00 自动恢复；自填 key 用户不受影响</b></template>
+      </div>
+
+      <!-- iter-14 T3（design-iter-14 §4.1，定夺⑤⑥）：联网搜索开关行——统计卡区后、tabs 前，
+           AdminView 唯一新增区（其余区域 iter-12 基线零翻案） -->
+      <div v-if="overview" class="sw-row">
+        <span class="row-ico" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7" />
+            <path d="M3 12h18M12 3c2.5 2.6 3.9 5.7 3.9 9S14.5 18.4 12 21c-2.5-2.6-3.9-5.7-3.9-9S9.5 5.6 12 3z" stroke="currentColor" stroke-width="1.7" />
+          </svg>
+        </span>
+        <span class="sw-title">联网搜索</span>
+        <span class="sw-desc" :class="{ miss: searchKeyMissing }">{{ searchKeyMissing ? SEARCH_DESC_MISS : SEARCH_DESC_ON }}</span>
+        <ToggleSwitch :model-value="searchEnabled" label="联网搜索开关" @update:model-value="toggleSearch" />
       </div>
 
       <div class="adm-tabs" role="radiogroup" aria-label="后台分区">
@@ -832,6 +871,40 @@ onBeforeUnmount(() => {
   border-left-color: var(--c-danger);
   background: var(--c-danger-l);
   color: var(--c-danger);
+}
+
+/* ---- iter-14 T3：联网搜索开关行（design-iter-14 §4.1，AdminView 唯一新增区） ---- */
+.sw-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 12px;
+}
+.sw-row .row-ico {
+  flex: none;
+  color: var(--c-text-3);
+  display: inline-flex;
+}
+.sw-title {
+  flex: none;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--c-text-1);
+}
+.sw-desc {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--c-text-3);
+}
+/* D6 附注：key 缺失时 warning 色替换常显说明（开关仍可操作——状态先存，key 配置后即生效） */
+.sw-desc.miss {
+  color: var(--c-warning);
 }
 
 /* ---- 状态与表格（§2/§3：表格入卡 + td 12/16，定夺⑦） ---- */

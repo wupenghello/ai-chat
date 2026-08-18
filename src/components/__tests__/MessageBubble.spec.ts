@@ -114,3 +114,146 @@ describe('MessageBubble 编辑（REQ-015，iter-4 T2）', () => {
     expect(wrapper.emitted('toggleVersion')![0]).toEqual(['f1'])
   })
 })
+
+describe('MessageBubble 引用来源卡与降级引导条（iter-14 T3，design-iter-14 §2/§3）', () => {
+  const SOURCES = [{ title: '来源A', url: 'https://a.example.com/1', snippet: '片段' }]
+
+  function aiMsg(content: Message['content']): Message {
+    return { id: 'm1', role: 'assistant', content, status: 'done' }
+  }
+
+  it('配对 tool_result 含非空 sources 且 ok → 引用卡渲染于工具卡之后、文本之前（§2.1 位置）', () => {
+    const w = mount(MessageBubble, {
+      props: {
+        message: aiMsg([
+          { type: 'text', text: '我搜一下。' },
+          { type: 'tool_call', tool_call_id: 'c1', name: 'search', arguments: '{"query":"q"}' },
+          { type: 'tool_result', tool_call_id: 'c1', status: 'ok', result: '摘要文本', duration_ms: 100, sources: SOURCES },
+          { type: 'text', text: '回答正文。' },
+        ]),
+      },
+    })
+    const kids = w.find('.bubble.assistant').findAll(':scope > *')
+    const order = kids.map((k) => k.classes().join('.'))
+    const toolIdx = order.findIndex((c) => c.includes('tool-card'))
+    const srcIdx = order.findIndex((c) => c.includes('source-card'))
+    const textIdx = kids.findIndex((k) => k.classes().includes('md') && k.text().includes('回答正文'))
+    expect(srcIdx).toBeGreaterThan(toolIdx)
+    expect(textIdx).toBeGreaterThan(srcIdx) // 引用卡在回答首段之前
+    expect(w.find('.source-card .sc-head').text()).toBe('引用来源 · 1 条')
+  })
+
+  it('不渲染条件（§2.1）：sources 缺失 / 空数组 / status ≠ ok → 无引用卡', () => {
+    const noSources = mount(MessageBubble, {
+      props: {
+        message: aiMsg([
+          { type: 'tool_call', tool_call_id: 'c1', name: 'search', arguments: '{}' },
+          { type: 'tool_result', tool_call_id: 'c1', status: 'ok', result: '未搜到相关内容', duration_ms: 100 },
+        ]),
+      },
+    })
+    expect(noSources.find('.source-card').exists()).toBe(false)
+
+    const emptySources = mount(MessageBubble, {
+      props: {
+        message: aiMsg([
+          { type: 'tool_call', tool_call_id: 'c1', name: 'search', arguments: '{}' },
+          { type: 'tool_result', tool_call_id: 'c1', status: 'ok', result: 'r', duration_ms: 100, sources: [] },
+        ]),
+      },
+    })
+    expect(emptySources.find('.source-card').exists()).toBe(false)
+
+    const failed = mount(MessageBubble, {
+      props: {
+        message: aiMsg([
+          { type: 'tool_call', tool_call_id: 'c1', name: 'search', arguments: '{}' },
+          { type: 'tool_result', tool_call_id: 'c1', status: 'error', result: '搜索服务返回 429', duration_ms: 100, sources: SOURCES },
+          { type: 'text', text: '降级直答。' },
+        ]),
+      },
+    })
+    expect(failed.find('.source-card').exists()).toBe(false) // status ≠ ok 一律无卡
+  })
+
+  it('空结果如实呈现（D2 逐字）：「未搜到相关内容」在工具卡结果区原样渲染，无引用卡无引导条', async () => {
+    const w = mount(MessageBubble, {
+      props: {
+        message: aiMsg([
+          { type: 'tool_call', tool_call_id: 'c1', name: 'search', arguments: '{"query":"冷门"}' },
+          { type: 'tool_result', tool_call_id: 'c1', status: 'ok', result: '未搜到相关内容', duration_ms: 2210 },
+          { type: 'text', text: '这次搜索没有找到相关内容。' },
+        ]),
+      },
+    })
+    await w.find('.tc-head').trigger('click') // 历史卡折叠，展开看结果区
+    expect(w.find('.tc-result-text').text()).toBe('未搜到相关内容')
+    expect(w.find('.source-card').exists()).toBe(false)
+    expect(w.find('.degrade-note').exists()).toBe(false) // 空 ≠ 失败，不显示误导性降级条
+  })
+
+  it('D1 降级引导条（逐字）：search error/timeout 且有后续文本段 → 失败卡后、直答前渲染', () => {
+    const mk = (status: 'error' | 'timeout', result: string) =>
+      mount(MessageBubble, {
+        props: {
+          message: aiMsg([
+            { type: 'tool_call', tool_call_id: 'c1', name: 'search', arguments: '{"query":"q"}' },
+            { type: 'tool_result', tool_call_id: 'c1', status, result, duration_ms: 10000 },
+            { type: 'text', text: '基于已有知识的直答。' },
+          ]),
+        },
+      })
+    for (const w of [mk('error', '搜索服务返回 429'), mk('timeout', '工具执行超时')]) {
+      const bar = w.find('.degrade-note')
+      expect(bar.exists()).toBe(true)
+      expect(bar.text()).toBe('搜索未成功，以下为模型直接回答') // D1 逐字，error/timeout 共用
+      expect(bar.attributes('role')).toBe('note')
+      const kids = w.find('.bubble.assistant').findAll(':scope > *')
+      const toolIdx = kids.findIndex((k) => k.classes().join('.').includes('tool-card'))
+      const barIdx = kids.findIndex((k) => k.classes().includes('degrade-note'))
+      const textIdx = kids.findIndex((k) => k.classes().includes('md') && k.text().includes('直答'))
+      expect(barIdx).toBe(toolIdx + 1) // 失败卡之后
+      expect(textIdx).toBeGreaterThan(barIdx) // 直答首段之前
+    }
+  })
+
+  it('D1 条件边界：无后续文本段（回合中断于失败）无引导条；非 search 工具失败无引导条', () => {
+    const aborted = mount(MessageBubble, {
+      props: {
+        message: aiMsg([
+          { type: 'tool_call', tool_call_id: 'c1', name: 'search', arguments: '{}' },
+          { type: 'tool_result', tool_call_id: 'c1', status: 'timeout', result: '工具执行超时', duration_ms: 10000 },
+        ]),
+      },
+    })
+    expect(aborted.find('.degrade-note').exists()).toBe(false) // 无直答文本 → 不误导
+
+    const otherTool = mount(MessageBubble, {
+      props: {
+        message: aiMsg([
+          { type: 'tool_call', tool_call_id: 'c1', name: 'demo_weather', arguments: '{}' },
+          { type: 'tool_result', tool_call_id: 'c1', status: 'error', result: '参数错误', duration_ms: 3 },
+          { type: 'text', text: '后续文本。' },
+        ]),
+      },
+    })
+    expect(otherTool.find('.degrade-note').exists()).toBe(false) // D1 仅 search（§3 触发行）
+  })
+
+  it('渲染层派生不落库（§3 D1/走查条 20）：引导条与引用卡均非 blocks 段，复制正文不含', async () => {
+    const w = mount(MessageBubble, {
+      props: {
+        message: aiMsg([
+          { type: 'tool_call', tool_call_id: 'c1', name: 'search', arguments: '{"query":"q"}' },
+          { type: 'tool_result', tool_call_id: 'c1', status: 'ok', result: '摘要', duration_ms: 5, sources: SOURCES },
+          { type: 'text', text: '回答。' },
+        ]),
+      },
+    })
+    // blocks 无对应段（渲染层派生）；contentText 适配层只取文本段（导出/复制共用，REQ-013/016 零适配）
+    const blocks = (w.props('message').content as import('../../api/client').Block[]).filter((b) => b.type !== 'text')
+    expect(blocks.every((b) => b.type === 'tool_call' || b.type === 'tool_result')).toBe(true)
+    const { contentText } = await import('../../api/client')
+    expect(contentText(w.props('message').content)).toBe('回答。') // 来源标题/摘要不入正文
+  })
+})

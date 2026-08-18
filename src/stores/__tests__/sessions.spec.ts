@@ -478,3 +478,54 @@ describe('消息编辑与重新生成（REQ-015，iter-4 T2；iter-13 T2 回合�
     expect(contentText(sessions.active!.messages[1].content)).toBe('新回复')
   })
 })
+
+describe('sessions store · 引用来源数据面（iter-14 T3，design-iter-14 §6.4）', () => {
+  it('tool.result 携带 sources → 随 tool_result 段进 blocks（落库透传保真）；无 sources 零附加键', async () => {
+    const sources = [{ title: '来源A', url: 'https://a.example.com/1', snippet: '片段' }]
+    mockedTurn.mockImplementation((_sid, _msg, _opts, h) => {
+      h.onEvent({ type: 'tool.call', tool_call_id: 'c1', name: 'search', arguments: '{"query":"q"}' })
+      h.onEvent({ type: 'tool.result', tool_call_id: 'c1', status: 'ok', result: '摘要', duration_ms: 5, sources })
+      h.onEvent({ type: 'text.delta', text: '回答。' })
+      return Promise.resolve('done')
+    })
+    const sessions = useSessionsStore()
+    await sessions.send('搜一下')
+    const withSources = sessions.active!.messages[1].content
+    expect(withSources).toEqual([
+      { type: 'tool_call', tool_call_id: 'c1', name: 'search', arguments: '{"query":"q"}' },
+      { type: 'tool_result', tool_call_id: 'c1', status: 'ok', result: '摘要', duration_ms: 5, sources },
+      { type: 'text', text: '回答。' },
+    ])
+
+    // 无 sources（老事件形状/失败结果）：块形状零变化（既有 toEqual 断言兼容面）——独立 Pinia 隔离会话
+    setActivePinia(createPinia())
+    useAuthStore().user = { id: 1, username: 'tester' }
+    mockedTurn.mockImplementation((_sid, _msg, _opts, h) => {
+      h.onEvent({ type: 'tool.call', tool_call_id: 'c1', name: 'search', arguments: '{}' })
+      h.onEvent({ type: 'tool.result', tool_call_id: 'c1', status: 'error', result: '搜索服务返回 429', duration_ms: 640 })
+      h.onEvent({ type: 'text.delta', text: '直答。' })
+      return Promise.resolve('done')
+    })
+    const s2 = useSessionsStore()
+    await s2.send('再搜')
+    expect(s2.active!.messages[1].content).toEqual([
+      { type: 'tool_call', tool_call_id: 'c1', name: 'search', arguments: '{}' },
+      { type: 'tool_result', tool_call_id: 'c1', status: 'error', result: '搜索服务返回 429', duration_ms: 640 },
+      { type: 'text', text: '直答。' },
+    ])
+  })
+
+  it('存量零回退面（§2.1 适配面零新增）：导出/搜索正文不含 sources（contentText 只取文本段）', async () => {
+    const sources = [{ title: '来源A', url: 'https://a.example.com/1', snippet: '片段' }]
+    mockedTurn.mockImplementation((_sid, _msg, _opts, h) => {
+      h.onEvent({ type: 'tool.call', tool_call_id: 'c1', name: 'search', arguments: '{"query":"q"}' })
+      h.onEvent({ type: 'tool.result', tool_call_id: 'c1', status: 'ok', result: '摘要 + 来源列表文本', duration_ms: 5, sources })
+      h.onEvent({ type: 'text.delta', text: '回答正文。' })
+      return Promise.resolve('done')
+    })
+    const sessions = useSessionsStore()
+    await sessions.send('搜一下')
+    const m = sessions.active!.messages[1]
+    expect(contentText(m.content)).toBe('回答正文。') // 来源标题/URL/片段与工具文本均不入正文（REQ-013/016 零适配）
+  })
+})

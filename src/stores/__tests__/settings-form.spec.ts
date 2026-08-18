@@ -363,3 +363,65 @@ describe('SettingsForm 设置弹窗化（REQ-028，iter-11 T3，design-iter-11 �
     expect(w.find('.dirty-mask').exists()).toBe(false)
   })
 })
+
+describe('档案「支持工具」开关（iter-14 T3，design-iter-14 §5，REQ-014 定夺①）', () => {
+  it('添加模态第五字段：API Key 之后、默认开（aria-checked=true）+ D7 hint 逐字', async () => {
+    const w = await mountForm()
+    await w.findAll('button').find((b) => b.text().includes('添加供应商档案'))!.trigger('click')
+    const toolsField = w.find('.tools-field')
+    expect(toolsField.exists()).toBe(true)
+    expect(toolsField.find('.field-label').text()).toBe('支持工具')
+    expect(toolsField.find('.field-hint').text()).toBe('关闭后，使用此档案的对话不携带工具（如联网搜索），AI 直接回答')
+    expect(toolsField.find('.tsw').attributes('aria-checked')).toBe('true')
+    // 第五字段位置：模态内最后一个 password 输入（API Key）之后
+    const modal = w.find('.modal')
+    const labels = modal.findAll('.field-label').map((l) => l.text())
+    expect(labels.indexOf('支持工具')).toBeGreaterThan(labels.findIndex((l) => l.startsWith('API Key')))
+  })
+
+  it('编辑模态回显 tools_enabled 实值（关态）；列表行 p-sub 尾「 · 工具已关」', async () => {
+    const settings = useSettingsStore()
+    settings.profiles = [
+      { id: 'a', name: '公司中转', baseUrl: 'https://relay.example-corp.cn', model: 'glm-4.7', apiKeyMasked: 'sk-****f03', toolsEnabled: false },
+      { id: 'b', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', apiKeyMasked: 'sk-****ab12', toolsEnabled: true },
+    ]
+    const w = await mountForm()
+    const subs = w.findAll('.p-sub').map((s) => s.text())
+    expect(subs[0]).toContain(' · 工具已关') // 关态才显示
+    expect(subs[1]).not.toContain('工具已关') // 开态不打扰不显示
+    await w.findAll('button').find((b) => b.attributes('aria-label') === '编辑档案')!.trigger('click')
+    expect(w.find('.tools-field .tsw').attributes('aria-checked')).toBe('false') // 回显关
+  })
+
+  it('切换后随「保存档案」一并提交（无独立保存钮）：payload 含 tools_enabled:false', async () => {
+    mocked.updateProfile.mockResolvedValue(SERVER_P('a', '公司中转'))
+    const settings = useSettingsStore()
+    settings.profiles = [{ id: 'a', name: '公司中转', baseUrl: 'https://relay.test', model: 'm', apiKeyMasked: 'sk-****1234', toolsEnabled: true }]
+    const w = await mountForm()
+    await w.findAll('button').find((b) => b.attributes('aria-label') === '编辑档案')!.trigger('click')
+    await w.find('.tools-field .tsw').trigger('click') // 切为关
+    expect(w.find('.tools-field .tsw').attributes('aria-checked')).toBe('false')
+    await w.findAll('button').find((b) => b.text().includes('保存修改'))!.trigger('click')
+    await vi.waitFor(() => {
+      expect(mocked.updateProfile).toHaveBeenCalledWith(
+        'a',
+        expect.objectContaining({ tools_enabled: false }),
+      )
+    })
+  })
+
+  it('新建保存：payload 含 tools_enabled:true（缺省 true）', async () => {
+    mocked.createProfile.mockResolvedValue(SERVER_P('new', 'GLM'))
+    const w = await mountForm()
+    await w.findAll('button').find((b) => b.text().includes('添加供应商档案'))!.trigger('click')
+    const inputs = w.findAll('.modal input')
+    await inputs[0].setValue('GLM')
+    await inputs[1].setValue('https://api.test')
+    await inputs[2].setValue('glm-5.3')
+    await inputs[3].setValue('sk-live-abcd9999')
+    await w.findAll('button').find((b) => b.text().includes('保存档案'))!.trigger('click')
+    await vi.waitFor(() => {
+      expect(mocked.createProfile).toHaveBeenCalledWith(expect.objectContaining({ tools_enabled: true }))
+    })
+  })
+})

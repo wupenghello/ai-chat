@@ -1,13 +1,15 @@
 import { defineStore } from 'pinia'
 import { backend, type ServerProfile } from '../api/backend'
 
-/** REQ-018（iter-7 T2）：供应商档案——存服务端，前端只持掩码视图（明文绝不下发前端）。 */
+/** REQ-018（iter-7 T2）：供应商档案——存服务端，前端只持掩码视图（明文绝不下发前端）。
+ *  iter-14 T3（design-iter-14 §6.3）：toolsEnabled = 「支持工具」能力开关（旧后端/旧夹具缺省按开处理）。 */
 export interface ApiProfile {
   id: string
   name: string
   baseUrl: string
   model: string
   apiKeyMasked: string
+  toolsEnabled?: boolean
 }
 
 /** 添加/编辑模态输入：编辑时 apiKey 留空 = 沿用服务端已存 key（密钥不回显设计，design-iter-7 §2.2） */
@@ -16,6 +18,8 @@ export interface ProfileInput {
   baseUrl: string
   model: string
   apiKey: string
+  /** 「支持工具」开关：新建默认开 / 编辑回显实值；随表单保存一并提交（§5 随表单保存制） */
+  toolsEnabled?: boolean
 }
 
 /**
@@ -65,7 +69,14 @@ export function validateProfileInput(
 }
 
 function toLocal(p: ServerProfile): ApiProfile {
-  return { id: p.id, name: p.name, baseUrl: p.base_url, model: p.model, apiKeyMasked: p.api_key_masked }
+  return {
+    id: p.id,
+    name: p.name,
+    baseUrl: p.base_url,
+    model: p.model,
+    apiKeyMasked: p.api_key_masked,
+    toolsEnabled: p.tools_enabled ?? true, // 旧后端窗口期缺省按开（§6.3 默认值）
+  }
 }
 
 export const useSettingsStore = defineStore('settings', {
@@ -117,6 +128,7 @@ export const useSettingsStore = defineStore('settings', {
         base_url: input.baseUrl.trim(),
         model: input.model.trim(),
         api_key: input.apiKey.trim(),
+        tools_enabled: input.toolsEnabled ?? true,
       })
       this.profiles.push(toLocal(created))
       return {}
@@ -134,6 +146,7 @@ export const useSettingsStore = defineStore('settings', {
         base_url: input.baseUrl.trim(),
         model: input.model.trim(),
         api_key: input.apiKey.trim(),
+        tools_enabled: input.toolsEnabled ?? true, // 编辑显式传值覆盖（§6.3：随表单保存一并提交）
       })
       const idx = this.profiles.findIndex((p) => p.id === id)
       if (idx >= 0) this.profiles.splice(idx, 1, toLocal(updated))
