@@ -69,7 +69,7 @@ function metaOf(s: SourceItem): string {
   background: var(--c-subtle-bg);
   border: 1px solid var(--c-border);
   border-radius: 10px;
-  margin: 4px 0;
+  margin: 8px 0;
   overflow: hidden;
 }
 /* 头部行（常显可点击）：行高 ≥36px（padding 7px 12px）；「引用来源 · N 条」= 名称 + count 两段拼接 */
