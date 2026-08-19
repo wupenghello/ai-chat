@@ -8,6 +8,8 @@
   不补造（REQ-037 异常分支）
 - 保留期 90 天（定夺⑤）：按自然日惰性清理——每次写入时机会式检查，清理失败不阻断
 - 既有 usage_daily 回合/token 落账零变化：遥测为并行新轨（REQ-024/025/034 口径零回退）
+- CHG-010/B2（iter-16 T2）：kind 枚举加法扩展 'compress' 压缩执行行（REQ-041 承载）；
+  llm/tool 行形状与采集口径零变化（仅 v9 加法列）；llm 行携带 session_id（阈值判定依据）
 """
 
 from __future__ import annotations
@@ -30,6 +32,9 @@ _COLUMNS = (
     "day", "user_id", "mode", "turn_id", "endpoint", "kind", "step", "model",
     "latency_ms", "status", "tokens_prompt", "tokens_completion", "tokens_total",
     "cache_hit_tokens", "cache_miss_tokens", "tool_name", "error_code",
+    # 迁移 v9 加法列（CHG-010/REQ-041）：tokens_before/tokens_after 仅 compress 行取值；
+    # session_id 为「该会话上一回合」阈值判定的会话关联列（REQ-039，存量 NULL 不回填）
+    "tokens_before", "tokens_after", "session_id",
 )
 
 
@@ -88,6 +93,7 @@ def record_llm(
     status: str,
     usage: dict[str, Any] | None = None,
     error_code: str | None = None,
+    session_id: str | None = None,
 ) -> None:
     """上游 LLM 调用行（kind=llm）。usage 字段映射口径 = T0 取证结论
     （plans/iter-15-verify.md §2.4，REQ-037 字段映射唯一实现输入）：
@@ -121,6 +127,7 @@ def record_llm(
         "cache_hit_tokens": _int("prompt_cache_hit_tokens"),
         "cache_miss_tokens": _int("prompt_cache_miss_tokens"),
         "error_code": error_code,
+        "session_id": session_id,
     })
 
 
@@ -136,6 +143,7 @@ def record_tool(
     tool_name: str,
     latency_ms: int,
     status: str,
+    session_id: str | None = None,
 ) -> None:
     """工具执行行（kind=tool）：与 REQ-031 网关日志四字段同源并存
     （name/status/duration 三字段随行；truncated 仅网关日志侧——schema 无该列，
@@ -151,4 +159,56 @@ def record_tool(
         "tool_name": tool_name,
         "latency_ms": latency_ms,
         "status": status,
+        "session_id": session_id,
+    })
+
+
+def record_compress(
+    db_path: str,
+    *,
+    day: str,
+    user_id: int,
+    mode: str,
+    turn_id: str | None,
+    endpoint: str,
+    model: str,
+    latency_ms: int,
+    status: str,
+    usage: dict[str, Any] | None = None,
+    error_code: str | None = None,
+    tokens_before: int | None = None,
+    tokens_after: int | None = None,
+    session_id: str | None = None,
+) -> None:
+    """压缩执行行（kind='compress'，CHG-010/REQ-041，iter-16 T2）：自动回合压缩
+    turn_id 关联 / 手动压缩 NULL（T3）；endpoint='turn'/'compact'；latency_ms = 摘要调用耗时；
+    摘要调用自身 token 消耗记 tokens_prompt 同列口径（usage 字段映射与 llm 行一致）；
+    tokens_before = 触发依据的机器实测值、tokens_after = 压缩后首测值懒回填（未测得记 NULL，
+    不估算不造数，铁律 5）；不占回合 step 序列（step 恒 NULL，llm 行连续性口径零变化）。"""
+    usage = usage or {}
+
+    def _int(name: str) -> int | None:
+        value = usage.get(name)
+        return int(value) if isinstance(value, (int, float)) else None
+
+    _write(db_path, {
+        "day": day,
+        "user_id": user_id,
+        "mode": mode,
+        "turn_id": turn_id,
+        "endpoint": endpoint,
+        "kind": "compress",
+        "step": None,
+        "model": model,
+        "latency_ms": latency_ms,
+        "status": status,
+        "tokens_prompt": _int("prompt_tokens"),
+        "tokens_completion": _int("completion_tokens"),
+        "tokens_total": int(usage.get("total_tokens") or 0),
+        "cache_hit_tokens": _int("prompt_cache_hit_tokens"),
+        "cache_miss_tokens": _int("prompt_cache_miss_tokens"),
+        "error_code": error_code,
+        "tokens_before": tokens_before,
+        "tokens_after": tokens_after,
+        "session_id": session_id,
     })

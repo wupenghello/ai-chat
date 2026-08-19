@@ -12,6 +12,7 @@
 import asyncio
 import json
 import logging
+import uuid
 from collections.abc import AsyncIterator
 from typing import Annotated, Any
 
@@ -20,7 +21,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from app import agent, quota, telemetry
+from app import agent, compress, quota, telemetry
 from app.config import Settings, get_settings
 from app.db import DatabaseDep, is_search_enabled
 from app.routers.auth import CurrentUser
@@ -71,6 +72,82 @@ def _error(
     return JSONResponse(body, status_code=status)
 
 
+async def _assemble_pipeline(
+    *,
+    conn,
+    db_path: str,
+    http: httpx.AsyncClient,
+    doc: dict[str, Any],
+    history: list[dict[str, Any]],
+    message: str,
+    system_prompt: str | None,
+    user_id: int,
+    session_id: str,
+    day: str,
+    mode: str,
+    base_url: str,
+    api_key: str,
+    model: str,
+    turn_id: str,
+    settings: Settings,
+) -> tuple[list[dict[str, Any]], int]:
+    """三级压缩管道（CHG-010/REQ-039，iter-16 T2），组装阶段执行。
+
+    返回 (组装 messages, 摘要调用 tokens)。一级 snip 已由调用方对 history 执行；
+    本函数承载三级阈值判定 + 二级 compact 注入。降级方向恒为基线 v6 组装
+    （20 轮窗口 + snip），回合不阻塞、用户无感（REQ-039 异常分支）。
+    """
+
+    def baseline() -> list[dict[str, Any]]:
+        return agent.assemble_context(
+            history, message, system_prompt,
+            product_persona=settings.product_persona,
+        )
+
+    # 三级阈值判定：该会话上一回合 step=1 telemetry tokens_prompt 机器实测值
+    last_tokens = compress.last_turn_prompt_tokens(conn, user_id, session_id)
+    if last_tokens is None or last_tokens <= settings.compact_threshold:
+        return baseline(), 0  # 未超阈值 / 无记录（保守不造数）→ 基线 v6 零回退
+
+    plan = compress.plan_compact(doc, message, settings.compact_recent_turns)
+    if plan is None:
+        return baseline(), 0  # 无可压缩中段（总轮数 ≤ R）→ 跳过 compact
+    mid, watermark = plan
+
+    def compact_with(summary_text: str) -> list[dict[str, Any]]:
+        return compress.assemble_compact(
+            history, message, system_prompt, compress.wrap_summary(summary_text),
+            max_turns=settings.compact_recent_turns,
+            product_persona=settings.product_persona,
+        )
+
+    # 超阈值且有有效摘要（水位消息仍在当前 messages）→ 直接注入（零摘要调用）
+    existing = compress.load_summary(conn, user_id, session_id)
+    if existing is not None and compress.watermark_valid(doc, existing["watermark_msg_id"]):
+        return compact_with(existing["summary"]), 0
+
+    # 超阈值且无有效摘要 → 执行摘要调用（非流式、独立超时护栏、跟随回合当前模式）
+    outcome = await compress.call_summary(
+        http, base_url, api_key, model, compress.render_transcript(mid),
+        settings.summary_timeout,
+    )
+    # compress 行（机器采集，铁律 5）：turn 端点自动回合关联、tokens_after=NULL 待 T3 懒回填
+    telemetry.record_compress(
+        db_path, day=day, user_id=user_id, mode=mode, turn_id=turn_id,
+        endpoint="turn", model=model, latency_ms=outcome.latency_ms,
+        status=outcome.status, usage=outcome.usage, error_code=outcome.error_code,
+        tokens_before=last_tokens, tokens_after=None, session_id=session_id,
+    )
+    if outcome.status != "ok":
+        # 失败降级：error/timeout/空摘要/4xx/5xx → 回退不压缩组装（回合正常完成）
+        logger.warning("compact summary degraded status=%s session_id=%s",
+                       outcome.status, session_id)
+        return baseline(), 0
+
+    compress.save_summary(conn, user_id, session_id, outcome.text, watermark, model)
+    return compact_with(outcome.text), outcome.tokens_total
+
+
 @router.post("/chat/turn")
 async def chat_turn(
     body: TurnRequest,
@@ -111,12 +188,19 @@ async def chat_turn(
             raise ValueError("session doc not an object")
     except (json.JSONDecodeError, ValueError):
         doc = {"messages": []}  # 沿现有「无法读取」容错口径，空历史参与组装
-    history = agent.wire_messages_from_doc(doc)
-    # CHG-009/REQ-036（iter-15 T2）：两段式分区——system[0] 静态前缀（产品人设，
-    # .env 注入，跨请求字节恒定）+ system[1] 动态尾区；人设留空回退基线 v5 单 system 形态
-    messages = agent.assemble_context(
-        history, body.message, body.system_prompt or None,
-        product_persona=settings.product_persona,
+
+    # CHG-010/REQ-039（iter-16 T2）三级压缩管道（组装阶段，run_turn 收到的 messages 为产物）：
+    # 一级 snip 每次组装无条件执行（wire 层确定性裁剪，不触库）→ 三级阈值判定 → 二级 compact
+    turn_id = uuid.uuid4().hex[:12]
+    history = compress.snip_tool_results(
+        doc, agent.wire_messages_from_doc(doc), settings.snip_keep_recent_tools)
+    messages, summary_tokens = await _assemble_pipeline(
+        conn=conn, db_path=request.app.state.db_path, http=request.app.state.http,
+        doc=doc, history=history, message=body.message,
+        system_prompt=body.system_prompt or None,
+        user_id=user.id, session_id=body.session_id, day=day, mode=mode,
+        base_url=base_url, api_key=api_key, model=model, turn_id=turn_id,
+        settings=settings,
     )
 
     # 工具可用性（design-iter-14 §6.2/§6.3）：自填档案「支持工具」开关（定夺①，默认开；
@@ -135,9 +219,12 @@ async def chat_turn(
 
     def telemetry_sink(row: dict[str, Any]) -> None:
         # CHG-009/REQ-037（iter-15 T2）：请求级遥测落库——turn 端点 llm/tool 行（turn_id 关联）；
-        # 写入面自身吞 sqlite 异常（主路径隔离），此处仅补公共维度字段
+        # 写入面自身吞 sqlite 异常（主路径隔离），此处仅补公共维度字段。
+        # CHG-010（iter-16 T2）：session_id 会话关联列（迁移 v9 加法列）——llm 行携带，
+        # 供三级阈值判定读「该会话上一回合 step=1 tokens_prompt」（REQ-039）
         common = {"day": day, "user_id": user.id, "mode": mode,
-                  "turn_id": row.get("turn_id"), "endpoint": "turn"}
+                  "turn_id": row.get("turn_id"), "endpoint": "turn",
+                  "session_id": body.session_id}
         if row["kind"] == "llm":
             telemetry.record_llm(
                 request.app.state.db_path, **common,
@@ -167,6 +254,8 @@ async def chat_turn(
             max_steps=settings.agent_max_steps,
             step_timeout=settings.agent_step_timeout,
             tool_result_limit=settings.tool_result_limit,
+            summary_tokens=summary_tokens,
+            turn_id=turn_id,
             on_finish=record_usage,
             telemetry_sink=telemetry_sink,
         ):

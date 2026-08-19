@@ -270,6 +270,8 @@ async def run_turn(
     max_steps: int,
     step_timeout: float,
     tool_result_limit: int,
+    summary_tokens: int = 0,
+    turn_id: str | None = None,
     on_finish: Callable[[int, int], None] | None = None,
     telemetry_sink: Callable[[dict[str, Any]], None] | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
@@ -282,14 +284,20 @@ async def run_turn(
     CHG-009/REQ-037（iter-15 T2）：telemetry_sink 接收请求级遥测行——每次上游调用终态
     （ok/error/timeout/cancelled）一行 kind=llm，每次工具执行终态一行 kind=tool；
     sink 异常不影响主路径（双保险：写入面自身亦吞 sqlite 异常）。
+
+    CHG-010/REQ-039（iter-16 T2）：summary_tokens = 组装阶段摘要调用的 token 消耗，
+    计入回合 token 累计（turn.end usage 与 usage_daily 落账含摘要消耗，REQ-034「回合内
+    tokens 如实累计」既有口径自然覆盖，quota.py 零改动）；摘要调用不占回合 step 序列
+    （calls/step 口径零变化，llm 行连续性不回退）。turn_id 可由调用方预生成传入
+    （组装阶段的 compress 行需与回合同 turn_id 关联）；缺省内部生成（既有行为）。
     """
-    turn_id = uuid.uuid4().hex[:12]
+    turn_id = turn_id or uuid.uuid4().hex[:12]
     yield {"type": "turn.start", "session_id": session_id, "turn_id": turn_id}
 
     registry = {d.name: d for d in tool_defs}
     context = list(messages)
     calls = 0
-    tokens = 0
+    tokens = summary_tokens
     reason = "done"
     active: UpstreamCall | None = None
     finished = False

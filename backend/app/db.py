@@ -12,7 +12,7 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 MIGRATIONS: dict[int, str] = {
     1: """
@@ -138,6 +138,30 @@ MIGRATIONS: dict[int, str] = {
         error_code TEXT                    -- status != ok 时机器可读码（沿 §3.1 映射码体系）
     );
     CREATE INDEX idx_telemetry_day ON telemetry(day, user_id);
+    """,
+    # iter-16 T2（CHG-010 REQ-039/041，迁移 v9）：
+    # ① context_summary 压缩产物表——schema 与 CHG-010 内容 3.2 逐字一致（PK (user_id, session_id)，
+    #    每会话至多一份当前摘要，重压缩 = 同主键覆盖更新；注销级联清理 ON DELETE CASCADE；
+    #    不写回会话档，与 LWW/409 守卫/整档透传零交互）
+    # ② telemetry 加法增列 tokens_before/tokens_after（compress 行专用：触发依据实测值 /
+    #    压缩后首测值懒回填，存量行 NULL 不回填，REQ-041）
+    # ③ telemetry 加法增列 session_id（TEXT）——实现级加法列（CHG-010 schema 拟稿之外，
+    #    已拍板：v8 表无会话列，为满足 REQ-039「该会话上一回合」阈值判定语义而加；
+    #    存量 NULL 不回填，turn 端点 llm/compress 行写入时携带；偏离与理由登记 verify T2 段）
+    9: """
+    CREATE TABLE context_summary (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        session_id TEXT NOT NULL,
+        summary TEXT NOT NULL,               -- 摘要文本（注入组装前的原料）
+        watermark_msg_id TEXT NOT NULL,      -- 摘要覆盖至的消息 id（失效判定依据）
+        model TEXT NOT NULL,                 -- 生成摘要的模型（机器记录）
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (user_id, session_id)    -- 每会话至多一份当前摘要（重压缩 = 覆盖更新）
+    );
+    ALTER TABLE telemetry ADD COLUMN tokens_before INTEGER;  -- compress 行：触发依据实测值
+    ALTER TABLE telemetry ADD COLUMN tokens_after INTEGER;   -- compress 行：压缩后首测值懒回填
+    ALTER TABLE telemetry ADD COLUMN session_id TEXT;        -- 会话关联（阈值判定依据，见注释③）
     """,
 }
 

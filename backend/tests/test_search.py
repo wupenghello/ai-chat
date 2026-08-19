@@ -537,7 +537,8 @@ class TestSearchSwitchAPI:
                 assert conn.execute(
                     "SELECT value FROM app_settings WHERE key='search_enabled'"
                 ).fetchone() == ("1",)  # KV 落库（迁移 v7）
-                assert db_version(conn) == 8  # 迁移 v8（CHG-009/REQ-037 telemetry 明细表）
+                # 迁移 v9（CHG-010/REQ-041：context_summary + telemetry 加法列）
+                assert db_version(conn) == 9
             finally:
                 conn.close()
 

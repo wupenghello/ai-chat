@@ -73,3 +73,71 @@
 2. 定夺⑦精确值：**X = 7000**，测量法 = §3 三条（机器读数 + 关键信息问答 + 真实冒烟留档本节）
 3. 摘要 prompt R2 定稿（§5 逐字），冒烟全断言通过
 4. 零产品代码改动（取证脚本 scripts/b2_t0_smoke.py 新增）；无未登记变更；无新增 DEF
+
+---
+
+## T2 后端三级压缩管道核心 + 迁移 v9（2026-08-20；REQ-039 主体 + REQ-041 数据面）
+
+### §1 实现结构（新增 / 改动行数）
+
+| 文件 | 性质 | 行数变化 | 职责 |
+|------|------|---------|------|
+| `backend/app/compress.py` | **新增** | +363 | 三级管道核心：snip 裁剪 / 阈值判定读 / compact 规划与水位 / 摘要产物读写 / 摘要调用器（非流式+30s 护栏）/ 摘要注入组装 |
+| `backend/tests/test_compact.py` | **新增** | +579 | REQ-039 验收 1~6 逐条 + REQ-041 数据面 + 水位语义（16 用例） |
+| `backend/app/routers/proxy.py` | 改动 | +98/−9 | 回合受理内嵌管道编排 `_assemble_pipeline`；telemetry_sink 携 session_id；run_turn 传 summary_tokens/turn_id |
+| `backend/app/telemetry.py` | 改动 | +60 | `record_compress`（kind='compress' 行）；`record_llm`/`record_tool` 增 session_id；列白名单加 v9 三列 |
+| `backend/app/db.py` | 改动 | +25/−1 | 迁移 v9：context_summary 表 + telemetry tokens_before/tokens_after/session_id 加法列；SCHEMA_VERSION 8→9 |
+| `backend/app/agent.py` | 改动 | +10/−2 | run_turn 增 summary_tokens（计账）与 turn_id（compress 行关联）参数 |
+| `backend/app/config.py` | 改动 | +7 | 阈值 7000 + 微参数 K=2/R=5/摘要超时 30s（T0 定死值，.env 可覆盖） |
+| `backend/.env.example` | 改动 | +7 | 四压缩参数占位行 |
+| `backend/tests/test_search.py` | 改动 | +2/−1 | 既有 db_version 版本位断言随迁移推进 8→9（见 §5 改写映射） |
+| `src/db/__tests__/persistence.spec.ts` | 改动 | +11 | REQ-039 验收 7 前端面：PUT 载荷形状零变化、不含摘要字段（1 用例，生产代码零改动） |
+
+定死参数落地核对：阈值 `compact_threshold` 默认 **7000**（.env 可覆盖）；摘要 prompt = §5 R2 定稿**逐字**常量 `compress.SUMMARY_PROMPT`（pytest 逐字断言）；snip 占位文案 `[旧工具结果已裁剪：{工具名} · {状态}]`（逐字断言）；摘要注入包裹 `<conversation_summary>…</conversation_summary>`；K=2 / R=5 / 摘要超时 30s 均入 config（默认值即定死值）。
+
+### §2 REQ-039 验收 1~7 逐条对照
+
+| # | 验收 | 实现与用例 | 结论 |
+|---|------|-----------|------|
+| 1 | snip 确定性 | 一级 snip 在 wire 层对早于最近 K=2 条的 tool 结果替换占位文案（`compress.snip_tool_results`，每次组装无条件执行、不触库）；`test_snip_五工具回合_仅最近2条保留全文`（逐字断言 5 个工具回合仅最近 2 条全文、更早 3 条占位，含 error/timeout 状态位）+ `test_snip_每次组装无条件执行_阈值下同样生效` | ✅ |
+| 2 | 自动触发 | 三级阈值判定读该会话上一回合 step=1 telemetry tokens_prompt 机器实测值（`compress.last_turn_prompt_tokens`，依赖 v9 session_id 列），超阈值执行 compact，摘要作为独立 system 消息挂载 system[1] 之后历史之前、历史仅最近 R=5 轮；`test_超阈值_摘要注入_挂载位置与R轮窗口`（置 tokens_prompt=阈值+1 → 断言挂载位置逐条 + 窗口 m16 起 + prompt R2 逐字 + 水位 m15 落库） | ✅ |
+| 3 | 阈值下零回退 | 纯文本会话 + tokens_prompt=阈值−1 → 与基线 v6 逐字段等价；`test_阈值下_纯文本会话_基线v6逐字段等价` + `test_无遥测记录_按未超阈值处理`（无记录保守不造数）。含旧工具回合的会话按验收 1 口径断言（见 §5 改写映射：既有用例零受影响） | ✅ |
+| 4 | 失败降级 | error/timeout/空摘要/4xx/5xx 恒回退基线 v6 组装（20 轮窗口 + snip），回合不阻塞、warning 日志、compress 行 status=error/timeout 如实记；`test_摘要500_回退不压缩_compress行error` / `test_摘要超时_回退_compress行timeout` / `test_空摘要_回退_compress行error` | ✅ |
+| 5 | 30 轮验收 | pytest 脚本化假上游 30 轮（第 1 轮种关键事实、第 7/15/23 轮工具回合）→ 第 31 次请求体 prompt_tokens 机器读数 ≤ 7000 + 关键事实（小明/喵喵）经摘要承载可答对；`test_30轮验收_第31次请求体机器读数不超阈值_关键事实可答`。真实 DeepSeek 30 轮冒烟走查引用本节 T0 §1~§4 留档，不重跑 | ✅ |
+| 6 | 存储语义 | 压缩只影响发给上游的内容，库内消息全文零删除；`test_压缩前后_会话档逐字不变_GET输出不变`（压缩执行前后 chat_sessions messages 数量与全文逐字不变、GET 输出不变） | ✅ |
+| 7 | 产物独立 | 压缩产物仅存 context_summary 表，不写回会话档；`test_产物独立_仅存context_summary_会话档与遥测零摘要文本`（pytest：产物表 + 会话档零摘要 + telemetry 零摘要文本）+ vitest `persistence.spec.ts` 新增 1 例（PUT 载荷形状零变化、不含摘要字段，生产代码零改动） | ✅ |
+
+### §3 REQ-041 数据面（本任务承载：迁移 v9 + compress 行创建落库）
+
+| # | 验收（本任务面） | 实现与用例 | 结论 |
+|---|------|-----------|------|
+| 1 | compress 行完整性（本任务面） | 一次自动压缩回合结束 → telemetry 恰 1 条 compress 行：turn_id 关联、endpoint='turn'、model=摘要模型、latency_ms=摘要调用耗时、tokens_prompt=摘要调用自身消耗（同列口径）、tokens_before=触发依据实测值、status=ok、**tokens_after=NULL（懒回填归 T3）**、step=NULL 不占回合 step 序列；`test_compress行完整性_恰1条_触发依据值_tokens_after为NULL` + `test_摘要tokens计入回合累计_usage与usage_daily含摘要消耗`（turn.end usage 与 usage_daily 含摘要消耗、quota.py 零改动） | ✅ |
+| 2 | 配额数据面零回退 | test_quota 全套零改动复跑全绿；test_telemetry 全绿（行形状仅加法列）——见 §4 计数 | ✅ |
+
+> 验收 1 的「tokens_after 懒回填后与下一回合 step=1 llm 行 tokens_prompt 一致」一致性断言属 T3 范围，本任务仅落 tokens_after=NULL 的创建面（任务书明示）。
+
+### §4 测试计数与既有用例零改动证明
+
+- **后端 pytest：239 → 255（+16 新增，全绿）**。新增 16 例全部在 `tests/test_compact.py`（REQ-039 验收 1~6 逐条 + REQ-041 数据面 + 水位语义）。
+- **前端 vitest：324 → 325（+1 新增，全绿）**。新增 1 例在 `persistence.spec.ts`（REQ-039 验收 7 前端面）。
+- **既有用例零改动证明**：除 §5 登记的 1 例版本位断言外，`git diff` 对 test_quota / test_telemetry / test_turn / test_admin_telemetry 等全部既有测试文件零改动；行形状仅加法列（tokens_before/tokens_after/session_id），既有 `SELECT *`/列名断言不受影响。ruff clean。
+
+### §5 改写映射登记（全局回归基线口径，功能性删除为零）
+
+| # | 旧断言 | 新断言 | 说明 |
+|---|--------|--------|------|
+| 1 | `test_search.py` `assert db_version(conn) == 8`（迁移 v8 版本位守卫） | `assert db_version(conn) == 9` | 迁移版本位断言随 v9 推进。非口径迁移、非功能性删除——该断言职责是「最新迁移已应用」，随每次迁移自然 +1。REQ-033 验收 1「组装等价」含旧工具回合的**业务用例零受影响**：K=2 保留口径下，存量用例（test_turn 工具窗口同构、test_telemetry 卫生探针、test_search 注入防护等）的存量会话工具消息数均 ≤2，snip 不触发替换，断言口径不变 |
+
+> 「纯文本会话等价口径不变」由 `test_阈值下_纯文本会话_基线v6逐字段等价` 正面承接；snip 对纯文本会话无 tool 消息可裁剪、零影响。
+
+### §6 session_id 加法列偏离登记（实现级加法，已拍板）
+
+telemetry v8 表无会话关联列，无法满足 REQ-039「**该会话**上一回合 step=1 tokens_prompt」的阈值判定语义。本任务在迁移 v9 给 telemetry 增加 `session_id TEXT` 加法列：存量 NULL 不回填、turn 端点 llm/tool/compress 行写入时携带、阈值判定查询按 (user_id, session_id) 过滤。此为 CHG-010 schema 拟稿之外的**实现级加法列**——REQ 验收语义优先于 schema 拟稿，属「定死口径的最小必要落地」，非范围扩张；quota.py 与 usage_daily 数据面零改动、REQ-037/038 既有行形状零回退（仅加法列）。登记于 §1 db.py 行与本节。
+
+### §7 卫生自查（铁律 5 + 受保护存储口径）
+
+- **库内消息全文零删除**：压缩与 snip 均为组装层/wire 层产物，chat_sessions.data 原文不动（验收 6 用例前后逐字比对为证）。
+- **表零 key 零消息内容全文**：context_summary 表存摘要产物（产物语义，非「消息内容全文入日志」）；telemetry compress 行仅 status/耗时/token 分项/触发依据值，无 key、无消息内容、无工具结果全文（`test_产物独立…遥测零摘要文本` 探针为证）。
+- **日志零泄露**：摘要调用失败仅 warning `status=%s session_id=%s`，不含 key/内容（沿 REQ-031 卫生口径）；摘要 prompt 与调用体不入日志。
+- **与 LWW/409 守卫/整档透传零交互**：压缩产物存独立表、不随会话 PUT 回写，会话档结构零变化（REQ-006/022 零波及明示承接）；前端数据面 client.ts/sessions.ts 零改动。
+- **密钥安全**：摘要调用 Authorization 头全新构造、不入日志/响应；统一 key 与自填 key 均不出现在任何新增表/日志。

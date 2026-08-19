@@ -42,6 +42,13 @@ class Settings(BaseSettings):
     price_input: float | None = None
     price_output: float | None = None
     price_cache_hit: float | None = None
+    # CHG-010/REQ-039（iter-16 T2）三级压缩管道参数——默认值即 T0 取证定死值
+    # （plans/iter-16-verify.md T0 §2/§3：阈值 = 0.75Y 取整千位，Y=9909/9943 两轮一致；
+    # 微参数定夺⑨定案 K=2 / R=5 / 摘要超时 30s）；.env 可覆盖，口径定稿
+    compact_threshold: int = 7000  # 自动压缩阈值：上一回合 step=1 tokens_prompt 实测值超之即压缩
+    snip_keep_recent_tools: int = 2  # 一级 snip K：仅最近 K 条 tool 消息保留结果全文
+    compact_recent_turns: int = 5  # 二级 compact R：压缩后保留最近 R 轮全文
+    summary_timeout: float = 30.0  # 摘要调用独立超时护栏（秒，不占回合单步 120s 口径）
 
 
 @lru_cache

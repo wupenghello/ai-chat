@@ -142,3 +142,6 @@
   - 窗口外失忆实证：Run 2 第 31 轮明确失忆（Run 1 答对系窗口内再提及污染，如实登记）——B2 要解决的问题实证成立
   - 摘要 prompt R2 定稿（R1 产物 1344 字超限 → 增「知识性问答只留主题清单」条）：R2 产物 313 字 ≤800、关键事实与三次搜索结论全保留；逐字登记 plans/iter-16-verify.md §5
   - 零产品代码改动、零 DEF；changes.md CHG-010 定夺③⑦与落地清单第 6 项回填
+- **T1 design-iter-16 已基线**（2026-08-20，CEO 批准「批准，全部按推荐」）：7 项定夺定案——①菜单项位于导出后/danger 分隔前 ②执行中 pill + 禁用防重 ③成功 toast 不带数字（懒回填半截数字违铁律 5）④409 服务端唯一判定 ⑤卡 E 全宽（双卡区与卡 D 之间）⑥降幅仅计测得行零测得显缺失 ⑦成本注记落卡 E 不动卡 A；逐字文案 C1~C16 登记表；API 口径定案（compact 四语义 + telemetry compact 加法键）；走查清单 44 条（零回退组映射 iter-11/15）；零新增令牌；spec 涉及页面指针零滞后回填。
+- **流程纪律（CEO 定夺 2026-08-20）**：T2 开发任务与设计并行偷跑两轮（iter-15/16）——偏离已登 tailoring；口径定为**严格串行**（开发任务一律在设计基线后启动），模板措辞澄清入本迭代复盘改进项；今日 T2 半成品阻塞门禁卡住 T1 基线提交为既显代价；当前在跑 T2 按 CEO 定夺跑完 + 主会话亲跑核验，不构成先例。
+- **T2 后端三级压缩管道核心 + 迁移 v9 完成**（2026-08-20，提交 {{HASH}}）：新增 app/compress.py 管道核心（一级 snip 逐字占位 / 二级 compact 非流式摘要调用 30s 护栏跟随回合模式 / 三级阈值判定读该会话上一回合 step=1 机器实测值 / 失败恒降级基线 v6 / 水位失效判定）+ 迁移 v9（context_summary 产物表 PK(user_id,session_id) 水位 CASCADE + telemetry tokens_before/tokens_after/session_id 加法列，存量不回填）+ compress 行数据面（turn 关联、tokens_after=NULL 待 T3 懒回填）+ 摘要 tokens 计回合累计（quota.py 零改动）；阈值 7000 与 K=2/R=5/30s 入 config（.env 可覆盖），摘要 prompt R2 定稿逐字常量；session_id 加法列为实现级偏离已登记 verify。测试：pytest 239→255（+16，test_compact 覆盖 REQ-039 验收 1~6 逐条 + 30 轮机器读数 ≤7000 + 关键事实问答），vitest 324→325（+1，PUT 载荷零摘要字段），既有用例仅 1 处迁移版本位断言 8→9（映射已登记），ruff clean。

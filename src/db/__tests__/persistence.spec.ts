@@ -70,6 +70,17 @@ describe('saveSession', () => {
     await saveSession({ ...SESSION, id: 'a b/中文' })
     expect(fetchMock.mock.calls[0][0]).toBe(`/api/sessions/${encodeURIComponent('a b/中文')}`)
   })
+
+  it('B2 压缩产物不进会话档：PUT 载荷形状零变化、不含摘要字段（REQ-039 验收 7 前端面）', async () => {
+    const fetchMock = fetchOk({ detail: 'saved' })
+    vi.stubGlobal('fetch', fetchMock)
+    await saveSession(SESSION)
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const body = JSON.parse(init.body as string)
+    // 载荷顶层键集合 = PersistedSession 原样（压缩摘要存服务端独立表，不经会话档流转）
+    expect(Object.keys(body).sort()).toEqual(Object.keys(SESSION).sort())
+    expect(init.body as string).not.toContain('summary')
+  })
 })
 
 describe('deleteSession', () => {
