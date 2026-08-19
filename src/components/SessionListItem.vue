@@ -8,9 +8,12 @@ import DropdownMenu, { type DropMenuItem } from './DropdownMenu.vue'
  * REQ-026.1（design-iter-11 §1.2，R1 grid 单行）：列表项单行化——仅标题（ellipsis + title），
  * hover 右侧浮现「···」，下拉菜单承载 重命名 / 导出会话（REQ-027 T2，走查 36）/ 删除。
  * 无逐条时间戳（REQ-026.2 时间分组由 TheSidebar 渲染组头）。
+ * CHG-010/REQ-040（iter-16 T3，design-iter-16 §2）：菜单加法项「压缩上下文」——位于
+ * 「导出会话」之后、danger 分隔线之前（非破坏操作相邻，定夺①）；执行中 = pill 插槽
+ * 「压缩中」胶囊（primary 族，定夺②）+ 该项禁用防重复；corrupted 禁用（双保险，C4）。
  */
-const props = defineProps<{ session: Session; active: boolean; search?: string; hit?: SearchHit | null }>()
-const emit = defineEmits<{ select: []; remove: []; rename: [title: string]; export: [] }>()
+const props = defineProps<{ session: Session; active: boolean; search?: string; hit?: SearchHit | null; compacting?: boolean }>()
+const emit = defineEmits<{ select: []; remove: []; rename: [title: string]; export: []; compact: [] }>()
 
 const editing = ref(false)
 const draft = ref('')
@@ -30,12 +33,21 @@ const menuItems = computed<DropMenuItem[]>(() => [
     reason: '无法读取的会话不可重命名',
   },
   { key: 'export', label: '导出会话' },
+  {
+    // REQ-040（design-iter-16 §2.1）：导出之后、danger 分隔线之前；禁用两态——
+    // corrupted（C4）/ 执行中防重复（C3）；不按轮数禁用（无需压缩语义由服务端返回）
+    key: 'compact',
+    label: '压缩上下文',
+    disabled: props.session.corrupted || props.compacting,
+    reason: props.session.corrupted ? '无法读取的会话不可压缩' : props.compacting ? '压缩中' : undefined,
+  },
   { key: 'remove', label: '删除', danger: true, separator: true },
 ])
 
 function onMenuSelect(key: string) {
   if (key === 'rename') startEdit()
   else if (key === 'export') emit('export')
+  else if (key === 'compact') emit('compact')
   else if (key === 'remove') emit('remove')
 }
 
@@ -92,7 +104,13 @@ function cancel() {
         </template>
         <template v-else>{{ session.corrupted ? '无法读取的会话' : session.title }}</template>
       </span>
-      <span v-if="session.corrupted" class="pill broken">无法读取</span>
+      <span v-if="compacting" class="pill compact">
+        <svg class="pill-spin" width="10" height="10" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="3" stroke-dasharray="42 15" />
+        </svg>
+        压缩中
+      </span>
+      <span v-else-if="session.corrupted" class="pill broken">无法读取</span>
       <span v-else-if="session.messages.some((m) => m.status === 'interrupted')" class="pill cut">生成中断</span>
       <DropdownMenu :items="menuItems" trigger-aria="会话操作" @select="onMenuSelect" />
     </template>
@@ -208,5 +226,23 @@ mark.hl {
 .pill.cut {
   color: var(--c-warning);
   background: var(--c-warning-l);
+}
+/* REQ-040（design-iter-16 §2.2）：执行中 pill = pill.cut 同规格参数、色组合借工具步骤卡
+   「运行中」徽章语义族（进行中 = primary 族，零新令牌）；spinner 10px currentColor 不定态 */
+.pill.compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--c-primary);
+  background: var(--c-primary-l);
+}
+.pill-spin {
+  flex: none;
+  animation: pill-spin 0.9s linear infinite;
+}
+@keyframes pill-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

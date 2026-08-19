@@ -212,3 +212,28 @@ def record_compress(
         "tokens_after": tokens_after,
         "session_id": session_id,
     })
+
+
+def backfill_tokens_after(
+    db_path: str, *, user_id: int, session_id: str, tokens_after: int
+) -> None:
+    """tokens_after 懒回填（CHG-010/REQ-041 主流程，iter-16 T3）：该会话下一次 step=1
+    上游调用返回 usage 后，独立短连接回填该会话全部待测 compress 行（status=ok 且
+    tokens_after 为 NULL——「压缩后首次 step=1 实测值」口径；失败行不回填，不计降幅）。
+    失败不阻塞、不补造（吞 sqlite 异常仅 warning，沿 _write 主路径隔离哲学）。
+    """
+    try:
+        conn = connect(db_path)
+        try:
+            with conn:
+                conn.execute(
+                    "UPDATE telemetry SET tokens_after = ?"
+                    " WHERE kind = 'compress' AND user_id = ? AND session_id = ?"
+                    "   AND status = 'ok' AND tokens_after IS NULL",
+                    (tokens_after, user_id, session_id),
+                )
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        logger.warning("tokens_after backfill failed session_id=%s", session_id,
+                       exc_info=True)

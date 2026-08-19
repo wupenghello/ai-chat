@@ -27,11 +27,16 @@ export function notifyUnauthorized(): void {
   onUnauthorized?.()
 }
 
-/** 从 FastAPI 错误体提取人话文案：{detail: string} 或 pydantic 422 的 [{msg}] */
+/** 从 FastAPI 错误体提取人话文案：{detail: string} / {detail: {message}} 对象形状
+ *  （sessions.py 409 与 chat/compact 端点先例）/ pydantic 422 的 [{msg}] */
 function extractMessage(body: unknown, fallback: string): string {
   if (body && typeof body === 'object' && 'detail' in body) {
     const detail = (body as { detail: unknown }).detail
     if (typeof detail === 'string') return detail
+    if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
+      const msg = (detail as { message?: unknown }).message
+      if (typeof msg === 'string' && msg) return msg
+    }
     if (Array.isArray(detail) && detail.length > 0) {
       const msg = (detail[0] as { msg?: string })?.msg ?? ''
       return msg.replace(/^Value error,\s*/, '') || fallback
@@ -218,7 +223,27 @@ export interface AdminTelemetry {
     count: number
     avg_duration_ms: number
   }>
+  /** CHG-010/REQ-041（iter-16 T3，design-iter-16 §5.2）：压缩聚合加法键。
+   *  可选——旧后端窗口期不携带时前端按空态渲染（窗口内无压缩记录）；
+   *  measured=0 → reduction_rate=null（显「缺失」徽标，永不显 0/NaN，铁律 5） */
+  compact?: {
+    count: number
+    count_ok: number
+    count_failed: number
+    measured: number
+    tokens_before_total: number
+    tokens_after_total: number
+    reduction_rate: number | null
+  }
   retention_days: number
+}
+
+/** CHG-010/REQ-040（iter-16 T3）：手动压缩结果（design-iter-16 §5.1 定案形状）。
+ *  tokens_before 前端不呈现（定夺③：半截数字误导，效果度量归 admin 卡 E） */
+export interface CompactResult {
+  status: 'compacted' | 'skipped'
+  tokens_before?: number | null
+  reason?: 'too_short'
 }
 
 export interface ProfilePayload {
@@ -253,6 +278,10 @@ export const backend = {
   clearActiveProfile: () => request<{ detail: string }>('DELETE', '/api/profiles/active'),
   // REQ-024/014（iter-8 T1 后端、T2 前端接入）：当前用户配额口径
   getQuota: () => request<QuotaStatus>('GET', '/api/quota'),
+  // CHG-010/REQ-040（iter-16 T3，design-iter-16 §5.1）：手动压缩——四语义 200 compacted /
+  // 200 skipped too_short / 409 session_generating（detail.message 逐字呈现）/ 502·504 失败
+  compactSession: (session_id: string) =>
+    request<CompactResult>('POST', '/api/chat/compact', { session_id }),
   // REQ-025（iter-8 T2）+ REQ-029（iter-12 T1/T2）：管理后台（非管理员一律 403，服务端为安全边界）
   adminUsers: () => request<AdminUserRow[]>('GET', '/api/admin/users'), // 无参数 = 纯列表全量（§4.1 兼容形态，用量筛选下拉数据源）
   adminOverview: () => request<AdminOverview>('GET', '/api/admin/overview'),

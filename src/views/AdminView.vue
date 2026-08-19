@@ -404,10 +404,17 @@ const telHasGap = computed(() => {
   return !!t && t.daily.length < t.window.days
 })
 
-/** 空窗口：零遥测行（面板整体空盒 T28，非错误态） */
+/** 空窗口：零遥测行（面板整体空盒 T28，非错误态）；CHG-010/REQ-041（iter-16 T3）：
+ *  compress 行同为遥测行——仅压缩行的窗口不视空（卡 E 承载，加法口径零回退） */
 const telEmpty = computed(() => {
   const t = telData.value
-  return !!t && t.daily.length === 0 && t.tools.length === 0
+  return !!t && t.daily.length === 0 && t.tools.length === 0 && (t.compact?.count ?? 0) === 0
+})
+
+/** 卡 E 上下文压缩聚合（design-iter-16 §4/§5.2）：compact 键缺失（旧后端窗口期）按空态口径 */
+const telCompact = computed(() => telData.value?.compact ?? {
+  count: 0, count_ok: 0, count_failed: 0, measured: 0,
+  tokens_before_total: 0, tokens_after_total: 0, reduction_rate: null,
 })
 
 const TEL_STATUS_TEXT: Record<string, string> = {
@@ -846,6 +853,40 @@ onBeforeUnmount(() => {
                   </tbody>
                 </table>
               </div>
+            </div>
+          </div>
+
+          <!-- 卡 E 上下文压缩（CHG-010/REQ-041，iter-16 T3，design-iter-16 §4 定夺⑤：
+               双卡并排区与卡 D 之间的全宽卡；三态 正常/缺失/空；零新增令牌） -->
+          <div class="tel-card">
+            <div class="tc-head ce-head">
+              <svg class="ce-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 7h16M7 12h10M10 17h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+              </svg>
+              上下文压缩
+            </div>
+            <div class="tc-sub">压缩 = 中段历史摘要（自动阈值触发 + 手动触发）；降幅仅统计压缩前后均测得的压缩</div>
+            <template v-if="telCompact.count > 0">
+              <div class="ce-grid">
+                <div class="ce-cell" title="失败含超时行；失败行只计次数、不计降幅">
+                  <div class="bd-label">窗口压缩次数</div>
+                  <div class="tc-big">{{ fmtNum(telCompact.count) }}</div>
+                  <div class="tc-big-sub">成功 {{ fmtNum(telCompact.count_ok) }} · 失败 {{ fmtNum(telCompact.count_failed) }}</div>
+                </div>
+                <div class="ce-cell" title="平均降幅 = 1 − Σ压缩后 tokens ÷ Σ压缩前 tokens">
+                  <div class="bd-label">平均降幅</div>
+                  <div v-if="telCompact.reduction_rate == null" class="ce-miss-row">
+                    <span class="pill miss">缺失</span>
+                  </div>
+                  <div v-else class="tc-big">{{ fmtRate(telCompact.reduction_rate) }}</div>
+                  <div class="tc-big-sub">已测得 {{ fmtNum(telCompact.measured) }} / 成功 {{ fmtNum(telCompact.count_ok) }}</div>
+                </div>
+              </div>
+            </template>
+            <div v-else class="ce-empty">窗口内无压缩记录</div>
+            <div class="kv-row">
+              <span class="kv-label">成本与配额口径</span>
+              <span class="kv-val">摘要调用 tokens 计入每日成本估算（按输入计价）· 手动压缩不计回合</span>
             </div>
           </div>
 
@@ -1502,6 +1543,39 @@ th.sortable {
 }
 .tel-2col .tel-card {
   margin-bottom: 0;
+}
+/* 卡 E 上下文压缩（iter-16 T3，design-iter-16 §4）：统计卡家族变体，零新令牌——
+   双大数值两列等宽栅格 gap 16（bd-grid 参数）；内面板 bd-item 同规格；缺失徽标 pill.miss 同款 */
+.ce-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ce-ico {
+  flex: none;
+  color: var(--c-text-3);
+}
+.ce-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 12px;
+}
+.ce-cell {
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  background: var(--c-subtle-bg);
+  padding: 10px 12px;
+  min-width: 0;
+}
+.ce-miss-row {
+  margin: 2px 0;
+}
+.ce-empty {
+  padding: 24px 0;
+  text-align: center;
+  color: var(--c-text-3);
+  font-size: 12px;
 }
 /* 遥测表格（表格卡家族：tbl-in-card + adm-table 规格照搬） */
 .tbl-in-card {

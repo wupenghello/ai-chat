@@ -402,7 +402,11 @@ def test_30轮验收_第31次请求体机器读数不超阈值_关键事实可�
     compress_rows = [r for r in _rows(c) if r["kind"] == "compress"]
     assert compress_rows and all(r["status"] == "ok" for r in compress_rows)
     assert all(r["tokens_before"] > 7000 for r in compress_rows)
-    assert all(r["tokens_after"] is None for r in compress_rows)  # 懒回填归 T3
+    # tokens_after 懒回填（iter-16 T3 承载落地，改写映射见 plans/iter-16-verify.md T3 段）：
+    # 压缩回合 step=1 usage 到达即回填，与同回合 step=1 llm 行 tokens_prompt 一致
+    for r in compress_rows:
+        (lrow,) = [x for x in step1 if x["turn_id"] == r["turn_id"]]
+        assert r["tokens_after"] == lrow["tokens_prompt"]
     summary_calls = [r for r in seen if _payload(r).get("stream") is False]
     assert len(summary_calls) == 1  # 首次压缩生成，后续水位有效复用（零重复摘要调用）
 

@@ -17,7 +17,7 @@ from collections.abc import AsyncIterator
 from typing import Annotated, Any
 
 import httpx
-from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -231,6 +231,16 @@ async def chat_turn(
                 step=row["step"], model=row["model"], latency_ms=row["latency_ms"],
                 status=row["status"], usage=row.get("usage"), error_code=row.get("error_code"),
             )
+            # CHG-010/REQ-041（iter-16 T3）tokens_after 懒回填：该会话 step=1 上游调用
+            # usage 到达 → 独立短连接回填待测 compress 行（失败不阻塞、不补造——usage
+            # 无 prompt_tokens 记分行则不回填，铁律 5）
+            if row["step"] == 1:
+                prompt_tokens = (row.get("usage") or {}).get("prompt_tokens")
+                if isinstance(prompt_tokens, (int, float)):
+                    telemetry.backfill_tokens_after(
+                        request.app.state.db_path, user_id=user.id,
+                        session_id=body.session_id, tokens_after=int(prompt_tokens),
+                    )
         else:
             telemetry.record_tool(
                 request.app.state.db_path, **common,
@@ -242,26 +252,128 @@ async def chat_turn(
     logger.info("turn accepted user_id=%s mode=%s session_id=%s tools=%s",
                 user.id, mode, body.session_id, len(tool_defs))
 
+    # 进行中回合登记（REQ-040 409 判定的服务端唯一权威，design-iter-16 §2.3 定夺④）：
+    # 受理置位，流终态（正常耗尽/断连关闭生成器）finally 清除
+    generating: set = request.app.state.generating_sessions
+    gen_key = (user.id, body.session_id)
+    generating.add(gen_key)
+
     async def stream() -> AsyncIterator[bytes]:
-        async for ev in agent.run_turn(
-            client=upstream,
-            base_url=base_url,
-            api_key=api_key,
-            model=model,
-            session_id=body.session_id,
-            messages=messages,
-            tool_defs=tool_defs,
-            max_steps=settings.agent_max_steps,
-            step_timeout=settings.agent_step_timeout,
-            tool_result_limit=settings.tool_result_limit,
-            summary_tokens=summary_tokens,
-            turn_id=turn_id,
-            on_finish=record_usage,
-            telemetry_sink=telemetry_sink,
-        ):
-            yield ("data: " + json.dumps(ev, ensure_ascii=False) + "\n\n").encode()
+        try:
+            async for ev in agent.run_turn(
+                client=upstream,
+                base_url=base_url,
+                api_key=api_key,
+                model=model,
+                session_id=body.session_id,
+                messages=messages,
+                tool_defs=tool_defs,
+                max_steps=settings.agent_max_steps,
+                step_timeout=settings.agent_step_timeout,
+                tool_result_limit=settings.tool_result_limit,
+                summary_tokens=summary_tokens,
+                turn_id=turn_id,
+                on_finish=record_usage,
+                telemetry_sink=telemetry_sink,
+            ):
+                yield ("data: " + json.dumps(ev, ensure_ascii=False) + "\n\n").encode()
+        finally:
+            generating.discard(gen_key)
 
     return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+class CompactRequest(BaseModel):
+    """手动压缩请求体（design-iter-16 §5.1 定案）：body 仅 session_id 一字段。"""
+    session_id: str = Field(min_length=1, max_length=64)
+
+
+@router.post("/chat/compact")
+async def chat_compact(
+    body: CompactRequest,
+    user: CurrentUser,
+    request: Request,
+    conn: DatabaseDep,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Response:
+    """手动压缩（CHG-010 REQ-040，iter-16 T3；design-iter-16 §5.1 四语义逐字定案）。
+
+    同步执行完整管道（全量 compact，不受阈值判定约束；一级 snip 为组装层无状态变换，
+    下一回合组装照常执行，管道口径天然含摄）。**不计回合**（定夺⑧）：quota.py 零调用、
+    usage_daily 零写入，摘要 tokens 仅落 telemetry compress 行（endpoint='compact'、
+    turn_id=NULL、tokens_after=NULL 待该会话下一次 step=1 usage 懒回填）。
+    detail 形状 {code, message} 沿 sessions.py 409 session_schema_conflict 先例。
+    失败/超时：context_summary 零变化（原摘要仍有效则保留）、会话档任何分支零写入。
+    """
+    row = conn.execute(
+        "SELECT data FROM chat_sessions WHERE user_id = ? AND id = ?",
+        (user.id, body.session_id),
+    ).fetchone()
+    if row is None:  # 不存在或属他人一律 404（不泄露归属，REQ-040 验收 4）
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail={
+            "code": "session_not_found", "message": "会话不存在"})
+
+    # 409 服务端唯一判定（定夺④）：该会话有进行中回合即拒——多设备竞态唯一权威
+    if (user.id, body.session_id) in request.app.state.generating_sessions:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail={
+            "code": "session_generating",
+            "message": "该会话正在生成回复，暂不能压缩，请等生成完成后再试"})
+
+    try:
+        doc = json.loads(row["data"])
+        if not isinstance(doc, dict) or not isinstance(doc.get("messages"), list):
+            raise ValueError("session doc unreadable")
+    except (json.JSONDecodeError, ValueError, TypeError):
+        # corrupted 双保险（前端菜单已禁用；turn 端点容错空历史，本端点拒绝）
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail={
+            "code": "session_uncompactable", "message": "无法读取的会话不可压缩"}) from None
+
+    # 不受阈值约束直接规划中段；总轮数 ≤ R → 无需压缩（零上游调用、零计费）
+    plan = compress.plan_compact(doc, "", settings.compact_recent_turns, incoming=False)
+    if plan is None:
+        return JSONResponse({"status": "skipped", "reason": "too_short"})
+    mid, watermark = plan
+
+    tokens_before = compress.last_turn_prompt_tokens(conn, user.id, body.session_id)
+    profile, base_url, api_key, model = _resolve_upstream(conn, user, settings)
+    mode = quota.MODE_SELF if profile is not None else quota.MODE_UNIFIED
+    day = quota.today()
+    if not api_key:
+        # 统一 key 未配置且无生效档案 → 摘要调用不可执行，归失败分支如实记行（铁律 5）
+        telemetry.record_compress(
+            request.app.state.db_path, day=day, user_id=user.id, mode=quota.MODE_UNIFIED,
+            turn_id=None, endpoint="compact", model="", latency_ms=0, status="error",
+            error_code="summary_error", tokens_before=tokens_before, tokens_after=None,
+            session_id=body.session_id,
+        )
+        logger.warning("compact refused: upstream key missing user_id=%s session_id=%s",
+                       user.id, body.session_id)
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail={
+            "code": "compact_failed", "message": "压缩失败，请稍后再试"})
+
+    outcome = await compress.call_summary(
+        request.app.state.http, base_url, api_key, model,
+        compress.render_transcript(mid), settings.summary_timeout,
+    )
+    telemetry.record_compress(
+        request.app.state.db_path, day=day, user_id=user.id, mode=mode,
+        turn_id=None, endpoint="compact", model=model, latency_ms=outcome.latency_ms,
+        status=outcome.status, usage=outcome.usage, error_code=outcome.error_code,
+        tokens_before=tokens_before, tokens_after=None, session_id=body.session_id,
+    )
+    if outcome.status != "ok":
+        # 502/504 共用 code 与 message——用户侧失败 toast 恒为一句（C7），
+        # 子类区分归 warning 日志与 compress 行 status/error_code
+        logger.warning("manual compact failed status=%s session_id=%s",
+                       outcome.status, body.session_id)
+        code = (status.HTTP_504_GATEWAY_TIMEOUT if outcome.status == "timeout"
+                else status.HTTP_502_BAD_GATEWAY)
+        raise HTTPException(code, detail={
+            "code": "compact_failed", "message": "压缩失败，请稍后再试"})
+
+    compress.save_summary(conn, user.id, body.session_id, outcome.text, watermark, model)
+    # tokens_before 对新会话/无遥测记录会话为 NULL（不估算）；前端不呈现该值（设计定夺③）
+    return JSONResponse({"status": "compacted", "tokens_before": tokens_before})
 
 
 @router.get("/quota")

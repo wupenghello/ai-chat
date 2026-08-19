@@ -328,6 +328,10 @@ def telemetry_view(
       整天无带字段行 → cache_* 与 cache_rate 为 null（前端显「缺失」，永不显 0）
     - daily 仅列有数据日（缺失时段由前端以窗口天数比对判定）；
       tools = GROUP BY tool_name,status，排序固定 tool_name ASC, status ASC（确定性）
+    - CHG-010/REQ-041（iter-16 T3）加法扩展：顶层 `compact` 键（压缩次数/平均降幅聚合，
+      缺失语义 measured=0 → reduction_rate=null，铁律 5 永不显 0）；成本口径演进——
+      today_cost 与 daily[].cost_total 计入 unified compress 行 tokens_prompt×input 单价
+      （摘要调用按输入计价，CHG-010 3.3；既有形状零变化，造数不含 compress 行则数值不变）
     """
     date_to = quota.today()
     date_from = (datetime.now() - timedelta(days=days - 1)).strftime("%Y-%m-%d")
@@ -344,8 +348,14 @@ def telemetry_view(
         "WHERE kind = 'tool' AND day >= ? AND day <= ?",
         window,
     ).fetchall()
+    compact_rows = conn.execute(
+        "SELECT day, mode, status, tokens_prompt, tokens_before, tokens_after FROM telemetry "
+        "WHERE kind = 'compress' AND day >= ? AND day <= ?",
+        window,
+    ).fetchall()
 
-    # 按日聚合：llm 行供成本/命中率，tool 行仅贡献「有数据日」（零 llm 行的工具日亦列出）
+    # 按日聚合：llm 行供成本/命中率，tool 行仅贡献「有数据日」（零 llm 行的工具日亦列出）；
+    # compress 行同样贡献「有数据日」，unified 行 tokens_prompt 计入当日输入成本（按输入计价）
     acc: dict[str, dict] = {}
 
     def _day(day: str) -> dict:
@@ -353,6 +363,7 @@ def telemetry_view(
             "prompt": 0, "completion": 0, "self": 0,
             "hit": 0, "miss": 0, "has_cache": False,       # 显示口径：全模式带字段行
             "cost_hit": 0,                                   # 成本口径：仅 unified 带字段行
+            "comp_prompt": 0,                                # 成本口径：仅 unified compress 行
         })
 
     for r in llm_rows:
@@ -370,15 +381,21 @@ def telemetry_view(
             d["has_cache"] = True
     for r in tool_rows:
         _day(r["day"])
+    for r in compact_rows:
+        d = _day(r["day"])
+        if r["mode"] == quota.MODE_UNIFIED:
+            d["comp_prompt"] += r["tokens_prompt"] or 0
 
     configured = _price_configured(settings)
     pin, pout, phit = settings.price_input, settings.price_output, settings.price_cache_hit
 
-    def _cost6(prompt: int, completion: int, cost_hit: int) -> dict:
-        """成本三分项 + 合计（后端保留 6 位小数；单价未配置 → 全 null，tokens 不受影响）。"""
+    def _cost6(prompt: int, completion: int, cost_hit: int, comp_prompt: int = 0) -> dict:
+        """成本三分项 + 合计（后端保留 6 位小数；单价未配置 → 全 null，tokens 不受影响）。
+        comp_prompt = 当日 unified compress 行 tokens_prompt（CHG-010 3.3 按输入计价，
+        并入输入分项；comp_prompt=0 时与既有公式逐字节等价，造数无 compress 行数值零变化）。"""
         if not configured:
             return {"input": None, "output": None, "cache_hit": None, "total": None}
-        ci = round(prompt * pin / 1_000_000, 6)
+        ci = round((prompt + comp_prompt) * pin / 1_000_000, 6)
         co = round(completion * pout / 1_000_000, 6)
         cc = round(cost_hit * phit / 1_000_000, 6)
         return {"input": ci, "output": co, "cache_hit": cc, "total": round(ci + co + cc, 6)}
@@ -386,7 +403,7 @@ def telemetry_view(
     daily = []
     for day in sorted(acc, reverse=True):
         d = acc[day]
-        cost = _cost6(d["prompt"], d["completion"], d["cost_hit"])
+        cost = _cost6(d["prompt"], d["completion"], d["cost_hit"], d["comp_prompt"])
         if d["has_cache"]:
             denom = d["hit"] + d["miss"]
             rate = round(d["hit"] / denom, 6) if denom > 0 else 0.0
@@ -405,7 +422,8 @@ def telemetry_view(
         })
 
     t = acc.get(date_to)
-    cost = _cost6(*(t["prompt"], t["completion"], t["cost_hit"]) if t else (0, 0, 0))
+    cost = _cost6(*(t["prompt"], t["completion"], t["cost_hit"], t["comp_prompt"])
+                  if t else (0, 0, 0, 0))
     if t is None:
         # 今日零遥测行：tokens 真值 0（无调用即无 tokens/无命中，非造数）；缓存列同显 0
         today_cost: dict[str, object] = {"cache_hit_tokens": 0}
@@ -433,6 +451,28 @@ def telemetry_view(
         for (name, st), (n, total) in sorted(tools_acc.items())
     ]
 
+    # CHG-010/REQ-041（iter-16 T3）压缩聚合（design-iter-16 §5.2 定案形状逐字）：
+    # 次数含失败行（失败行照常落、只计次数）；降幅仅计 status=ok 且 before/after 均非 NULL
+    # 的测得行（部分缺失口径，定夺⑥）；measured=0 → reduction_rate=null（前端显「缺失」，
+    # 永不显 0/NaN，铁律 5）；后端保留 6 位小数（沿 iter-15 精度口径）
+    count_ok = sum(1 for r in compact_rows if r["status"] == "ok")
+    count_failed = sum(1 for r in compact_rows if r["status"] in ("error", "timeout"))
+    measured = [r for r in compact_rows if r["status"] == "ok"
+                and r["tokens_before"] is not None and r["tokens_after"] is not None]
+    before_total = sum(r["tokens_before"] for r in measured)
+    after_total = sum(r["tokens_after"] for r in measured)
+    reduction_rate = (round(1 - after_total / before_total, 6)
+                      if measured and before_total > 0 else None)
+    compact = {
+        "count": len(compact_rows),
+        "count_ok": count_ok,
+        "count_failed": count_failed,
+        "measured": len(measured),
+        "tokens_before_total": before_total,
+        "tokens_after_total": after_total,
+        "reduction_rate": reduction_rate,
+    }
+
     return {
         "window": {"days": days, "date_from": date_from, "date_to": date_to},
         "price": {
@@ -444,5 +484,6 @@ def telemetry_view(
         "today_cost": today_cost,
         "daily": daily,
         "tools": tools,
+        "compact": compact,
         "retention_days": telemetry.RETENTION_DAYS,
     }

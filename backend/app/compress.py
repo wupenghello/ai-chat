@@ -131,7 +131,7 @@ def last_turn_prompt_tokens(
 # ---------- 二级 compact：中段规划 / 摘要产物读写 / 水位失效 ----------
 
 def plan_compact(
-    doc: dict[str, Any], message: str, recent_turns: int
+    doc: dict[str, Any], message: str, recent_turns: int, *, incoming: bool = True
 ) -> tuple[list[dict[str, Any]], str] | None:
     """规划可压缩中段：返回 (中段消息列表, 水位消息 id)；无可压缩中段返回 None。
 
@@ -140,14 +140,19 @@ def plan_compact(
     摘要覆盖到的最后一条消息 id（失效判定依据）。总轮数 ≤ R → 无可压缩中段
     （REQ-039 主流程 5「无需压缩」语义）。
 
-    本条消息是否已在库（前端先 PUT 再发回合）决定是否额外占一个保留轮位：在库则保留窗
-    全部取自档内最近 R 轮；不在库则本条占一轮、档内只保留最近 R-1 轮。
+    incoming=True（回合内自动路径）：本条消息是否已在库（前端先 PUT 再发回合）决定是否
+    额外占一个保留轮位——在库则保留窗全部取自档内最近 R 轮；不在库则本条占一轮、档内
+    只保留最近 R-1 轮。
+    incoming=False（手动压缩，REQ-040/iter-16 T3）：无本条消息，总轮数 = 档内 user 轮数；
+    保留窗 = 档内最近 R-1 轮——第 R 轮位留给下一回合的本条消息，与自动路径窗口口径衔接
+    无轮间缝隙（下一回合组装 = 摘要 + 最近 R-1 档内轮 + 本条 = R 轮）。
     """
     messages = [m for m in doc.get("messages") or [] if isinstance(m, dict)]
-    has_current = bool(messages) and messages[-1].get("role") == "user" \
+    has_current = incoming and bool(messages) and messages[-1].get("role") == "user" \
         and messages[-1].get("content") == message
     user_idxs = [i for i, m in enumerate(messages) if m.get("role") == "user"]
-    total_turns = len(user_idxs) + (0 if has_current else 1)
+    extra = 1 if incoming and not has_current else 0
+    total_turns = len(user_idxs) + extra
     if total_turns <= recent_turns:
         return None
     keep_doc_turns = recent_turns - (0 if has_current else 1)

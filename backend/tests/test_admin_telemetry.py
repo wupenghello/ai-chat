@@ -117,8 +117,10 @@ def test_遥测_造数聚合_成本命中率工具精确值(tmp_path: Path):
         assert r.status_code == 200
         body = r.json()
 
-    # 顶层形状逐字（design-iter-15 §5）
-    assert set(body) == {"window", "price", "today_cost", "daily", "tools", "retention_days"}
+    # 顶层形状逐字（design-iter-15 §5；iter-16 T3 加法 compact 键——既有键零变化，
+    # 改写映射登记 plans/iter-16-verify.md T3 段）
+    assert set(body) == {"window", "price", "today_cost", "daily", "tools", "compact",
+                         "retention_days"}
     assert body["window"] == {"days": 7, "date_from": _day(6), "date_to": _TODAY}
     assert body["price"] == {"configured": True, "input_per_mtok": 2.0,
                              "output_per_mtok": 8.0, "cache_hit_per_mtok": 0.5}

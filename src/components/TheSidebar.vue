@@ -3,6 +3,8 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSessionsStore, type Session } from '../stores/sessions'
 import { useAuthStore } from '../stores/auth'
+import { useToastStore } from '../stores/toast'
+import { ApiBackendError, backend } from '../api/backend'
 import { matchSession, type SearchHit } from '../utils/search'
 import { TIME_GROUPS, timeGroupOf, type TimeGroupKey } from '../utils/timeGroup'
 import BrandMark from './BrandMark.vue'
@@ -14,13 +16,45 @@ import DropdownMenu, { type DropMenuItem } from './DropdownMenu.vue'
  * REQ-026（design-iter-11 §1 基线）：侧栏重构——单行列表 + 时间分组（今天/昨天/近 7 天/更早）+
  * 底部账户区（首字头像 + 用户名 +「···」菜单：设置/管理后台/登出）+ 收起 rail（56px，localStorage 持久化）。
  * 移除：常驻设置按钮、密钥模式标签、盾牌 icon、登出 icon、逐条时间戳（design-iter-11 §1.4 走查 14）。
+ * CHG-010/REQ-040（iter-16 T3，design-iter-16 §2/§3/§5.1）：手动压缩入口——列表项「···」菜单
+ * 加法项触发 POST /api/chat/compact；执行中 pill 会话级标识 + 菜单项禁用防重复；四终态 toast
+ * 文案逐字对照登记表 C5~C8；前端零预判本地 generating（409 服务端唯一判定，定夺④）；
+ * 切换会话不 abort 在途请求（会话级轻操作，data 面 client.ts/sessions.ts 零改动）。
  */
 const sessions = useSessionsStore()
 const auth = useAuthStore()
+const toast = useToastStore()
 const router = useRouter()
 const emit = defineEmits<{ openSettings: []; chat: []; logout: []; export: [session: Session] }>()
 
 const pendingDelete = ref<Session | null>(null)
+
+/* ---- REQ-040 手动压缩：会话级执行中态 + 四终态 toast（§5.1 前端消费规则逐字） ---- */
+const compactingIds = ref<Record<string, boolean>>({})
+
+async function compactSession(session: Session) {
+  if (compactingIds.value[session.id]) return // 防重复点击（菜单项禁用之外的兜底守卫）
+  compactingIds.value = { ...compactingIds.value, [session.id]: true }
+  try {
+    const res = await backend.compactSession(session.id)
+    if (res.status === 'skipped') {
+      toast.push('当前会话无需压缩：历史还短') // C6
+    } else {
+      // C5 success 变体（绿字，✓ 前缀调用方拼入——沿 SettingsForm 先例）；不带 token 数字（定夺③）
+      toast.push('✓ 上下文压缩完成：中段历史已摘要，聊天记录不受影响', undefined, undefined, 'success')
+    }
+  } catch (e) {
+    if (e instanceof ApiBackendError && e.status === 409) {
+      toast.push(e.message) // C8 = 服务端 message 逐字（前端直接呈现，两路径同文）
+    } else {
+      toast.push('压缩失败，请稍后再试') // C7 固定文案兜底（404/422/5xx/网络共用一句）
+    }
+  } finally {
+    const next = { ...compactingIds.value }
+    delete next[session.id]
+    compactingIds.value = next
+  }
+}
 
 /* ---- 收起/展开（REQ-026.4，走查 16~18）：rail 56px，状态 localStorage 持久化 ---- */
 const COLLAPSED_KEY = 'mm-sidebar-collapsed'
@@ -148,10 +182,12 @@ const avatarChar = computed(() => (auth.user?.username ?? '未').charAt(0))
                 :key="session.id"
                 :session="session"
                 :active="session.id === sessions.activeId"
+                :compacting="!!compactingIds[session.id]"
                 @select="sessions.switchTo(session.id); emit('chat')"
                 @remove="pendingDelete = session"
                 @rename="(title) => sessions.renameSession(session.id, title)"
                 @export="emit('export', session)"
+                @compact="compactSession(session)"
               />
             </template>
           </template>
@@ -164,10 +200,12 @@ const avatarChar = computed(() => (auth.user?.username ?? '未').charAt(0))
             :active="session.id === sessions.activeId"
             :search="query"
             :hit="hit"
+            :compacting="!!compactingIds[session.id]"
             @select="sessions.switchTo(session.id); emit('chat')"
             @remove="pendingDelete = session"
             @rename="(title) => sessions.renameSession(session.id, title)"
             @export="emit('export', session)"
+            @compact="compactSession(session)"
           />
           <li v-if="filtered.length === 0" class="no-result">无匹配会话</li>
         </template>
