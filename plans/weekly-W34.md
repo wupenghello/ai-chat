@@ -80,6 +80,18 @@
 
 > CEO 过目结论：**认可**（2026-08-18 CEO「我认可，回填落痕」——无异议；5 项非阻塞已知取舍留档接受：DNS TOCTOU / 注入软防护口径 / 截断标注 +21B / Tavily 成本遥测留 B1 / 引导路径走查承载；CHG-008 验收走查反馈三项 + DEF-034 已当轮处理并全量复验 56 PASS）
 
+## iter-15（B1 prompt 分割+请求级遥测+admin 遥测面板，2026-08-19 计划批准并 T0~T3 全交付；Σ8 = S1+M2+L3+M2）
+
+- **计划**：Σ8（余量 2 不顶格）——T0 取证+人设稿（S）+ T1 design-iter-15（M）+ T2 后端核心（L）+ T3 admin 遥测面板（M）。基线 req-baseline-v6（CHG-009，8 定夺全按推荐）。
+- **T0**：真实冒烟两项——DeepSeek usage 缓存字段形状（prompt_cache_hit/miss 恒返回、128 块粒度、未观测 1024 门槛、分区收益实测）+ 自填端点多 system 无明确拒绝（GLM 429 余额不足延续 DEF-002）；人设稿 CEO 审签「批准」（AI_CHAT_PRODUCT_PERSONA）；零 DEF。
+- **T1**：design-iter-15 基线（6 定夺全按推荐；遥测视图=AdminView 第三 tab 加法扩展 + GET /api/admin/telemetry 口径 + 缺失/单价未配置两异常形态；走查 44 条；零新增令牌；tag design-iter-15=a245085）。
+- **T2**：后端核心 89fe642——prompt 两段式分区 + 迁移 v8 telemetry 双端采集（缺失记 NULL/90 天清理/写失败隔离）+ 旧透传端点下线（test_proxy 16 例退役映射+404 取证+turn_smoke 迁代）+ 人设/单价 config；pytest 224−16+23=231。
+- **T3**：admin 遥测面板 2b4f915——聚合端点（成本三分项/命中率/工具用量，403 门禁，days 1~90，六端点零变化）+ AdminView 第三 tab 四卡七态；后端 239/前端 324 全绿 + guard + 构建；走查 e2e-walkthrough-15 58/58（8 帧截图）。
+- **缺陷**：DEF-035（test_quota 耦合，当轮处置）、DEF-036（th.num 对齐，当轮修复）。
+- **特殊事件**：双后端 agent 同工作区撞车 + 一条虚假「T2 已完成」回报——主会话核实为假未采信、收束重复 agent、亲跑 make check 为收口依据（registry 留痕；NCR-003/OBS-1 复盘议）。
+- **QA 审计**：有条件通过 3 NCR（001 周报四件套台账失守 / 002 RTM 行级收口未做 / 003 两笔 feat 提交违反 v1.4.12）+ 4 OBS，CEO 批准按建议整改中。
+- **待办**：NCR 整改提交 → Code Review 产出 → CEO 过目 → G4 复盘。
+
 ## 技术债
 
 - 无新增
