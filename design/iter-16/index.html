@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-chat · iter-16 设计稿（B2 三级上下文压缩两 UI 触点，已基线 2026-08-20）</title>
+<!--
+  ============================================================
+  ai-chat 迭代 16 T1 设计稿（设计稿即页面骨架，开发对照实现）
+  依据（逐条登记）：
+  1. projects/ai-chat/plans/iter-16.md T1 行（验收合同）：
+     触点① REQ-040 手动压缩入口 = 侧栏会话列表项「···」菜单「压缩上下文」项（CHG-010 定夺④定案；
+     复用 REQ-026 通用下拉菜单组件零新增交互模式）——执行中态/失败态/无需压缩态 + toast 三态文案定死
+     （样件文案逐字断言面 v1.4.10 B）；触点② REQ-041 admin 遥测视图压缩卡（压缩次数 + 平均降幅，
+     缺失态缺失标注沿 REQ-025「不估算补齐」口径）；API 口径章节随稿定案（POST /api/chat/compact
+     成功/无需压缩/失败/409 生成中四语义 + GET /api/admin/telemetry 加法扩展）；
+     走查清单随稿（亮/暗双主题 + 执行中态 + 失败态 + 无需压缩态 + 缺失态，几何断言面 v1.4.11 B、
+     行为断言面适用项 v1.4.13 B）；REQ-003/004/005/012/016/026 零回退组逐条映射既有走查编号
+     （侧栏面基线 = iter-11 §7.2 走查 1~22；admin 遥测面基线 = iter-15 §7.2 走查 44 条，复跑不改）
+  2. requirements/spec.md（req-baseline-v7）：REQ-040 全文（主流程 3 步 + 异常分支 4 条 + 验收 5 条）；
+     REQ-041 全文（压缩次数/平均降幅 1 − Σafter/Σbefore/缺失标注/成本聚合计入 compress 行/
+     tokens_after 懒回填/失败行只计次数不计降幅）；REQ-026（通用下拉菜单复用锚点）；
+     REQ-025（不估算补齐先例）；REQ-038（遥测视图宿主零回退锚点）
+  3. requirements/changes.md CHG-010（已批准 2026-08-19，基线 v7）：
+     内容 1（REQ-040/041 拟稿）；内容 3.2 存储语义（原文永久在库/独立表/水位）；
+     内容 3.3（摘要 prompt 消耗以 input 计价——卡 E 成本注记依据）；
+     定夺④（做，入口 = 侧栏列表项「···」菜单项）；定夺⑧（手动压缩不计回合、usage_daily 零写入、
+     tokens 仅落 telemetry）；定夺⑨微参数（R=5 / 摘要超时 30s）
+  4. design/iter-15/index.html + design-iter-15.md（已基线）：admin 遥测视图宿主（第三 tab 四区 +
+     七态 + 逐字登记表体例 + 走查 44 条编号）——本稿触点②是它的加法延续（卡 E），既有区零翻案
+  5. design/iter-14/design-iter-14.md（已基线）：走查清单编号风格 + 文案逐字登记表体例 + API 口径章节体例
+  6. design/iter-11/index.html（已基线）：通用下拉菜单交互规格专章（§2.1/2.2/2.3）——本稿菜单项
+     复用 DropdownMenu，交互规格引用不重造；§7.2 走查 1~22 = 侧栏面基线（零回退映射列「iter-11#」）
+  7. 现状实现取证（2026-08-19 逐项核实）：src/components/SessionListItem.vue（现菜单项 =
+     重命名/导出会话/删除 + pill 插槽 corrupted→「无法读取」/ interrupted→「生成中断」）；
+     src/components/DropdownMenu.vue（items 字段 danger/disabled/reason/separator 既有，加法项零组件改动）；
+     src/components/AppToast.vue + src/stores/toast.ts（顶部居中深底 toast；success 变体绿字、
+     ✓ 前缀调用方拼入；无 action 3s 自动消失）；src/api/client.ts（{detail,code} 消费形状）；
+     backend/app/routers/sessions.py（409 detail 对象 {code,message} 形状先例 session_schema_conflict）
+  8. 公司设计规范 design-system/tokens.md v1.3/v1.3.1 + components.md v1.4：只用既有令牌，
+     零新增令牌、零自造色值、零新增组件形态（硬约束，自查结论 §8 评估表）
+  视觉基调（CEO 已定，不得偏离）：延续 iter-9/11/12/15——页面灰底 --c-bg、内容白卡 --c-surface、
+     主色飞书蓝 #3370FF（暗色前景 #5C8DFF）。两触点均为加法扩展：侧栏菜单加一项、遥测面板加一卡，
+     既有区位置与形态零翻案；主对话面零触达（消息流/输入区/工具卡全部不动，CHG-010 定夺⑥口径）。
+  硬约束落实：REQ-003/004/005/012/016/026 既有交互验收口径全部保留（§6 映射 + §7 条 1~14 复跑）；
+     REQ-038 既有卡片零回退（§7 条 30~33）；缺失不估算不造数（铁律 5：tokens_after 懒回填未测得 →
+     缺失徽标，永不显 0）；手动压缩不计回合（定夺⑧，卡 E 注记 C16 明示）；
+     样件数据全为虚构（铁律 5）。
+  状态：已基线（2026-08-20，CEO 批准「批准，全部按推荐」，tag design-iter-16）。批准后由主会话打 tag；spec REQ-040/041「涉及页面」指针
+     回填由主会话执行（本稿产出会话不改 spec/RTM——任务边界）。
+  可交互：右上「演示控制」一键亮/暗 + 压缩结果场景切换（成功/无需压缩/失败/409 生成中）+
+     admin 卡 E 数据态切换（正常/缺失未测得/无记录）；§1 主样件可真实操作——hover 列表项出「···」、
+     菜单四项、点「压缩上下文」→ 执行中 pill → toast。零外部依赖，双击即开。
+  ============================================================
+-->
+<style>
+/* ============================================================
+   一、文档外壳（说明页自身，浅色固定，不随演示切换；色值 = tokens 浅色原值，沿 iter-5~15 惯例）
+   ============================================================ */
+:root { --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-full: 999px; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-size: 14px; line-height: 1.6; color: #1F2329; background: #F5F6F7; padding: 40px 32px 80px;
+}
+.page { max-width: 1160px; margin: 0 auto; }
+h1 { font-size: 20px; font-weight: 600; }
+.sub { font-size: 13px; color: #8F959E; margin: 4px 0 8px; }
+.sub b { color: #646A73; }
+.badge {
+  display: inline-block; padding: 1px 10px; border-radius: var(--r-full);
+  font-size: 12px; font-weight: 500; background: #FFF7E8; color: #B45309; margin-bottom: 24px;
+}
+section { margin-bottom: 48px; }
+h2 { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+h2 .no { color: #3370FF; margin-right: 4px; }
+.sec-desc { font-size: 13px; color: #8F959E; margin-bottom: 16px; }
+.sec-desc b { color: #646A73; }
+
+table { width: 100%; border-collapse: collapse; background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-md); overflow: hidden; font-size: 13px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #E5E6EB; vertical-align: top; }
+th { color: #8F959E; font-weight: 500; background: #FAFBFC; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+td code, li code, .ann code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; background: #F2F3F5; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
+pre { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; background: #F2F3F5; border: 1px solid #E5E6EB; border-radius: var(--r-md); padding: 10px 14px; overflow: auto; line-height: 1.7; color: #1F2329; margin: 8px 0 0; }
+pre code { background: none; padding: 0; white-space: pre; }
+
+.spec { background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-lg); padding: 24px; box-shadow: 0 1px 2px rgba(31,35,41,.06); margin-bottom: 16px; }
+.spec-title { font-size: 13px; font-weight: 600; color: #646A73; margin-bottom: 12px; }
+.spec-title .tag { font-weight: 400; color: #8F959E; margin-left: 8px; }
+.stage { border: 1px dashed #E5E6EB; border-radius: var(--r-md); padding: 16px; background: #F5F6F7; }
+.ann { font-size: 12px; color: #8F959E; margin-top: 8px; line-height: 1.8; }
+.ann b { color: #646A73; font-weight: 600; }
+.sim-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; font-size: 12px; color: #646A73; margin-bottom: 12px; }
+.sim-row label { cursor: pointer; white-space: nowrap; }
+.frame-cap { text-align: center; font-size: 12px; color: #8F959E; margin-bottom: 8px; }
+.cols { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+.cols > div { flex: 1; min-width: 340px; max-width: 560px; }
+
+/* ---- 演示控制条（文档功能件，非产品组件） ---- */
+.demo-ctl {
+  position: sticky; top: 0; z-index: 500; display: flex; align-items: center; gap: 12px;
+  background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-md);
+  padding: 10px 16px; margin-bottom: 32px; box-shadow: 0 1px 2px rgba(31,35,41,.06);
+  font-size: 13px; color: #646A73; flex-wrap: wrap;
+}
+.demo-ctl .seg { display: inline-flex; border: 1px solid #E5E6EB; border-radius: var(--r-md); overflow: hidden; }
+.demo-ctl .seg button {
+  height: 30px; padding: 0 14px; border: none; background: #FFFFFF; color: #646A73;
+  font-size: 13px; cursor: pointer; transition: background .15s ease, color .15s ease;
+}
+.demo-ctl .seg button.on { background: #3370FF; color: #fff; font-weight: 600; }
+.demo-ctl .note { font-size: 12px; color: #8F959E; }
+
+/* ============================================================
+   二、演示令牌作用域 .tk（组件全部引用 var()，同 src 范式；浅 = tokens v1.3 浅值，暗 = v1.3 暗值，零自造）
+   ============================================================ */
+.tk {
+  --c-bg: #F5F6F7; --c-surface: #FFFFFF; --c-border: #E5E6EB;
+  --c-text-1: #1F2329; --c-text-2: #646A73; --c-text-3: #8F959E;
+  --c-primary: #3370FF; --c-primary-h: #2E5FDF; --c-primary-a: #2860D8; --c-primary-l: #F0F4FF;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #2E5FDF; --c-primary-solid-a: #2860D8;
+  --c-danger: #D93025; --c-danger-l: #FDECEA; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #1A9E5C; --c-success-on-dark: #4CC38A;
+  --c-warning: #B45309; --c-warning-l: #FFF7E8;
+  --c-hover-bg: #F2F3F5; --c-disabled-bg: #C9CFDB; --c-subtle-bg: #FAFBFC;
+  --c-avatar-bg: #E8EBF2; --c-scrollbar: #D5D9E0;
+  --c-toast-bg: #23272E; --c-toast-border: #23272E; --c-primary-on-dark: #A3BCFF;
+  --c-mask: rgba(31,35,41,.4); --c-focus-ring: rgba(51,112,255,.12);
+  --shadow-1: 0 1px 2px rgba(31,35,41,.06);
+  --shadow-2: 0 4px 16px rgba(31,35,41,.10);
+  --shadow-3: 0 12px 40px rgba(31,35,41,.16);
+  color: var(--c-text-1);
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+.tk.dark {
+  --c-bg: #131417; --c-surface: #1E2026; --c-border: #33363E;
+  --c-text-1: #E6EAF0; --c-text-2: #A2A9B6; --c-text-3: #808896;
+  --c-primary: #5C8DFF; --c-primary-h: #7AA4FF; --c-primary-a: #4C84FF; --c-primary-l: #1D2740;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #4C84FF; --c-primary-solid-a: #3D78FF;
+  --c-danger: #FF8073; --c-danger-l: #361B18; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #4CC38A;
+  --c-warning: #EDA23B; --c-warning-l: #38290F;
+  --c-hover-bg: #262930; --c-disabled-bg: #3D414A; --c-subtle-bg: #24272E;
+  --c-avatar-bg: #33363E; --c-scrollbar: #3A3E46;
+  --c-toast-bg: #2A2D34; --c-toast-border: #33363E; --c-primary-on-dark: #A3BCFF;
+  --c-mask: rgba(0,0,0,.55); --c-focus-ring: rgba(92,141,255,.25);
+  --shadow-1: 0 1px 2px rgba(0,0,0,.4);
+  --shadow-2: 0 4px 16px rgba(0,0,0,.45);
+  --shadow-3: 0 12px 40px rgba(0,0,0,.6);
+}
+.tk.force-light {
+  --c-bg: #F5F6F7; --c-surface: #FFFFFF; --c-border: #E5E6EB;
+  --c-text-1: #1F2329; --c-text-2: #646A73; --c-text-3: #8F959E;
+  --c-primary: #3370FF; --c-primary-h: #2E5FDF; --c-primary-a: #2860D8; --c-primary-l: #F0F4FF;
+  --c-primary-solid: #3370FF;
+  --c-danger: #D93025; --c-danger-l: #FDECEA;
+  --c-success: #1A9E5C;
+  --c-warning: #B45309; --c-warning-l: #FFF7E8;
+  --c-hover-bg: #F2F3F5; --c-subtle-bg: #FAFBFC; --c-avatar-bg: #E8EBF2;
+  --c-toast-bg: #23272E; --c-toast-border: #23272E;
+  --shadow-1: 0 1px 2px rgba(31,35,41,.06); --shadow-2: 0 4px 16px rgba(31,35,41,.10);
+  color: var(--c-text-1);
+}
+.tk.force-dark {
+  --c-bg: #131417; --c-surface: #1E2026; --c-border: #33363E;
+  --c-text-1: #E6EAF0; --c-text-2: #A2A9B6; --c-text-3: #808896;
+  --c-primary: #5C8DFF; --c-primary-h: #7AA4FF; --c-primary-l: #1D2740;
+  --c-primary-solid: #3370FF;
+  --c-danger: #FF8073; --c-danger-l: #361B18;
+  --c-success: #4CC38A;
+  --c-warning: #EDA23B; --c-warning-l: #38290F;
+  --c-hover-bg: #262930; --c-subtle-bg: #24272E; --c-avatar-bg: #33363E;
+  --c-toast-bg: #2A2D34; --c-toast-border: #33363E;
+  --shadow-1: 0 1px 2px rgba(0,0,0,.4); --shadow-2: 0 4px 16px rgba(0,0,0,.45);
+  color: var(--c-text-1);
+}
+
+/* ============================================================
+   三、产品组件样式（全部 var() 引用，零裸色值）
+   3a. 侧栏（iter-11 基线零变化承载 + 菜单加法项 + 执行中 pill 新增）
+   3b. 主对话面衬景（零触达声明载体，静态）
+   3c. toast（AppToast 现状形态照搬）
+   3d. admin 遥测视图（iter-15 基线零变化承载 + 卡 E 新增）
+   ============================================================ */
+
+/* ---- 3a. 侧栏 ---- */
+.app-stage { display: flex; border: 1px solid var(--c-border); border-radius: var(--r-lg); overflow: hidden; background: var(--c-surface); position: relative; }
+.sidebar { width: 264px; flex: none; background: var(--c-bg); border-right: 1px solid var(--c-border); display: flex; flex-direction: column; padding: 12px 8px 8px; min-height: 480px; }
+.sb-brand { display: flex; align-items: center; gap: 8px; padding: 0 10px 12px; font-size: 15px; font-weight: 600; color: var(--c-text-1); }
+.sb-brand .sp { flex: 1; }
+.rail-btn { width: 28px; height: 28px; border: none; background: none; color: var(--c-text-3); border-radius: var(--r-sm); cursor: pointer; font-size: 14px; }
+.rail-btn:hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+.new-btn {
+  margin: 0 2px 10px; height: 36px; border: none; border-radius: var(--r-md);
+  background: var(--c-primary-solid); color: #fff; font-size: 13px; font-weight: 600;
+  font-family: inherit; cursor: pointer; transition: background .15s ease, transform .1s ease;
+}
+.new-btn:hover { background: var(--c-primary-solid-h); }
+.new-btn:active { transform: scale(.98); }
+.search-box { display: flex; align-items: center; gap: 6px; margin: 0 2px 8px; height: 32px; padding: 0 10px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-md); color: var(--c-text-3); font-size: 13px; }
+.search-box input { flex: 1; border: none; outline: none; background: none; color: var(--c-text-1); font-size: 13px; font-family: inherit; min-width: 0; }
+.search-box input::placeholder { color: var(--c-text-3); }
+.sb-list { flex: 1; overflow-y: auto; }
+.group-head { font-size: 12px; color: var(--c-text-3); padding: 12px 10px 4px; }
+.s-item {
+  list-style: none; border-radius: 8px; padding: 6px 10px; min-height: 34px; cursor: pointer;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center;
+  column-gap: 6px; position: relative; transition: background .15s ease;
+}
+.s-item:hover { background: var(--c-hover-bg); }
+.s-item.active { background: var(--c-primary-l); }
+.s-item.active .s-title { color: var(--c-primary); }
+.s-item.corrupted { cursor: not-allowed; }
+.s-item.corrupted .s-title { color: var(--c-text-3); }
+.s-title { grid-column: 1; min-width: 0; font-size: 13px; color: var(--c-text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* pill 插槽（SessionListItem 现状：grid 第 2 列；压缩中 pill 为加法变体，规格参数同 pill.cut） */
+.pill { grid-column: 2; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; border-radius: var(--r-full); padding: 1px 8px; white-space: nowrap; }
+.pill.broken { color: var(--c-text-3); background: var(--c-hover-bg); }
+.pill.cut { color: var(--c-warning); background: var(--c-warning-l); }
+.pill.compact { color: var(--c-primary); background: var(--c-primary-l); } /* 新增：执行中标识，色组合 = 工具步骤卡「运行中」徽章语义族 */
+.spin-s { width: 10px; height: 10px; flex: none; border-radius: 50%; border: 2px solid currentColor; border-top-color: transparent; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+/* 「···」触发钮（iter-11 §1.2：28px r-sm，hover 行时浮现） */
+.more-btn {
+  grid-column: 3; width: 28px; height: 28px; border: none; border-radius: 6px; background: none;
+  color: var(--c-text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity .15s ease, background .15s ease, color .15s ease;
+}
+.s-item:hover .more-btn, .s-item.menu-open .more-btn { opacity: 1; }
+.more-btn:hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+.s-item.menu-open .more-btn { background: var(--c-hover-bg); color: var(--c-text-1); }
+/* 下拉菜单（iter-11 §2.3 视觉规格照搬：surface + border + shadow-2 + r-md，min-width 148px，项 32px/13px） */
+.s-menu {
+  position: absolute; top: calc(100% - 2px); right: 8px; z-index: 40; min-width: 148px; padding: 4px;
+  background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 8px;
+  box-shadow: var(--shadow-2); display: flex; flex-direction: column; animation: ddin .15s ease;
+}
+@keyframes ddin { from { opacity: 0; transform: translateY(-2px); } }
+.s-menu .mi {
+  height: 32px; padding: 0 10px; border: none; border-radius: 6px; background: none;
+  font-size: 13px; font-family: inherit; color: var(--c-text-1); text-align: left; cursor: pointer; white-space: nowrap;
+}
+.s-menu .mi:hover:not(.disabled) { background: var(--c-hover-bg); }
+.s-menu .mi.danger { color: var(--c-danger); }
+.s-menu .mi.disabled { color: var(--c-text-3); cursor: not-allowed; }
+.s-menu .sep { height: 1px; background: var(--c-border); margin: 4px 8px; }
+.s-foot { display: flex; align-items: center; gap: 8px; padding: 10px; border-top: 1px solid var(--c-border); margin-top: 8px; }
+.avatar { width: 24px; height: 24px; border-radius: 50%; background: var(--c-avatar-bg); color: var(--c-text-2); font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.s-foot .uname { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; color: var(--c-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- 3b. 主对话面衬景（零触达声明载体） ---- */
+.chat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--c-surface); }
+.msg-col { flex: 1; padding: 24px 32px; display: flex; flex-direction: column; gap: 16px; overflow: hidden; }
+.m-ai { font-size: 15px; line-height: 1.75; color: var(--c-text-1); max-width: 712px; }
+.m-user { align-self: flex-end; max-width: 80%; background: var(--c-avatar-bg); color: var(--c-text-1); font-size: 15px; line-height: 1.75; padding: 10px 14px; border-radius: 12px 12px 4px 12px; }
+.composer { padding: 12px 32px 20px; }
+.comp-box { max-width: 712px; margin: 0 auto; border: 1px solid var(--c-border); border-radius: var(--r-lg); background: var(--c-surface); box-shadow: var(--shadow-1); padding: 10px 12px; display: flex; align-items: center; gap: 10px; color: var(--c-text-3); font-size: 14px; }
+.comp-box .sp { flex: 1; }
+.send-btn { width: 30px; height: 30px; border: none; border-radius: var(--r-md); background: var(--c-primary-solid); color: #fff; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.zero-touch-note { border: 1px dashed var(--c-border); border-radius: var(--r-md); color: var(--c-text-3); font-size: 12px; text-align: center; padding: 6px; margin: 8px 32px 12px; }
+
+/* ---- 3c. toast（AppToast 现状：顶部居中深底；success 变体绿字） ---- */
+.toast-wrap { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 200; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
+.toast {
+  pointer-events: auto; display: flex; align-items: center; gap: 12px;
+  background: var(--c-toast-bg); border: 1px solid var(--c-toast-border); color: #fff;
+  font-size: 13px; padding: 10px 14px; border-radius: 8px; box-shadow: var(--shadow-2);
+  animation: tin .25s ease;
+}
+@keyframes tin { from { opacity: 0; transform: translateY(-8px); } }
+.toast .t-msg.success { color: var(--c-success-on-dark); font-weight: 600; }
+.toast .t-close { border: none; background: none; color: rgba(255,255,255,.6); font-size: 14px; cursor: pointer; padding: 0 2px; }
+
+/* ---- 3d. admin 遥测视图（iter-15 样式照搬 + 卡 E 加法） ---- */
+.admin-frame { position: relative; overflow: hidden; border: 1px solid var(--c-border); border-radius: var(--r-lg); background: var(--c-bg); }
+.adm-top { flex: none; height: 52px; padding: 0 20px; border-bottom: 1px solid var(--c-border); background: var(--c-surface); display: flex; align-items: center; gap: 8px; }
+.adm-brand { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; color: var(--c-text-1); }
+.adm-tag { padding: 0 8px; height: 20px; line-height: 20px; border-radius: var(--r-full); font-size: 12px; font-weight: 500; background: var(--c-primary-l); color: var(--c-primary); }
+.adm-sp { flex: 1; }
+.btn-ghost { height: 30px; padding: 0 12px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-2); border-radius: var(--r-md); font-size: 13px; cursor: pointer; font-family: inherit; }
+.adm-body { width: min(1080px, calc(100% - 48px)); margin: 24px auto 32px; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 16px; }
+.stat-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: var(--shadow-1); padding: 16px 20px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.sc-label { font-size: 13px; color: var(--c-text-2); }
+.sc-value { font-size: 20px; font-weight: 600; color: var(--c-text-1); font-variant-numeric: tabular-nums; line-height: 1.3; white-space: nowrap; }
+.sc-total { font-size: 14px; font-weight: 400; color: var(--c-text-3); }
+.sc-sub { font-size: 12px; color: var(--c-text-3); }
+.sc-prog { height: 6px; border-radius: var(--r-full); background: var(--c-hover-bg); overflow: hidden; margin-top: 2px; }
+.sc-prog .fill { height: 100%; border-radius: var(--r-full); background: var(--c-primary-solid); }
+.sw-row { display: flex; align-items: center; gap: 10px; padding: 12px 16px; margin-bottom: 16px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: var(--shadow-1); }
+.sw-row .sw-title { font-size: 13px; font-weight: 500; color: var(--c-text-1); flex: none; }
+.sw-row .sw-desc { flex: 1; min-width: 0; font-size: 12px; color: var(--c-text-3); }
+.sw-track { flex: none; width: 36px; height: 20px; border-radius: var(--r-full); background: var(--c-primary-solid); position: relative; }
+.sw-knob { position: absolute; top: 2px; left: 18px; width: 16px; height: 16px; border-radius: 50%; background: #FFFFFF; border: 1px solid var(--c-border); box-shadow: var(--shadow-1); }
+.adm-tabs { display: inline-flex; border: 1px solid var(--c-border); border-radius: var(--r-md); overflow: hidden; background: var(--c-surface); }
+.adm-tabs button { height: 32px; padding: 0 16px; border: none; background: transparent; color: var(--c-text-2); font-size: 13px; cursor: pointer; font-family: inherit; }
+.adm-tabs button.on { background: var(--c-primary-l); color: var(--c-primary); font-weight: 500; }
+.tel-panel { margin-top: 12px; }
+.tel-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.tel-toolbar .win-seg { display: inline-flex; border: 1px solid var(--c-border); border-radius: var(--r-md); overflow: hidden; background: var(--c-surface); }
+.tel-toolbar .win-seg button { height: 32px; padding: 0 14px; border: none; background: transparent; color: var(--c-text-2); font-size: 13px; cursor: pointer; font-family: inherit; }
+.tel-toolbar .win-seg button.on { background: var(--c-primary-l); color: var(--c-primary); font-weight: 500; }
+.tel-toolbar .retention-note { margin-left: auto; font-size: 12px; color: var(--c-text-3); }
+.tel-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: var(--shadow-1); padding: 16px 20px; margin-bottom: 16px; min-width: 0; }
+.tc-head { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--c-text-1); }
+.tc-head .tc-ico { color: var(--c-text-3); display: inline-flex; }
+.tc-sub { font-size: 12px; color: var(--c-text-3); margin-top: 2px; }
+.tc-big-row { display: flex; align-items: baseline; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.tc-big-label { font-size: 12px; color: var(--c-text-3); }
+.tc-big { font-size: 20px; font-weight: 600; color: var(--c-text-1); font-variant-numeric: tabular-nums; line-height: 1.3; }
+.tc-big-sub { font-size: 12px; color: var(--c-text-3); font-variant-numeric: tabular-nums; }
+/* 卡 E 双大数值栅格（新增，栅格参数沿 bd-grid：等宽 gap 16） */
+.ce-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 10px; }
+.ce-cell { border: 1px solid var(--c-border); border-radius: var(--r-md); background: var(--c-subtle-bg); padding: 10px 12px; min-width: 0; }
+.bd-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 12px; }
+.bd-item { border: 1px solid var(--c-border); border-radius: var(--r-md); background: var(--c-subtle-bg); padding: 10px 12px; min-width: 0; }
+.bd-label { font-size: 12px; color: var(--c-text-3); }
+.bd-tokens { font-size: 13px; font-weight: 500; color: var(--c-text-1); font-variant-numeric: tabular-nums; margin-top: 2px; }
+.bd-cost { font-size: 12px; color: var(--c-text-2); font-variant-numeric: tabular-nums; margin-top: 2px; }
+.kv-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding-top: 10px; margin-top: 12px; border-top: 1px solid var(--c-border); font-size: 12px; color: var(--c-text-3); }
+.kv-row .kv-label { font-weight: 500; color: var(--c-text-2); flex: none; }
+.kv-row .kv-val { color: var(--c-text-2); font-variant-numeric: tabular-nums; }
+.pill-t { display: inline-flex; align-items: center; padding: 0 8px; height: 20px; border-radius: var(--r-full); font-size: 12px; font-weight: 500; white-space: nowrap; vertical-align: middle; }
+.pill-miss { background: var(--c-warning-l); color: var(--c-warning); }
+.pill-nocost { background: var(--c-subtle-bg); color: var(--c-text-2); border: 1px solid var(--c-border); }
+.pill-ok { background: var(--c-subtle-bg); color: var(--c-success); border: 1px solid var(--c-border); }
+.pill-err { background: var(--c-danger-l); color: var(--c-danger); }
+.pill-to { background: var(--c-warning-l); color: var(--c-warning); }
+.tel-2col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.tel-2col .tel-card { margin-bottom: 0; }
+.tel-2col-wrap { margin-bottom: 16px; }
+.tbl-in-card { margin-top: 12px; border: 1px solid var(--c-border); border-radius: var(--r-md); overflow-x: auto; }
+.adm-table { width: 100%; border-collapse: collapse; font-size: 13px; background: transparent; }
+.adm-table th { text-align: left; font-size: 12px; font-weight: 500; color: var(--c-text-3); background: var(--c-subtle-bg); padding: 10px 16px; border-bottom: 1px solid var(--c-border); white-space: nowrap; }
+.adm-table th.num { text-align: right; }
+.adm-table td { padding: 12px 16px; border-bottom: 1px solid var(--c-border); vertical-align: middle; color: var(--c-text-2); white-space: nowrap; }
+.adm-table tbody tr:last-child td { border-bottom: none; }
+.adm-table td.num { text-align: right; }
+.adm-table td.day-cell { color: var(--c-text-1); font-weight: 500; font-variant-numeric: tabular-nums; }
+.mono { font-variant-numeric: tabular-nums; }
+.ce-empty { padding: 24px 0; text-align: center; color: var(--c-text-3); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>ai-chat · iter-16 设计稿（B2 三级上下文压缩 · 两个 UI 触点）</h1>
+  <div class="sub">
+    依据：<b>plans/iter-16.md</b> T1（入口形态与 toast 三态文案定死 + admin 压缩卡形态与缺失标注语义定稿 +
+    走查清单随稿 + 零回退组映射）· <b>req-baseline-v7</b> REQ-040（验收 5 条）/ REQ-041（验收 5 条）·
+    <b>CHG-010</b> 定夺④（入口 = 侧栏列表项「···」菜单项）/ 定夺⑧（手动压缩不计回合）/ 定夺⑨微参数 /
+    内容 3.2 存储语义 / 内容 3.3 摘要计价口径 ·
+    宿主 = <b>design-iter-11</b>（侧栏与通用下拉菜单，交互规格引用不重造）+ <b>design-iter-15</b>（admin 遥测视图，本稿为其加法延续）·
+    令牌全部来自 <b>design-system/tokens.md v1.3/v1.3.1 + components.md v1.4</b>，本稿<b>零新增令牌、零自造色值、零新增组件形态</b>（§8 评估表）
+  </div>
+  <div class="badge">状态：设计稿 iter-16 —— <b>已基线</b>（2026-08-20 CEO 批准「批准，全部按推荐」；§8 七项定夺项全部按推荐定案）</div>
+  <div style="font-size:12px;color:#3370FF;background:#F0F4FF;border:1px solid #E5E6EB;border-radius:8px;padding:8px 12px;margin:-12px 0 28px;line-height:1.7;">
+    <b>加法扩展纪律：</b>侧栏会话菜单 3 → 4 项（既有三项位置/文案/配色零变化）；admin 遥测面板四区加一卡（卡 E，iter-15 既有区零翻案）；
+    <b>主对话面零触达</b>（消息流/输入区/工具卡零新增元素——压缩不改变界面展示口径，CHG-010 定夺⑥原文永久在库的自然推论）。
+    缺失与未测得<b>不估算不造数</b>（铁律 5）。<b>样件内全部数值为虚构演示数据（铁律 5：线上度量只允许机器采集）</b>。
+  </div>
+
+  <!-- 演示控制 -->
+  <div class="demo-ctl">
+    <b>演示控制：</b>
+    <span class="seg">
+      <button id="btnLight" class="on">浅色</button>
+      <button id="btnDark">暗色</button>
+    </span>
+    <span style="border-left:1px solid #E5E6EB;padding-left:16px;"><b>压缩结果场景：</b>
+      <label><input type="radio" name="cmpScene" value="ok" checked> 成功</label>
+      <label><input type="radio" name="cmpScene" value="skip"> 无需压缩</label>
+      <label><input type="radio" name="cmpScene" value="fail"> 失败</label>
+      <label><input type="radio" name="cmpScene" value="busy"> 409 生成中</label>
+    </span>
+    <span style="border-left:1px solid #E5E6EB;padding-left:16px;"><b>卡 E 数据态：</b>
+      <label><input type="radio" name="ceState" value="normal" checked> 正常</label>
+      <label><input type="radio" name="ceState" value="unmeasured"> 缺失（未测得）</label>
+      <label><input type="radio" name="ceState" value="empty"> 窗口无记录</label>
+    </span>
+    <span class="note">§1 主样件可操作：hover 列表项 →「···」→「压缩上下文」→ 执行中 pill → toast。§5 锁定帧不随主题切换。</span>
+  </div>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">1</span>触点①主样件：侧栏会话菜单加法项「压缩上下文」（可交互）</h2>
+    <div class="sec-desc">
+      REQ-040 主流程：用户在会话列表项「···」菜单触发「压缩上下文」→ POST /api/chat/compact → toast 反馈。
+      入口形态 = CHG-010 定夺④定案（侧栏列表项「···」菜单项，复用 REQ-026 通用下拉菜单组件，零新增交互模式）。
+      菜单项位置定夺①（推荐 =「导出会话」之后、danger 分隔线之前）；执行中态定夺②（推荐 = 列表项 pill 插槽「压缩中」）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.1 主界面 · 侧栏会话菜单（可交互）<span class="tag">菜单 3→4 加法 + 执行中 pill + toast 四态；主对话面静态衬景 = 零触达声明</span></div>
+      <div class="sim-row"><b>试：</b>hover 任一列表项出「···」→ 点开四项菜单 → 点「压缩上下文」→ 该行出「压缩中」pill → 按演示控制所选场景出 toast；「无法读取的会话」行的压缩项禁用（title C4）；执行中再开菜单该项禁用（title C3）。</div>
+      <div class="stage">
+        <div class="tk app-stage" id="appFrame" style="height:520px;">
+          <aside class="sidebar">
+            <div class="sb-brand">
+              <svg viewBox="0 0 128 128" width="18" height="18" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+              喵喵 <span class="sp"></span>
+              <button class="rail-btn" title="收起侧栏">«</button>
+            </div>
+            <button class="new-btn">＋ 新建会话</button>
+            <div class="search-box">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              <input placeholder="搜索会话" aria-label="搜索会话">
+            </div>
+            <div class="sb-list" id="sbList"></div>
+            <div class="s-foot">
+              <span class="avatar">苗</span>
+              <span class="uname">miaomiaoadmin</span>
+              <button class="more-btn" style="opacity:1;" title="账户菜单" aria-label="账户菜单"><svg viewBox="0 0 14 14" width="14" height="14" fill="currentColor"><circle cx="3" cy="7" r="1.5"/><circle cx="7" cy="7" r="1.5"/><circle cx="11" cy="7" r="1.5"/></svg></button>
+            </div>
+          </aside>
+          <main class="chat-main">
+            <div class="msg-col">
+              <div class="m-user">帮我把这两周的迭代记录整理成一份周报。</div>
+              <div class="m-ai">好的，按「做了什么 / 为什么做 / 下一步」三段整理。压缩操作不会改变这里看到的任何内容——库内消息全文零删除，界面展示口径不变（CHG-010 定夺⑥）。</div>
+              <div class="m-user">语气再正式一点。</div>
+              <div class="m-ai">已按正式语气重写（演示样件）。</div>
+            </div>
+            <div class="zero-touch-note">主对话面零触达声明：消息流 / 输入区 / 工具卡 / 顶区在本期零新增元素（走查条 28）</div>
+            <div class="composer">
+              <div class="comp-box">
+                输入消息，Enter 发送
+                <span class="sp"></span>
+                <button class="send-btn" title="发送" aria-label="发送"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M12.5 1.5 2 6.2l4.3 1.9 1.9 4.3 4.3-10.9z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></button>
+              </div>
+            </div>
+          </main>
+          <div class="toast-wrap" id="toastWrap"></div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>菜单终态（自上而下）</b>：重命名（corrupted 禁用）/ 导出会话 / <b>压缩上下文（新增；corrupted 与执行中禁用）</b> / ── 1px 分隔线（既有，danger 前）── / 删除（danger 红字）。
+        面板 min-width 148px 不变（新项 5 字 13px ≈ 65px + padding 20px &lt; 148px，走查条 16 几何断言）；项高 32px/13px 同既有（iter-11 §2.3）。
+        <b>执行中 pill</b>：10px spinner + 「压缩中」11px，<code>--c-primary-l</code> 底 + <code>--c-primary</code> 字（工具步骤卡「运行中」徽章语义族），pill 插槽规格参数与 pill.cut 一致；优先级 = 压缩中 &gt; 生成中断（样件 s3 行可试：先带「生成中断」pill，压缩时被「压缩中」替代，结束后恢复）。
+        <b>交互规格全部引用 iter-11 §2 专章</b>（外点吞击/Esc 焦点回/键盘矩阵/互斥/滚动关闭/右对齐/z-40），本稿不重造。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.2 toast 四态规格（逐字文案见 §2 登记表 C5~C8；AppToast 现状形态零改动）</div>
+      <table>
+        <tr><th style="width:120px">终态</th><th>触发（API 事实）</th><th>用户所见（= 验收口径）</th></tr>
+        <tr><td><b>成功</b></td><td>200 <code>status=compacted</code></td><td><b>success 变体绿字</b>（✓ 前缀调用方拼入，沿 SettingsForm 先例）：C5 逐字；3s 自动消失；会话标题与列表顺序零变化（压缩不触会话档，REQ-039 验收 6 可见面）</td></tr>
+        <tr><td><b>无需压缩</b></td><td>200 <code>status=skipped</code>（轮数 ≤ R）</td><td>默认白字 toast：C6 逐字；零上游调用零计费（REQ-040 验收 3）</td></tr>
+        <tr><td><b>失败</b></td><td>502/504（compact_failed）/ 其余非 200 / 网络</td><td>默认白字 toast：C7 逐字；涵盖失败/超时/上游 4xx·5xx/网络——用户无需区分子类（诊断详情在 warning 日志与 compress 行，沿 iter-14 D1 哲学）；会话数据与存量摘要不变</td></tr>
+        <tr><td><b>409 生成中</b></td><td>409 <code>session_generating</code></td><td>默认白字 toast：C8 逐字（= 服务端 message，前端直接呈现两路径同文）；<b>服务端唯一判定</b>——前端不预判本地 generating（多设备竞态只有服务端回合登记权威，定夺④）</td></tr>
+      </table>
+      <div class="ann"><b>成功 toast 不呈现 token 数字（定夺③决策记录）</b>：tokens_after 为压缩后首次 step=1 上游调用的<b>懒回填</b>实测值——同步响应时刻未测得；
+      tokens_before 对新会话/无遥测记录会话为 NULL。只给半截数字误导（看似 after=0），违铁律 5 不造数精神；压缩效果度量（前后规模/降幅）归 admin 卡 E（REQ-041），
+      用户侧 toast 只给确定性事实：完成了 / 机制（摘要）/ 无数据损失（「聊天记录不受影响」= 定夺⑥原文永久在库的用户语言）。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">2</span>样件文案逐字登记表（v1.4.10 B 断言面 · 唯一来源）</h2>
+    <div class="sec-desc">本表为两触点全部新增用户可见文案的<b>唯一来源</b>；走查逐字断言（§7 标「文」条目）对照本表，一字一符不差。数值位以「N」占位。</div>
+    <div class="spec">
+      <table>
+        <tr><th style="width:44px">编号</th><th style="width:170px">位置</th><th>文案（逐字）</th></tr>
+        <tr><td>C1</td><td>菜单加法项</td><td><code>压缩上下文</code></td></tr>
+        <tr><td>C2</td><td>执行中 pill</td><td><code>压缩中</code>（前置 10px spinner currentColor）</td></tr>
+        <tr><td>C3</td><td>执行中项禁用 title</td><td><code>压缩中</code></td></tr>
+        <tr><td>C4</td><td>corrupted 项禁用 title</td><td><code>无法读取的会话不可压缩</code></td></tr>
+        <tr><td>C5</td><td>成功 toast（success 绿字）</td><td><code>✓ 上下文压缩完成：中段历史已摘要，聊天记录不受影响</code></td></tr>
+        <tr><td>C6</td><td>无需压缩 toast</td><td><code>当前会话无需压缩：历史还短</code></td></tr>
+        <tr><td>C7</td><td>失败 toast</td><td><code>压缩失败，请稍后再试</code></td></tr>
+        <tr><td>C8</td><td>409 toast</td><td><code>该会话正在生成回复，暂不能压缩，请等生成完成后再试</code></td></tr>
+        <tr><td>C9</td><td>卡 E 标题</td><td><code>上下文压缩</code></td></tr>
+        <tr><td>C10</td><td>卡 E 副题</td><td><code>压缩 = 中段历史摘要（自动阈值触发 + 手动触发）；降幅仅统计压缩前后均测得的压缩</code></td></tr>
+        <tr><td>C11</td><td>卡 E 次数列</td><td>label <code>窗口压缩次数</code>；sub 模板 <code>成功 {N} · 失败 {N}</code>（title「失败含超时行；失败行只计次数、不计降幅」）</td></tr>
+        <tr><td>C12</td><td>卡 E 降幅列</td><td>label <code>平均降幅</code>；title 公式 <code>平均降幅 = 1 − Σ压缩后 tokens ÷ Σ压缩前 tokens</code></td></tr>
+        <tr><td>C13</td><td>卡 E 降幅 sub</td><td>模板 <code>已测得 {N} / 成功 {N}</code></td></tr>
+        <tr><td>C14</td><td>卡 E 缺失徽标</td><td><code>缺失</code>（warning-l/warning 胶囊高 20px，iter-15 T15 同款）</td></tr>
+        <tr><td>C15</td><td>卡 E 空态</td><td><code>窗口内无压缩记录</code></td></tr>
+        <tr><td>C16</td><td>卡 E 成本口径注记 kv-row</td><td><code>摘要调用 tokens 计入每日成本估算（按输入计价）· 手动压缩不计回合</code></td></tr>
+      </table>
+      <div class="ann">iter-15 既有文案（T1~T28）<b>零变化不重登</b>——卡 A 副题「仅统一 key 模式计成本；自填模式 tokens 不计成本」等逐字面为 iter-15 基线零回退断言（§7 条 31）。
+      成本口径含 compress 行 tokens 的注记落<b>卡 E kv-row（C16）</b>而非改卡 A（定夺⑦，CHG-010 内容 3.3「按输入计价」与定夺⑧「手动压缩不计回合」两句一并自释）。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">3</span>触点②主样件：admin 遥测视图加法扩展 · 卡 E「上下文压缩」（可交互）</h2>
+    <div class="sec-desc">
+      REQ-041：admin 遥测聚合加法扩展压缩次数与平均降幅（1 − Σafter/Σbefore，任一侧缺失显缺失标注）；成本聚合计入 compress 行 tokens。
+      载体定夺⑤（推荐 = 双卡并排区与卡 D 之间的全宽卡 E）；降幅部分缺失口径定夺⑥（推荐 = 仅计测得行 + 副题常驻自释，零测得行显「缺失」）。
+      卡 A/B/C/D 与工具行为 iter-15 基线静态承载（零翻案证据，正常态样件值同 iter-15 演示数据）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">3.1 管理后台 · 遥测视图（含卡 E，可切换卡 E 数据态）</div>
+      <div class="stage">
+        <div class="tk admin-frame">
+          <div class="adm-top">
+            <div class="adm-brand">
+              <svg viewBox="0 0 128 128" width="22" height="22" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+              喵喵 <span class="adm-tag">管理后台</span>
+            </div>
+            <span class="adm-sp"></span>
+            <button class="btn-ghost" title="返回主界面">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              返回主界面
+            </button>
+          </div>
+          <div class="adm-body">
+            <!-- 概览四卡（iter-12/15 基线零变化，静态承载） -->
+            <div class="stat-grid">
+              <div class="stat-card"><div class="sc-label">总用户数</div><div class="sc-value">47</div><div class="sc-sub">全部注册账号（含已封禁与管理员）</div></div>
+              <div class="stat-card"><div class="sc-label">今日请求</div><div class="sc-value">86</div><div class="sc-sub">今日 · 全部密钥模式合计</div></div>
+              <div class="stat-card"><div class="sc-label">今日 token</div><div class="sc-value">412,530</div><div class="sc-sub">今日 · 上游 usage 帧合计</div></div>
+              <div class="stat-card"><div class="sc-label">统一 key 每日用量</div><div class="sc-value">100<span class="sc-total"> / 2,000 次</span></div><div class="sc-prog"><div class="fill" style="width:5%"></div></div><div class="sc-sub">剩余 1,900 次</div></div>
+            </div>
+            <!-- 联网搜索开关行（iter-14 基线零变化，静态承载） -->
+            <div class="sw-row">
+              <span class="sw-title">联网搜索</span>
+              <span class="sw-desc">开启后 AI 可自动联网搜索并在回答前展示来源引用；关闭后 AI 直接回答，用户无感知</span>
+              <span class="sw-track" role="switch" aria-checked="true" aria-label="联网搜索开关（iter-14 基线形态引用）"><span class="sw-knob"></span></span>
+            </div>
+            <!-- tabs（iter-15 基线：三段，遥测选中） -->
+            <div class="adm-tabs" role="radiogroup" aria-label="后台分区">
+              <button role="radio" aria-checked="false">用户列表</button>
+              <button role="radio" aria-checked="false">用量列表</button>
+              <button class="on" role="radio" aria-checked="true">遥测</button>
+            </div>
+
+            <div class="tel-panel">
+              <!-- 工具行（iter-15 基线零变化） -->
+              <div class="tel-toolbar">
+                <div class="win-seg" role="radiogroup" aria-label="遥测时间窗">
+                  <button class="on" role="radio" aria-checked="true">近 7 天</button>
+                  <button role="radio" aria-checked="false">近 14 天</button>
+                  <button role="radio" aria-checked="false">近 30 天</button>
+                </div>
+                <span class="retention-note">遥测明细保留 90 天，超期数据自动清理</span>
+              </div>
+
+              <!-- 卡 A（iter-15 基线零变化静态承载；成本数值口径按 CHG-010 已含 compress 行 tokens，形状零变化） -->
+              <div class="tel-card">
+                <div class="tc-head"><span class="tc-ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.7"/><path d="M12 7.5v9M9.5 9.8c.6-.8 1.5-1.2 2.5-1.2 1.4 0 2.5.8 2.5 2 0 2.6-5 1.6-5 4 0 1.2 1.1 2 2.5 2 1 0 1.9-.4 2.5-1.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>每日成本估算</div>
+                <div class="tc-sub">仅统一 key 模式计成本；自填模式 tokens 不计成本</div>
+                <div class="tc-big-row"><span class="tc-big-label">今日成本估算</span><span class="tc-big">¥0.7827</span><span class="tc-big-sub">2026-08-19 · 统一 key</span></div>
+                <div class="bd-grid">
+                  <div class="bd-item"><div class="bd-label">输入</div><div class="bd-tokens">182,400 tokens</div><div class="bd-cost">¥0.3648</div></div>
+                  <div class="bd-item"><div class="bd-label">输出</div><div class="bd-tokens">46,200 tokens</div><div class="bd-cost">¥0.3696</div></div>
+                  <div class="bd-item"><div class="bd-label">缓存命中</div><div class="bd-tokens">96,512 tokens</div><div class="bd-cost">¥0.0483</div></div>
+                </div>
+                <div class="kv-row"><span class="kv-label">单价（只读）</span><span class="kv-val">输入 ¥2 / 1M tokens · 输出 ¥8 / 1M tokens · 缓存命中 ¥0.5 / 1M tokens</span><span>单价由 backend/.env 三变量 AI_CHAT_PRICE_* 注入，admin 只读</span></div>
+                <div class="kv-row" title="成本口径：部署者真实支出；自填模式使用用户自己的密钥，成本归用户"><span class="kv-label">自填模式（用户自带密钥）</span><span class="kv-val">tokens 12,480 · 不计成本</span><span class="pill-t pill-nocost">不计成本</span></div>
+              </div>
+
+              <!-- 双卡并排（iter-15 基线零变化静态承载） -->
+              <div class="tel-2col tel-2col-wrap">
+                <div class="tel-card">
+                  <div class="tc-head"><span class="tc-ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 3 4 7v10l8 4 8-4V7l-8-4z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M4 7l8 4 8-4M12 11v10" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span>缓存命中率</div>
+                  <div class="tc-sub">命中率 = Σ缓存命中 tokens ÷（Σ命中 + Σ未命中）· 仅统计上游返回缓存字段的调用</div>
+                  <div class="tc-big-row"><span class="tc-big-label">窗口合计命中率</span><span class="tc-big">52.9%</span></div>
+                  <div class="tbl-in-card"><table class="adm-table">
+                    <thead><tr><th>日期</th><th class="num">缓存命中 tokens</th><th class="num">未命中 tokens</th><th class="num">命中率</th></tr></thead>
+                    <tbody>
+                      <tr><td class="day-cell">2026-08-19</td><td class="num mono">96,512</td><td class="num mono">85,888</td><td class="num mono">52.9%</td></tr>
+                      <tr><td class="day-cell">2026-08-18</td><td class="num mono">88,140</td><td class="num mono">71,060</td><td class="num mono">55.4%</td></tr>
+                      <tr><td class="day-cell">2026-08-17</td><td class="num mono">—</td><td class="num mono">—</td><td class="num"><span class="pill-t pill-miss">缺失</span></td></tr>
+                    </tbody>
+                  </table></div>
+                </div>
+                <div class="tel-card">
+                  <div class="tc-head"><span class="tc-ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4 2.6-2.6z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span>工具用量</div>
+                  <div class="tc-sub">按工具名 × 状态聚合；search 为当前唯一生产工具（本视图即搜索用量面板）</div>
+                  <div class="tbl-in-card"><table class="adm-table">
+                    <thead><tr><th>工具名</th><th>状态</th><th class="num">次数</th><th class="num">平均耗时</th></tr></thead>
+                    <tbody>
+                      <tr><td style="color:var(--c-text-1);font-weight:500;">search</td><td><span class="pill-t pill-ok">成功</span></td><td class="num mono">42</td><td class="num mono">2,130 ms</td></tr>
+                      <tr><td style="color:var(--c-text-1);font-weight:500;">search</td><td><span class="pill-t pill-err">失败</span></td><td class="num mono">3</td><td class="num mono">890 ms</td></tr>
+                      <tr><td style="color:var(--c-text-1);font-weight:500;">echo</td><td><span class="pill-t pill-ok">成功</span></td><td class="num mono">5</td><td class="num mono">6 ms</td></tr>
+                    </tbody>
+                  </table></div>
+                </div>
+              </div>
+
+              <!-- 卡 E 上下文压缩（本稿新增区，随数据态切换渲染） -->
+              <div id="ceArea"></div>
+
+              <!-- 卡 D（iter-15 基线零变化静态承载） -->
+              <div class="tel-card" style="margin-bottom:0;">
+                <div class="tc-head"><span class="tc-ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M4 5h16M4 12h16M4 19h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>按日成本明细</div>
+                <div class="tbl-in-card"><table class="adm-table">
+                  <thead><tr><th>日期</th><th class="num">输入 tokens</th><th class="num">输出 tokens</th><th class="num">缓存命中 tokens</th><th class="num">成本估算</th><th class="num">自填 tokens（不计成本）</th></tr></thead>
+                  <tbody>
+                    <tr><td class="day-cell">2026-08-19</td><td class="num mono">182,400</td><td class="num mono">46,200</td><td class="num mono">96,512</td><td class="num mono">¥0.7827</td><td class="num mono">12,480</td></tr>
+                    <tr><td class="day-cell">2026-08-18</td><td class="num mono">159,200</td><td class="num mono">41,600</td><td class="num mono">88,140</td><td class="num mono">¥0.6953</td><td class="num mono">9,860</td></tr>
+                  </tbody>
+                </table></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>面板序列（自上而下，加法扩展示意）</b>：工具行 → 卡 A 每日成本估算 → 双卡并排（B 缓存命中率 / C 工具用量）→
+        <b>卡 E 上下文压缩（新增，全宽）</b> → 卡 D 按日成本明细。卡间距恒 16px；卡 E 容器 = 统计卡家族（surface + border + r-lg 12px + shadow-1 + padding 16px 20px，与 A/B/C/D 逐参数一致）。
+        <b>位置理由（定夺⑤）</b>：双卡并排区不扩为三卡（B 卡含四列表格，三卡等宽 ≈340px 挤压且动 B/C 形态）；阅读序 = 成本总览（A）→ 率与效果（B/C/E）→ 明细账本（D 殿后）。
+        <b>缺失态语义（REQ-025 不估算补齐沿承）</b>：有压缩行但零测得行（tokens_after 懒回填未测得）→ 次数如实、降幅位「缺失」徽标（永不显 0%/NaN）；
+        窗口零压缩行 → 卡内空文案 C15（非错误态）。0 与缺失视觉语言不同（走查条 40 变异断言）。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">4</span>API 口径（随稿定案——T2/T3 直接对照实现；体例沿 design-iter-14 §6 / design-iter-15 §4）</h2>
+    <div class="sec-desc">
+      硬门槛：既有全部端点形状零变化（turn/sessions/profiles/admin 六端点 + PUT settings + GET /api/admin/telemetry 的 iter-15 形状逐字节不动，仅加法 <code>compact</code> 键）；
+      错误码沿既有体系风格（code + message；detail 对象形状沿 sessions.py 409 <code>session_schema_conflict</code> 先例）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.1 POST /api/chat/compact（新端点 · 手动压缩 · 四语义）</div>
+      <table>
+        <tr><th style="width:170px">项</th><th>口径（随基线定案）</th></tr>
+        <tr><td>请求</td><td><code>POST /api/chat/compact</code>，body <code>{ "session_id": "…" }</code>（仅此一字段；缺字段/非字符串 → 422）；鉴权 = 会话 token（CurrentUser，沿回合端点同款依赖）</td></tr>
+        <tr><td>归属隔离</td><td>复合主键 (user_id, session_id)——不存在或属他人一律 <b>404</b>（不泄露归属，REQ-040 验收 4）；普通用户正常操作、无 admin 门槛</td></tr>
+        <tr><td>执行语义</td><td>同步执行完整管道：一级 snip + 全量 compact，<b>不受阈值判定约束</b>（REQ-040 描述）；摘要调用口径 = REQ-039（非流式 / 30s 独立护栏 / 跟随当前密钥模式 / <code>&lt;conversation_summary&gt;</code> 包裹防注入）</td></tr>
+        <tr><td>配额口径</td><td><b>不计回合</b>（定夺⑧）：quota.py 零调用、usage_daily 零写入；tokens 仅落 telemetry compress 行——test_quota 全套零改动复跑全绿（REQ-040 验收 1）</td></tr>
+        <tr><td>compress 行</td><td><code>kind='compress'</code> / <code>endpoint='compact'</code> / <code>turn_id=NULL</code> / model=摘要模型 / latency_ms=摘要调用耗时 / status=ok·error·timeout / tokens_prompt=摘要调用自身消耗 / tokens_before=该会话上一回合 step=1 telemetry 实测值（无记录 null）/ <b>tokens_after=NULL 待懒回填</b>（该会话下一次 step=1 上游调用 usage 到达后独立短连接回填，失败不阻塞不补造——T3 承载）</td></tr>
+        <tr><td>失败语义</td><td>摘要调用失败/超时/空摘要/上游 4xx·5xx → 502/504；<code>context_summary</code> 零变化（原摘要仍有效则保留，REQ-040 异常分支）；chat_sessions 会话档任何分支均零写入（REQ-039 验收 6 对手动路径同样适用）；warning 日志 + compress 行如实记 status（铁律 5）</td></tr>
+        <tr><td>409 判定</td><td>该会话有进行中回合（服务端回合登记判定——多设备竞态唯一权威）→ 409 <code>session_generating</code>；message 逐字 = C8（前端直接呈现）</td></tr>
+      </table>
+      <pre><code>POST /api/chat/compact
+{ "session_id": "s_ab12" }
+
+→ 200 { "status": "compacted", "tokens_before": 41235 }
+        成功。tokens_before = 上一回合 step=1 telemetry tokens_prompt 机器实测值；无记录 → null（不估算）。
+        前端不呈现该值（成功 toast 不带数字，§1.2 决策记录）
+→ 200 { "status": "skipped", "reason": "too_short" }
+        无需压缩（总轮数 ≤ R=5）：零上游调用、零计费（假传输层零调用断言，REQ-040 验收 3）
+→ 409 { "detail": { "code": "session_generating",
+                    "message": "该会话正在生成回复，暂不能压缩，请等生成完成后再试" } }
+→ 404 { "detail": { "code": "session_not_found", "message": "会话不存在" } }
+        不存在或属他人（归属隔离一律 404）
+→ 422 { "detail": { "code": "session_uncompactable", "message": "无法读取的会话不可压缩" } }
+        corrupted 双保险（前端菜单已禁用，C4）；body 非法同 422
+→ 502 { "detail": { "code": "compact_failed", "message": "压缩失败，请稍后再试" } }
+        摘要调用失败 / 上游 4xx·5xx / 空摘要
+→ 504 { "detail": { "code": "compact_failed", "message": "压缩失败，请稍后再试" } }
+        摘要调用超时（30s 护栏）。502/504 共用 code 与 message——用户侧失败 toast 恒为一句（C7），
+        子类区分归 warning 日志与 compress 行 status（沿 iter-14 D1 哲学）
+
+前端消费规则（定死）：
+  200 compacted → 清 compacting → success toast C5（✓ 前缀 + success 变体）
+  200 skipped   → 清 compacting → toast C6
+  409           → 清 compacting → toast 显示服务端 message 逐字（= C8）
+  其余非 200 与网络错误 → 清 compacting → toast C7（固定兜底；服务端 502/504 message 与 C7 同文，两路径同串）
+  请求在途 → 置 compacting（pill C2 + 菜单项禁用 C3）；切换会话不 abort、toast 全局显示</code></pre>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.2 GET /api/admin/telemetry 加法扩展（REQ-041 聚合面 · 既有形状零变化）</div>
+      <pre><code>GET /api/admin/telemetry?days=7
+→ 200 { ...iter-15 形状逐字节零变化（window/price/today_cost/daily/tools/retention_days）...,
+  "compact": {
+    "count": 12,                    ← 窗口 compress 行总数（含失败行——REQ-041「失败行照常落、只计次数」）
+    "count_ok": 10,
+    "count_failed": 2,              ← error + timeout 行合计
+    "measured": 8,                  ← status=ok 且 tokens_before/tokens_after 均非 NULL 的行数
+    "tokens_before_total": 384000,  ← Σbefore（仅计测得行）
+    "tokens_after_total": 122880,   ← Σafter（仅计测得行）
+    "reduction_rate": 0.680000      ← 1 − Σafter/Σbefore（后端保留 6 位小数，沿 iter-15 精度口径）；
+  }                                   measured=0 → null（前端显「缺失」徽标 C14，永不显 0/NaN）
+}
+
+成本聚合口径演进（CHG-010 授权，字段形状零新增）：
+  today_cost 与 daily[].cost_total 计入 mode='unified' compress 行的 tokens_prompt × input_per_mtok ÷ 1e6
+  （摘要调用按输入计价，CHG-010 内容 3.3）；自填模式 compress 行不计成本（定夺⑥口径自然延伸）。
+  既有 admin pytest 造数不含 compress 行 → 数值断言零变化、用例零改动复跑全绿。
+
+门禁零变化：get_admin_user；普通用户 → 403 响应体零遥测字段（含 compact 键，REQ-041 验收 4）。</code></pre>
+      <div class="ann"><b>T3 新增用例清单（对应 REQ-040/041 验收）</b>：compact 端点四语义（成功落 compress 行 endpoint='compact' turn_id=NULL + context_summary 更新 + usage_daily turns 零变化 / skipped 零上游调用 / 409 生成中 / 他人 session_id 404）·
+      手动压缩后下一回合请求体含摘要（= REQ-039 验收 2）· 聚合数值精确断言（次数/降幅 1 − Σafter/Σbefore / measured=0 → null / 成本含 compress 行 tokens）· 普通用户 403 零泄露 · 既有 admin/telemetry 用例零改动复跑。
+      <b>前端用例（vitest）</b>：菜单加法项渲染（含 corrupted/执行中禁用）· toast 四态文案逐字 · compacting 状态机 · 卡 E 三态渲染（正常/缺失/空）· 0 与缺失区分。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">5</span>亮暗锁定对照（双帧并置，走查方法 = 找亮色残留）</h2>
+    <div class="sec-desc">同一 DOM，仅根节点令牌覆盖；暗色帧内任何肉眼发白块即为漏改裸色值。本节锁定帧不随「演示控制」切换。双主题承载口径（v1.4.10 B）：浅色逐条 + 暗色全元素亮色残留扫描 + 关键文字令牌断言。</div>
+
+    <div class="spec">
+      <div class="spec-title">5.1 侧栏 · 菜单开态（含加法项）+ 执行中 pill（浅 ↔ 暗）</div>
+      <div class="cols">
+        <div>
+          <div class="frame-cap">浅色（菜单 surface #FFFFFF / 压缩中 pill #F0F4FF 底 #3370FF 字）</div>
+          <div class="tk force-light" style="border:1px solid #E5E6EB;border-radius:12px;overflow:hidden;">
+            <div style="background:var(--c-bg);padding:8px;width:280px;">
+              <div class="s-item menu-open" style="background:var(--c-hover-bg);">
+                <span class="s-title">帮我写一份 B2 压缩功能的发布说明</span>
+                <button class="more-btn" style="opacity:1;"><svg viewBox="0 0 14 14" width="16" height="16" fill="currentColor"><circle cx="3" cy="7" r="1.5"/><circle cx="7" cy="7" r="1.5"/><circle cx="11" cy="7" r="1.5"/></svg></button>
+                <div class="s-menu">
+                  <button class="mi">重命名</button>
+                  <button class="mi">导出会话</button>
+                  <button class="mi">压缩上下文</button>
+                  <div class="sep"></div>
+                  <button class="mi danger">删除</button>
+                </div>
+              </div>
+              <div class="s-item">
+                <span class="s-title">DeepSeek vs GLM 搜索质量对比</span>
+                <span class="pill compact"><span class="spin-s"></span>压缩中</span>
+              </div>
+              <div class="s-item corrupted">
+                <span class="s-title">无法读取的会话</span>
+                <span class="pill broken">无法读取</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="frame-cap">暗色（菜单 surface #1E2026 / 压缩中 pill #1D2740 底 #5C8DFF 字）</div>
+          <div class="tk force-dark" style="border:1px solid #E5E6EB;border-radius:12px;overflow:hidden;">
+            <div style="background:var(--c-bg);padding:8px;width:280px;">
+              <div class="s-item menu-open" style="background:var(--c-hover-bg);">
+                <span class="s-title">帮我写一份 B2 压缩功能的发布说明</span>
+                <button class="more-btn" style="opacity:1;"><svg viewBox="0 0 14 14" width="16" height="16" fill="currentColor"><circle cx="3" cy="7" r="1.5"/><circle cx="7" cy="7" r="1.5"/><circle cx="11" cy="7" r="1.5"/></svg></button>
+                <div class="s-menu">
+                  <button class="mi">重命名</button>
+                  <button class="mi">导出会话</button>
+                  <button class="mi">压缩上下文</button>
+                  <div class="sep"></div>
+                  <button class="mi danger">删除</button>
+                </div>
+              </div>
+              <div class="s-item">
+                <span class="s-title">DeepSeek vs GLM 搜索质量对比</span>
+                <span class="pill compact"><span class="spin-s"></span>压缩中</span>
+              </div>
+              <div class="s-item corrupted">
+                <span class="s-title">无法读取的会话</span>
+                <span class="pill broken">无法读取</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">5.2 卡 E · 缺失态（有压缩行、零测得行 → 降幅显「缺失」徽标；浅 ↔ 暗）</div>
+      <div class="cols">
+        <div>
+          <div class="frame-cap">浅色（缺失徽标 #FFF7E8 底 #B45309 字）</div>
+          <div class="tk force-light" style="padding:16px;background:#F5F6F7;border-radius:12px;" id="lockCeL"></div>
+        </div>
+        <div>
+          <div class="frame-cap">暗色（缺失徽标 #38290F 底 #EDA23B 字）</div>
+          <div class="tk force-dark" style="padding:16px;background:#131417;border-radius:12px;" id="lockCeD"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">6</span>零回退映射（REQ-003/004/005/012/016/026 + REQ-038，逐条对既有走查编号 · 复跑不改）</h2>
+    <div class="sec-desc">「iter-11#」= design/iter-11/index.html §7.2 走查编号（1~22 = 侧栏面基线）；「iter-15#」= design/iter-15/index.html §7.2 走查编号（44 条 = admin 遥测面基线）。本稿为加法扩展：<b>变的是菜单多一项与遥测面板多一卡，不变的是全部既有能力与口径</b>。</div>
+    <div class="spec">
+      <table>
+        <tr><th style="width:220px">既有触点 / 口径</th><th style="width:150px">既有走查编号</th><th>本次处置</th></tr>
+        <tr><td>REQ-003 新建会话（新建钮点击清空搜索）</td><td>iter-11#2</td><td><b>零变化</b>（§7 条 2）</td></tr>
+        <tr><td>REQ-004 查看历史会话并切换（列表项单选切换）</td><td>iter-11#1/4</td><td><b>零变化</b>；反向断言：压缩项点击不触发会话切换（§7 条 17）</td></tr>
+        <tr><td>REQ-005 删除会话（确认模态 + danger 分隔线）</td><td>iter-11#9</td><td><b>零变化</b>：删除项位置与分隔线零移动（压缩项插在分隔线之前）</td></tr>
+        <tr><td>REQ-012 会话重命名（菜单首位 + 行内编辑）</td><td>iter-11#6/8</td><td><b>零变化</b>：重命名仍为菜单首项，行内编辑口径不动</td></tr>
+        <tr><td>REQ-013 导出会话（菜单「导出会话」项）</td><td>iter-11#10/36</td><td><b>零变化</b>：导出项位置不动，压缩项在其后追加</td></tr>
+        <tr><td>REQ-016 会话搜索（搜索框 + 搜索态平铺）</td><td>iter-11#3/13</td><td><b>零变化</b>：搜索态列表项菜单照常含压缩项（渲染口径同，§7 条 11）</td></tr>
+        <tr><td>REQ-026 框架：外壳基调 / 列表项单行 / 时间分组 / 账户区 / rail</td><td>iter-11#1/4/11/12/14~18</td><td><b>零变化</b>（§7 条 1/4/11/12/13）</td></tr>
+        <tr><td>REQ-026 通用下拉菜单交互规格（外点/Esc/键盘/互斥/滚动/定位/层级）</td><td>iter-11#19~22</td><td><b>带新项复跑</b>：↑↓ 循环含压缩项、跳过禁用（corrupted/执行中）；其余规格零变化（§7 条 14）</td></tr>
+        <tr><td>REQ-026 菜单既有三项内容与配色（重命名/导出会话/删除）</td><td>iter-11#6</td><td><b>零变化</b>：三项文案/顺序/危险色逐字零回退（§7 条 6）</td></tr>
+        <tr><td>REQ-038 遥测视图：页面框架/顶栏/四卡/警示条/开关行/tabs/用户与用量面板/403</td><td>iter-15#1~10</td><td><b>零变化</b>（§7 条 30）</td></tr>
+        <tr><td>REQ-038 遥测：工具行/时间语义/卡 A 全规格（副题 T3 逐字）</td><td>iter-15#11~23</td><td><b>零变化</b>；成本数值口径按 CHG-010 含 compress 行 tokens（授权演进，形状零变化，§7 条 31）</td></tr>
+        <tr><td>REQ-038 遥测：卡 B 缓存命中率 / 卡 C 工具用量</td><td>iter-15#24~34</td><td><b>零变化</b>（§7 条 32）</td></tr>
+        <tr><td>REQ-038 遥测：卡 D 明细/缺失琥珀行/加载/失败/空窗口/403 门禁</td><td>iter-15#35~41</td><td><b>零变化</b>（§7 条 33）</td></tr>
+        <tr><td>亮暗双主题 / 样件数据虚构 / 适用性</td><td>iter-11#46~49 / iter-15#42~44</td><td><b>延伸复跑</b>（§7 条 42~44）</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">7</span>T1 验收对照 + 走查清单（v1.4.4 硬要求，T3 任务级门槛）</h2>
+    <div class="sec-desc">
+      7.1 对照 plans/iter-16.md T1 验收与 REQ-040/041 验收原文；7.2 走查清单 44 条——断言面标注：
+      <b>[文]</b> = 样件文案逐字（v1.4.10 B，对照 §2 登记表唯一来源）；<b>[几]</b> = 几何断言（v1.4.11 B，computed 值）；
+      <b>[行]</b> = 行为断言（v1.4.13 B 适用项）；<b>[零]</b> = 零回退复跑（§6 映射）。
+      <b>所有条目均须在浅色与暗色两个主题下逐条通过</b>（承载口径见 §5 说明）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">7.1 T1 验收 + REQ-040/041 验收对照（原文落点）</div>
+      <table>
+        <tr><th style="width:46%">验收标准（原文摘要）</th><th>本稿落点</th><th>状态</th></tr>
+        <tr><td>〔T1〕CEO 批准基线（tag design-iter-16）</td><td>本稿提交 CEO 评审；§8 七项定夺项附推荐</td><td>☑ 呈批</td></tr>
+        <tr><td>〔T1〕手动压缩入口形态与 toast 三态文案定死（样件文案逐字断言面 v1.4.10 B）</td><td>§1 入口规格 + §2 登记表 C1~C8 + 走查条 15~24</td><td>☑ 已定案待批</td></tr>
+        <tr><td>〔T1〕admin 压缩卡形态与缺失标注语义定稿</td><td>§3 卡 E 规格（三态：正常/缺失/空）+ 走查条 34~41</td><td>☑ 已定稿</td></tr>
+        <tr><td>〔T1〕API 口径章节随稿定案（POST /api/chat/compact 四语义）</td><td>§4.1/4.2（端点形状/成功·无需压缩·失败·409/前端消费规则/telemetry 加法扩展）</td><td>☑ 已定案待批</td></tr>
+        <tr><td>〔T1〕走查清单随稿（亮/暗双主题 + 执行中态 + 失败态 + 无需压缩态 + 缺失态；几何断言面 v1.4.11 B、行为断言面适用项 v1.4.13 B）</td><td>7.2 共 44 条（[几] 6 条 / [行] 10 条 / 双主题全条目 + 条 42 专门承载；执行中 18~20、失败 23/26、无需压缩 22/27、缺失 40）</td><td>☑ 已随稿</td></tr>
+        <tr><td>〔T1〕REQ-003/004/005/012/016/026 零回退组逐条映射既有走查编号</td><td>§6 映射表 + 7.2 条 1~14（iter-11#1~22 逐条标注）</td><td>☑ 已映射</td></tr>
+        <tr><td>〔T1 卫生项〕spec「涉及页面」指针零滞后回填（v1.4.10 A）</td><td>本稿产出会话不改 spec/RTM（任务边界）——指针回填由主会话随基线执行</td><td>☑ 交接明示</td></tr>
+        <tr><td>〔REQ-040 验收 1~4〕compress 行/下一回合含摘要/无需压缩零上游/归属隔离</td><td>§4.1 执行语义 + §4.2 用例清单（T3 执行）</td><td>☑ 规格落点（T3 执行）</td></tr>
+        <tr><td>〔REQ-040 验收 5〕design-iter-16 走查清单留档（亮/暗 + 执行中 + 失败 + 无需压缩）</td><td>7.2 全清单（T3 执行留档）</td><td>☑ 已随稿</td></tr>
+        <tr><td>〔REQ-041 验收 3~4〕聚合数值断言（次数/降幅/缺失/成本含 compress 行）+ 403 零泄露</td><td>§4.2 聚合口径 + 用例清单（T3 执行）</td><td>☑ 规格落点（T3 执行）</td></tr>
+        <tr><td>〔REQ-041 验收 5〕design-iter-16 走查清单 admin 面留档（压缩卡 + 缺失态，亮/暗双主题）</td><td>7.2 条 34~41 + §5.2 锁定帧（T3 执行留档）</td><td>☑ 已随稿</td></tr>
+      </table>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">7.2 走查清单（design-iter-16，44 条；勾选框供 T3 自查与 QA 取证）</div>
+      <table>
+        <tr><th style="width:26px">过</th><th style="width:36px">序号</th><th>断言面</th><th>触点</th><th>期望表现（= 验收口径）</th><th style="width:56px">样件</th><th style="width:92px">零回退引用</th></tr>
+        <tr><td colspan="7" style="background:#FAFBFC;color:#646A73;font-weight:600;">A 组 · 侧栏面零回退（iter-11#1~22 复跑不改，REQ-003/004/005/012/016/026）</td></tr>
+        <tr><td><input type="checkbox"></td><td>1</td><td>[零]</td><td>外壳基调</td><td>侧栏 264px 灰 <code>--c-bg</code> + 右缘 border；主区白 <code>--c-surface</code>——框架零变化</td><td>1.1</td><td>iter-11#1</td></tr>
+        <tr><td><input type="checkbox"></td><td>2</td><td>[零]</td><td>新建按钮</td><td>36px primary-solid 白字 r-md 13px/600；点击新建会话并清空搜索——REQ-003 口径零变化</td><td>1.1</td><td>iter-11#2</td></tr>
+        <tr><td><input type="checkbox"></td><td>3</td><td>[零]</td><td>搜索框与搜索态</td><td>32px surface 底 + focus 主色描边 + 3px focus-ring；搜索态平铺隐藏组头——REQ-016 口径零变化；搜索态列表项菜单照常含压缩项（渲染口径同）</td><td>1.1</td><td>iter-11#3/13</td></tr>
+        <tr><td><input type="checkbox"></td><td>4</td><td>[零][几]</td><td>列表项单行</td><td>行 min-height 34px r-md，仅标题 13px 单行 ellipsis；无逐条时间戳——REQ-004 载体零变化；computed：padding 6px 10px / column-gap 6px</td><td>1.1</td><td>iter-11#4</td></tr>
+        <tr><td><input type="checkbox"></td><td>5</td><td>[零]</td><td>hover「···」</td><td>28px r-sm text-3 opacity 0→1（.15s）；hover/focus-visible 浮现——零变化</td><td>1.1</td><td>iter-11#5</td></tr>
+        <tr><td><input type="checkbox"></td><td>6</td><td>[零][文]</td><td>既有三项</td><td>重命名 / 导出会话 / 删除（danger 红字 + 前置 1px 分隔线）文案与配色<b>逐字零回退</b>；面板 surface+border+shadow-2+r-md</td><td>1.1/5.1</td><td>iter-11#6</td></tr>
+        <tr><td><input type="checkbox"></td><td>7</td><td>[零]</td><td>corrupted 分支</td><td>「无法读取的会话」+ pill；重命名禁用（title 原因）、删除保留——既有口径零变化；<b>延伸：压缩项同禁用（条 15 新断言）</b></td><td>1.1</td><td>iter-11#7</td></tr>
+        <tr><td><input type="checkbox"></td><td>8</td><td>[零]</td><td>行内重命名</td><td>26px 输入框 + Enter/失焦保存、Esc 取消——REQ-012 口径零变化</td><td>1.1</td><td>iter-11#8</td></tr>
+        <tr><td><input type="checkbox"></td><td>9</td><td>[零]</td><td>删除确认</td><td>确认模态 + 危险实底删除钮——REQ-005 口径零变化（压缩无确认弹窗，不触本条）</td><td>1.1</td><td>iter-11#9</td></tr>
+        <tr><td><input type="checkbox"></td><td>10</td><td>[零]</td><td>导出会话</td><td>菜单「导出会话」导出口径零变化——REQ-013（压缩项在其后追加，位置不动）</td><td>1.1</td><td>iter-11#10</td></tr>
+        <tr><td><input type="checkbox"></td><td>11</td><td>[零]</td><td>时间分组</td><td>「今天/昨天/近 7 天/更早」组头 12px text-3；组内倒序、跨零点口径零变化</td><td>1.1</td><td>iter-11#11/12</td></tr>
+        <tr><td><input type="checkbox"></td><td>12</td><td>[零]</td><td>账户区</td><td>首字头像 + 用户名 +「···」（设置/管理后台/登出）——零变化，账户菜单无新增项</td><td>1.1</td><td>iter-11#14/15</td></tr>
+        <tr><td><input type="checkbox"></td><td>13</td><td>[零]</td><td>rail 收起</td><td>rail 56px + 持久化——零变化（rail 态列表不渲染，压缩无新入口，入口唯一 = 列表项菜单）</td><td>—</td><td>iter-11#16~18</td></tr>
+        <tr><td><input type="checkbox"></td><td>14</td><td>[零]</td><td>菜单交互规格</td><td>外点吞击 / Esc 焦点回 / 键盘矩阵（↑↓ 循环<b>含压缩项</b>、跳过禁用）/ 互斥 / 滚动关闭 / 右对齐上翻 / z-40——iter-11 §2 全规格带新项复跑</td><td>1.1</td><td>iter-11#19~22</td></tr>
+        <tr><td colspan="7" style="background:#FAFBFC;color:#646A73;font-weight:600;">B 组 · 触点①新增断言（REQ-040）</td></tr>
+        <tr><td><input type="checkbox"></td><td>15</td><td>[文]</td><td>菜单项逐字</td><td>加法项逐字 C1「压缩上下文」；corrupted 会话该项禁用 + title 逐字 C4</td><td>1.1/5.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>16</td><td>[几]</td><td>位置与几何</td><td>位于「导出会话」之后、danger 分隔线之前；项高 32px / 13px / padding 0 10px（computed）；面板 min-width 148px 不变（computed）；分隔线仍在删除项之前（唯一一条）</td><td>1.1/5.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>17</td><td>[行]</td><td>点击行为链路</td><td><b>行为 · 链路</b>：点击压缩项 → 菜单立即关闭 + 焦点回触发钮（DropdownMenu 既有行为）→ 发 POST /api/chat/compact（body 仅 session_id）→ 该行出执行中 pill；<b>点击不触发会话切换</b>（REQ-004 反向断言）</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>18</td><td>[文][几]</td><td>执行中 pill</td><td>10px spinner currentColor + 逐字 C2「压缩中」11px；<code>--c-primary-l</code> 底 + <code>--c-primary</code> 字；r-full + padding 1px 8px（computed，与 pill.cut 同参数）；位于 pill 插槽（grid 第 2 列）</td><td>1.1/5.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>19</td><td>[行]</td><td>pill 优先级</td><td><b>行为 · 状态</b>：带「生成中断」pill 的会话压缩时显「压缩中」（进行中 &gt; 历史状态），结束后恢复「生成中断」；corrupted 会话无压缩中态（项禁用不可触发）</td><td>1.1（s3 行）</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>20</td><td>[行]</td><td>防重复点击</td><td><b>行为 · 守卫</b>：compacting 期间该会话菜单「压缩上下文」disabled + title 逐字 C3；重命名/导出/删除不受影响；请求在途重复点击无第二次 POST</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>21</td><td>[文][行]</td><td>成功 toast</td><td><b>行为 · 链路</b>：200 compacted → 清 compacting → success 绿字 toast 逐字 C5（✓ 前缀 + success 变体，沿 SettingsForm 先例）；3s 自动消失；会话标题与列表顺序零变化（压缩不触会话档 = REQ-039 验收 6 可见面）；<b>不出现任何 token 数字</b>（§1.2 决策）</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>22</td><td>[文]</td><td>无需压缩 toast</td><td>200 skipped → toast 逐字 C6「当前会话无需压缩：历史还短」；默认白字 3s</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>23</td><td>[文]</td><td>失败 toast</td><td>502/504/其余非 200/网络 → toast 逐字 C7「压缩失败，请稍后再试」；默认白字 3s；不暴露技术堆栈（REQ-007 精神）</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>24</td><td>[文]</td><td>409 toast</td><td>409 session_generating → toast 逐字 C8（= 服务端 message，前端直接呈现两路径同文）</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>25</td><td>[行]</td><td>409 路径</td><td><b>行为 · 竞态</b>：前端零预判本地 generating（多设备竞态服务端唯一判定）→ 请求照发 → 409 到达清 compacting + toast；会话数据与摘要零变化；vitest：本地生成中会话点击压缩仍发请求（不断言前端拦截）</td><td>1.1/§4.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>26</td><td>[行]</td><td>失败路径</td><td><b>行为 · 降级</b>：摘要调用失败/超时 → 清 compacting + C7 toast；context_summary 零变化（原摘要仍有效则保留）；会话档零写入（pytest 前后比对）</td><td>§4.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>27</td><td>[行]</td><td>无需压缩路径</td><td><b>行为 · 零调用</b>：轮数 ≤ R 会话 → 零上游调用（假传输层零调用断言，REQ-040 验收 3）+ C6 toast；usage_daily turns 零变化（定夺⑧，test_quota 零改动复跑）</td><td>§4.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>28</td><td>[零]</td><td>主对话面零触达</td><td>消息流/输入区/工具卡/顶区零新增元素（DOM 级断言）；当前会话被压缩成功后视图零变化（界面口径 = 库内全文，定夺⑥）</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>29</td><td>[行]</td><td>执行中切换会话</td><td><b>行为 · 交互位置</b>：压缩在途切换其他会话不 abort 请求；toast 全局顶部居中显示（AppToast 现状）；pill 随列表项可见性自然呈现（不强制滚动定位）</td><td>1.1</td><td>—</td></tr>
+        <tr><td colspan="7" style="background:#FAFBFC;color:#646A73;font-weight:600;">C 组 · admin 遥测面零回退（iter-15#1~44 复跑不改，REQ-038）</td></tr>
+        <tr><td><input type="checkbox"></td><td>30</td><td>[零]</td><td>框架与治理区</td><td>页面框架/顶栏 52px/概览四卡/警示条/搜索开关行/tabs 三段/用户与用量面板/403 卡——iter-15#1~10 全量复跑零变化</td><td>3.1</td><td>iter-15#1~10</td></tr>
+        <tr><td><input type="checkbox"></td><td>31</td><td>[零][文]</td><td>工具行与卡 A</td><td>时间窗分段/保留期注记/卡 A 全规格——iter-15#11~23 复跑；<b>卡 A 副题 T3 逐字零变化</b>；成本数值口径按 CHG-010 含 unified compress 行 tokens × input 单价（授权演进：造数不含 compress 行则既有断言零变化）</td><td>3.1</td><td>iter-15#11~23</td></tr>
+        <tr><td><input type="checkbox"></td><td>32</td><td>[零]</td><td>卡 B / 卡 C</td><td>缓存命中率与工具用量全规格（含缺失徽标/状态徽标四态/空态）——iter-15#24~34 复跑零变化</td><td>3.1</td><td>iter-15#24~34</td></tr>
+        <tr><td><input type="checkbox"></td><td>33</td><td>[零]</td><td>卡 D 与三态门禁</td><td>按日明细/缺失琥珀行 T23/加载 T26/失败 T27/空窗口 T28/遥测端点 403——iter-15#35~41 复跑零变化</td><td>3.1</td><td>iter-15#35~41</td></tr>
+        <tr><td colspan="7" style="background:#FAFBFC;color:#646A73;font-weight:600;">D 组 · 触点②新增断言（REQ-041 admin 面）</td></tr>
+        <tr><td><input type="checkbox"></td><td>34</td><td>[几]</td><td>卡 E 位置与容器</td><td>位于双卡并排区与卡 D 之间（全宽）；容器 = surface + 1px border + 圆角 12px + shadow-1 + padding 16px 20px（computed，与 A/B/C/D 逐参数一致）；相邻卡间距恒 16px（computed）</td><td>3.1/5.2</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>35</td><td>[文]</td><td>卡 E 标题区</td><td>标题逐字 C9 + 副题逐字 C10（口径常驻自释，沿 iter-15 卡 B 说明常驻哲学）</td><td>3.1/5.2</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>36</td><td>[文][几]</td><td>次数列</td><td>label 逐字 C11 + 大数值 20px/600 tabular-nums + sub 模板「成功 N · 失败 N」（失败含超时行，title 注记）；次数<b>含失败行</b>（REQ-041「失败行照常落、只计次数」）</td><td>3.1/5.2</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>37</td><td>[文][几]</td><td>降幅列</td><td>label 逐字 C12 + 大数值格式 NN.N% + sub 模板 C13「已测得 N / 成功 N」；title 公式逐字；双列栅格等宽 gap 16px（computed，沿 bd-grid 参数）；内面板 subtle-bg + border + r-md + padding 10/12</td><td>3.1/5.2</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>38</td><td>[行]</td><td>聚合口径</td><td><b>行为 · 数值正确</b>：降幅 = 1 − Σafter/Σbefore 仅计 status=ok 且双侧非 NULL 行（造数精确值断言，REQ-041 验收 3）；失败行只计次数不计降幅；后端 6 位小数、前端 1 位百分显（不做前端再计算）</td><td>§4.2</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>39</td><td>[文]</td><td>空态</td><td>窗口零 compress 行 → 大数值行整体替换为空文案逐字 C15（12px text-3 居中，非错误态）；kv-row 注记保留</td><td>3.1（切 empty）</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>40</td><td>[文][行]</td><td>缺失态</td><td><b>行为 · 如实性</b>：有压缩行但零测得行（tokens_after 懒回填未测得）→ 次数如实 + 降幅位缺失徽标逐字 C14（warning-l/warning 高 20px，iter-15 T15 同款）——<b>永不显 0%、不显 NaN</b>；合法 0 降幅（前后同规模）如实显 0.0%（变异断言）；sub C13 显「已测得 0 / 成功 N」自释</td><td>3.1（切 unmeasured）/5.2</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>41</td><td>[文]</td><td>成本口径注记</td><td>卡 E 底部 kv-row（分隔线 + 12px，iter-15 kv-row 同形态）逐字 C16：「摘要调用 tokens 计入每日成本估算（按输入计价）· 手动压缩不计回合」——一句话自释 B2 两条成本/配额口径</td><td>3.1/5.2</td><td>—</td></tr>
+        <tr><td colspan="7" style="background:#FAFBFC;color:#646A73;font-weight:600;">E 组 · 全局</td></tr>
+        <tr><td><input type="checkbox"></td><td>42</td><td>[零]</td><td>亮暗双主题</td><td>全部条目浅/暗各过一遍；§5 两组锁定帧暗色无亮色残留；关键文字令牌断言（text-1/2/3、primary、warning 族）；正文对比度 ≥4.5:1（tokens v1.3 计算值）</td><td>5.1/5.2</td><td>iter-11#46 / iter-15#42</td></tr>
+        <tr><td><input type="checkbox"></td><td>43</td><td>[零]</td><td>样件数据</td><td>全部演示数值（卡 E 次数/降幅/tokens、toast 场景）为虚构；线上数值只由 telemetry 表机器采集渲染，不手填不编造（铁律 5）</td><td>头部声明</td><td>iter-11#48 / iter-15#43</td></tr>
+        <tr><td><input type="checkbox"></td><td>44</td><td>[零]</td><td>适用性</td><td>移动端不承诺（侧栏面沿 iter-11、admin 面沿 iter-12/15 适用性口径）；趋势图表不做（数值口径延续）；无新增轮询（管理员手动视图）；「已压缩」常驻标记不做（§1 不做清单）</td><td>§1/§3</td><td>iter-11#49 / iter-15#44</td></tr>
+      </table>
+      <div class="ann">共 <b>44</b> 条（侧栏面零回退 1~14 / 触点①新增 15~29 / admin 遥测面零回退 30~33 / 触点②新增 34~41 / 全局 42~44）。
+      断言面计数：[文] 14 条、[几] 6 条、[行] 10 条、[零] 22 条（一条可多标）。零回退组（末列非「—」）复验时对照原清单期望逐条取证（iter-11 §7.2 走查 1~22 = 侧栏面基线、iter-15 §7.2 走查 44 条 = admin 遥测面基线，<b>复跑不改</b>）；
+      行为类由 T3 pytest/vitest 或手工走查留档（plans/iter-16-verify.md）。<b>所有条目须在浅色与暗色双主题下各过一遍</b>（承载口径 = §5 说明）。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">8</span>CEO 定夺项（7 项 —— 附推荐，随基线拍板）</h2>
+    <div class="sec-desc">沿 iter-1~15 固化模式：设计师给推荐方案与理由 → CEO 拍板 → 固化为决策记录，T2/T3 按定案实现。本稿全部样件已按「推荐」落形。</div>
+
+    <table>
+      <tr><th style="width:40px">编号</th><th>问题</th><th>选项与推荐（样件已按推荐落形）</th><th>理由 / 备选（未采纳留档）</th></tr>
+      <tr>
+        <td>①</td>
+        <td>菜单加法项位置（CHG-010 定夺④已定「侧栏列表项「···」菜单项」，菜单内位置为设计参数）</td>
+        <td><b>推荐：「导出会话」之后、danger 分隔线之前</b>（常规组末位）；菜单终态 = 重命名 / 导出会话 / 压缩上下文 / ── / 删除</td>
+        <td>语义分组：重命名 = 标题编辑（最高频保持首位肌肉记忆）；导出/压缩 = 会话内容级非破坏操作相邻；删除唯一不可逆维持分隔线独占末段。压缩安全可逆（原文永久在库）不属 danger、不加确认、不新增第二条分隔线。<br>备选 A（未采纳）：置首位——打断重命名首位的既有走查 6/8 位置断言与肌肉记忆；备选 B（未采纳）：压缩与删除之间再加分隔线——菜单碎片化，常规组内无隔离必要</td>
+      </tr>
+      <tr>
+        <td>②</td>
+        <td>执行中态形态（菜单已关闭后的反馈载体；摘要调用上限约 30s，无反馈不可接受）</td>
+        <td><b>推荐：列表项 pill 插槽「压缩中」胶囊（10px spinner + 11px，primary-l/primary = 工具步骤卡「运行中」徽章语义族）+ 菜单项禁用防重复</b></td>
+        <td>会话级操作的反馈挂在对象上（沿 admin ban 操作 toast + 对象状态先例）；pill 插槽为既有（broken/cut 两款在前），规格参数照搬零新令牌；不定态 spinner = 单次调用无中间进度可报（编造进度违铁律 5）。<br>备选 A（未采纳）：仅 toast 结束反馈、无执行中标识——最长 30s 无反馈用户疑挂死；备选 B（未采纳）：全局 banner/模态——会话级轻操作不配全局打扰面</td>
+      </tr>
+      <tr>
+        <td>③</td>
+        <td>成功 toast 是否呈现效果数字（任务书留白：「含效果信息？如压缩前后规模，口径来自 API 返回，你定呈现」）</td>
+        <td><b>推荐：不呈现 token 数字，只给确定性事实（C5「上下文压缩完成：中段历史已摘要，聊天记录不受影响」）</b></td>
+        <td>tokens_after = 压缩后首次 step=1 上游调用的<b>懒回填</b>实测值——同步响应时刻未测得；tokens_before 对新会话/无遥测记录会话为 NULL；只给半截数字误导（看似 after=0），违铁律 5 不造数精神。效果度量（前后规模/降幅）的观测面归 admin 卡 E（REQ-041 承载），用户侧不重复。「聊天记录不受影响」= 定夺⑥原文永久在库的用户语言，回答用户最担心的「会不会丢消息」。<br>备选（未采纳）：显示 tokens_before——半截数字，且对新会话恒缺省，文案分支增多断言面不稳</td>
+      </tr>
+      <tr>
+        <td>④</td>
+        <td>409 生成中的判定链路（前端是否预判本地 generating 状态）</td>
+        <td><b>推荐：服务端唯一判定，前端零预判照发请求</b>；409 到达 → 清执行中态 + toast C8（= 服务端 message 逐字）</td>
+        <td>多设备场景本地 controller 状态覆盖不了「另一设备正在该会话生成」的竞态，服务端回合登记是唯一权威；前端预判只收窄窗口不消除竞态，且形成两条提示链路（前端拦截 + 409 toast）口径必须一致——单一链路最简可断言。<br>备选（未采纳）：前端本地生成中直接拦截不发请求——双链路维护 + 多设备竞态仍靠 409 兜底，复杂度不减</td>
+      </tr>
+      <tr>
+        <td>⑤</td>
+        <td>admin 压缩卡位置（iter-15 遥测面板加法扩展的落位）</td>
+        <td><b>推荐：双卡并排区与卡 D 之间的全宽卡 E</b>；面板序列 = 工具行 → A → B/C 并排 → <b>E</b> → D</td>
+        <td>双卡并排区不扩三卡——B 卡含四列表格，三卡等宽 ≈340px 表格挤压且动 B/C 形态违加法纪律；阅读序 = 成本总览（A）→ 率与效果（B/C/E）→ 明细账本（D 殿后）；全宽承载双大数值 + 副题 + kv-row 注记从容。<br>备选 A（未采纳）：B/C/E 三卡并排——挤压 + 动既有形态；备选 B（未采纳）：并入卡 A——压缩效果是独立观测维度，混入成本卡破坏卡 A 逐字零回退面</td>
+      </tr>
+      <tr>
+        <td>⑥</td>
+        <td>降幅的部分缺失口径（tokens_after 懒回填：部分行测得、部分行 NULL 时如何聚合）</td>
+        <td><b>推荐：仅计测得行（status=ok 且双侧非 NULL）+ 副题常驻自释「降幅仅统计压缩前后均测得的压缩」；零测得行 → 显「缺失」徽标（永不显 0）</b></td>
+        <td>与 iter-15 缓存命中率定夺⑤同哲学（只计带数据行 + 说明常驻，不另弹提示）；统一 key 数据永远可见可算，懒回填未完成行不污染分母；「已测得 N / 成功 M」sub 行如实暴露测得面（铁律 5 不藏数据）。<br>备选（未采纳）：任一行未测得即整个窗口显缺失——过严，长会话压缩效果永远不可见，违背 B2「效果可验证」目标</td>
+      </tr>
+      <tr>
+        <td>⑦</td>
+        <td>成本口径含 compress 行 tokens 的注记位置（CHG-010 要求计入，是否注记与注记落位由设计判断）</td>
+        <td><b>推荐：注记，落卡 E kv-row（C16）；卡 A 副题与既有逐字面零改动</b></td>
+        <td>成本数值因 compress 行加入而上升，admin 无注记会不明所以——注记必要；卡 A 副题 T3 是 iter-15 基线逐字零回退面不可改，注记落新卡 E 底部 kv-row（iter-15 既有形态），一句话同时自释「按输入计价」（CHG-010 3.3）与「手动压缩不计回合」（定夺⑧）两条 B2 口径。<br>备选（未采纳）：不注记——成本口径静默变化，部署者对账困惑；备选（未采纳）：改卡 A 副题加一句——破 iter-15 逐字断言面，零回退纪律不容</td>
+      </tr>
+    </table>
+
+    <div class="spec" style="margin-top:16px;">
+      <div class="spec-title">令牌 / 组件 / 卫生评估结论（零新增令牌自查）</div>
+      <table>
+        <tr><th style="width:190px">项</th><th>结论</th></tr>
+        <tr><td>新令牌</td><td><b>无提案</b>——零新增令牌、零自造色值（逐项自查：执行中 pill = primary-l/primary 既有 + currentColor spinner；toast = AppToast 既有深底 + success 变体 success-on-dark 既有；卡 E = 统计卡家族 + warning 族缺失徽标 + kv-row 均为既有；菜单项 = DropdownMenu 既有样式加法一项）</td></tr>
+        <tr><td>components.md</td><td><b>零新增组件形态</b>——菜单项 = DropdownMenu 加法（组件零改动，items 既有字段）；执行中 pill = 胶囊家族同规格变体（pill.cut 同参数换色组合）；卡 E = 统计卡家族变体 + 徽章家族缺失徽标——无需登记动作</td></tr>
+        <tr><td>卫生（铁律 5）</td><td>样件数据全虚构；压缩链路 UI 文案零内容泄露（toast 不含会话标题/摘要文本/密钥）；tokens_after 未测得恒显缺失不造数；手动压缩不计回合、usage_daily 零写入（定夺⑧，卡 E 注记 C16 明示）</td></tr>
+        <tr><td>design/proto</td><td><b>不同步</b>（proto 定位 iter-1 核心闭环原型，压缩对其不可见，CHG-010 影响评估口径）；其余 design/iter-* 不同步（无对应 REQ 界面口径变化）</td></tr>
+      </table>
+    </div>
+
+    <div class="ann" style="margin-top:16px;">
+      <b>基线声明</b>：本稿为 iter-16 T1 交付物，呈 CEO 评审；设计稿基线批准权限归 CEO。批准后由主会话：① 打 tag <code>design-iter-16</code>；
+      ② spec REQ-040/041「涉及页面」指针由「待基线」更新为「已基线」（v1.4.10 A 防线，零滞后——本稿产出会话不改 spec/RTM，任务边界交接明示）；
+      ③ 定夺结论回填本文件与 design-iter-16.md；④ 定案值（compact 端点形状与四语义文案 / telemetry compact 键 / 成本聚合口径）同步 T2/T3。
+      基线后任何改动须先登记变更，不接受「顺手改」。
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (s) { return document.querySelector(s); };
+  var $$ = function (s) { return Array.prototype.slice.call(document.querySelectorAll(s)); };
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  function fmt(n) { return Number(n).toLocaleString('zh-Hans-CN'); }
+
+  /* ================= 主题（演示控制；锁定帧 force-* 不随动） ================= */
+  var TK_KEY = 'mm-demo-theme-16';
+  function applyTheme(dark) {
+    $$('.tk').forEach(function (t) {
+      if (t.classList.contains('force-light') || t.classList.contains('force-dark')) return;
+      t.classList.toggle('dark', dark);
+    });
+    $('#btnLight').classList.toggle('on', !dark);
+    $('#btnDark').classList.toggle('on', dark);
+  }
+  $('#btnLight').addEventListener('click', function () { applyTheme(false); try { localStorage.setItem(TK_KEY, 'light'); } catch (e) {} });
+  $('#btnDark').addEventListener('click', function () { applyTheme(true); try { localStorage.setItem(TK_KEY, 'dark'); } catch (e) {} });
+  try { if (localStorage.getItem(TK_KEY) === 'dark') applyTheme(true); } catch (e) {}
+
+  /* ================= §2 逐字登记表（唯一来源；JS 常量与表格逐字一致） ================= */
+  var C = {
+    item: '压缩上下文',
+    pilling: '压缩中',
+    reasonBusy: '压缩中',
+    reasonBroken: '无法读取的会话不可压缩',
+    tOk: '✓ 上下文压缩完成：中段历史已摘要，聊天记录不受影响',
+    tSkip: '当前会话无需压缩：历史还短',
+    tFail: '压缩失败，请稍后再试',
+    tBusy: '该会话正在生成回复，暂不能压缩，请等生成完成后再试',
+    ceTitle: '上下文压缩',
+    ceSub: '压缩 = 中段历史摘要（自动阈值触发 + 手动触发）；降幅仅统计压缩前后均测得的压缩',
+    ceCountLabel: '窗口压缩次数',
+    ceRateLabel: '平均降幅',
+    ceRateTitle: '平均降幅 = 1 − Σ压缩后 tokens ÷ Σ压缩前 tokens',
+    ceMiss: '缺失',
+    ceEmpty: '窗口内无压缩记录',
+    ceCostNote: '摘要调用 tokens 计入每日成本估算（按输入计价）· 手动压缩不计回合'
+  };
+
+  /* ================= toast（AppToast 现状形态：顶部居中深底；success 变体绿字） ================= */
+  function toast(msg, ok) {
+    var wrap = $('#toastWrap');
+    var el = document.createElement('div');
+    el.className = 'toast';
+    el.setAttribute('role', 'status');
+    el.innerHTML = '<span class="t-msg' + (ok ? ' success' : '') + '">' + esc(msg) + '</span>' +
+      '<button class="t-close" aria-label="关闭">×</button>';
+    wrap.appendChild(el);
+    var kill = function () { if (el.parentNode) el.parentNode.removeChild(el); };
+    el.querySelector('.t-close').addEventListener('click', kill);
+    setTimeout(kill, 3000); /* 无 action 3s 自动消失（toast.ts 现状口径） */
+  }
+
+  /* ================= §1 侧栏样件 ================= */
+  var SESSIONS = [
+    { group: '今天', id: 's1', title: '帮我写一份 B2 压缩功能的发布说明', active: true },
+    { group: '今天', id: 's2', title: '一个特别长的会话标题示例：这三十轮对话的上下文特别长需要压缩整理一下' },
+    { group: '今天', id: 's3', title: 'DeepSeek vs GLM 搜索质量对比', interrupted: true },
+    { group: '近 7 天', id: 's4', title: '周报草稿' },
+    { group: '近 7 天', id: 's5', title: '无法读取的会话', corrupted: true },
+    { group: '近 7 天', id: 's6', title: '翻译：架构升级审核稿' }
+  ];
+  var compacting = {}; /* id -> true（执行中态，会话级） */
+  var openMenuId = null;
+
+  var sbList = $('#sbList');
+
+  function pillFor(s) {
+    if (compacting[s.id]) return '<span class="pill compact"><span class="spin-s"></span>' + esc(C.pilling) + '</span>';
+    if (s.corrupted) return '<span class="pill broken">无法读取</span>';
+    if (s.interrupted) return '<span class="pill cut">生成中断</span>';
+    return '';
+  }
+
+  function menuHtmlFor(s) {
+    var disRename = s.corrupted;
+    var disCompact = s.corrupted || !!compacting[s.id];
+    var compactTitle = s.corrupted ? C.reasonBroken : C.reasonBusy;
+    return '<div class="s-menu" role="menu">' +
+      '<button class="mi' + (disRename ? ' disabled' : '') + '" role="menuitem" data-k="rename"' + (disRename ? ' title="无法读取的会话不可重命名"' : '') + '>重命名</button>' +
+      '<button class="mi" role="menuitem" data-k="export">导出会话</button>' +
+      '<button class="mi' + (disCompact ? ' disabled' : '') + '" role="menuitem" data-k="compact"' + (disCompact ? ' title="' + esc(compactTitle) + '"' : '') + '>' + esc(C.item) + '</button>' +
+      '<div class="sep" role="separator"></div>' +
+      '<button class="mi danger" role="menuitem" data-k="remove">删除</button>' +
+      '</div>';
+  }
+
+  function renderSidebar() {
+    var html = '';
+    var lastGroup = '';
+    SESSIONS.forEach(function (s) {
+      if (s.group !== lastGroup) { html += '<div class="group-head">' + esc(s.group) + '</div>'; lastGroup = s.group; }
+      html += '<div class="s-item' + (s.active ? ' active' : '') + (s.corrupted ? ' corrupted' : '') + (openMenuId === s.id ? ' menu-open' : '') + '" data-id="' + s.id + '">' +
+        '<span class="s-title" title="' + esc(s.corrupted ? '无法读取的会话' : s.title) + '">' + esc(s.corrupted ? '无法读取的会话' : s.title) + '</span>' +
+        pillFor(s) +
+        '<button class="more-btn" aria-label="会话操作" aria-haspopup="menu" aria-expanded="' + (openMenuId === s.id) + '">' +
+        '<svg viewBox="0 0 14 14" width="16" height="16" fill="currentColor"><circle cx="3" cy="7" r="1.5"/><circle cx="7" cy="7" r="1.5"/><circle cx="11" cy="7" r="1.5"/></svg></button>' +
+        (openMenuId === s.id ? menuHtmlFor(s) : '') +
+        '</div>';
+    });
+    sbList.innerHTML = html;
+  }
+
+  function findSession(id) { for (var i = 0; i < SESSIONS.length; i++) if (SESSIONS[i].id === id) return SESSIONS[i]; return null; }
+
+  function sceneOf() {
+    var r = document.querySelector('input[name=cmpScene]:checked');
+    return r ? r.value : 'ok';
+  }
+
+  /* 压缩执行模拟：置执行中态 → 按场景出终态（真实实现 = POST /api/chat/compact，§4.1 消费规则） */
+  function startCompact(id) {
+    compacting[id] = true;
+    renderSidebar();
+    var scene = sceneOf();
+    var wait = scene === 'busy' ? 300 : 1400; /* 409 在受理点即拒，返回快 */
+    setTimeout(function () {
+      delete compacting[id];
+      renderSidebar();
+      if (scene === 'ok') toast(C.tOk, true);
+      else if (scene === 'skip') toast(C.tSkip);
+      else if (scene === 'fail') toast(C.tFail);
+      else toast(C.tBusy); /* 409：服务端 message 逐字呈现 */
+    }, wait);
+  }
+
+  sbList.addEventListener('click', function (e) {
+    var mi = e.target.closest('.mi');
+    if (mi) {
+      var row = mi.closest('.s-item');
+      var sid = row.getAttribute('data-id');
+      var k = mi.getAttribute('data-k');
+      openMenuId = null; /* 执行即关菜单 + 焦点回触发钮（DropdownMenu pick 既有行为，原型简化焦点部分） */
+      renderSidebar();
+      if (k === 'compact' && !mi.classList.contains('disabled')) startCompact(sid);
+      else if (k === 'rename' || k === 'export' || k === 'remove') toast('（演示：' + mi.textContent + ' 口径零变化，见走查条 8/10/9）');
+      return;
+    }
+    var more = e.target.closest('.more-btn');
+    if (more) {
+      var row2 = more.closest('.s-item');
+      var id = row2.getAttribute('data-id');
+      /* 互斥：开新即关旧（iter-11 §2.1） */
+      openMenuId = (openMenuId === id) ? null : id;
+      renderSidebar();
+      return;
+    }
+    var item = e.target.closest('.s-item');
+    if (item && !item.classList.contains('corrupted')) {
+      /* 切换会话（REQ-004）：与压缩项点击互斥——菜单项点击不走到这里（已提前 return） */
+      SESSIONS.forEach(function (s) { s.active = (s.id === item.getAttribute('data-id')); });
+      openMenuId = null;
+      renderSidebar();
+    }
+  });
+
+  /* 外点关闭且吞掉首击（iter-11 §2.1 口径，原型简化：仅关菜单） */
+  document.addEventListener('click', function (e) {
+    if (!openMenuId) return;
+    if (e.target.closest('.s-menu') || e.target.closest('.more-btn')) return;
+    openMenuId = null;
+    renderSidebar();
+  }, true);
+  /* Esc 关闭（焦点回触发钮口径见 iter-11 §2.1，原型仅关菜单） */
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && openMenuId) { openMenuId = null; renderSidebar(); }
+  });
+
+  renderSidebar();
+
+  /* ================= §3 卡 E 渲染（三态：normal / unmeasured / empty） ================= */
+  var ICO_CE = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M7 12h10M10 17h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+  var CE_STATES = {
+    normal: { count: 12, ok: 10, failed: 2, measured: 8, before: 384000, after: 122880 },
+    unmeasured: { count: 3, ok: 2, failed: 1, measured: 0, before: null, after: null },
+    empty: null
+  };
+
+  function renderCe(host, st) {
+    var d = CE_STATES[st];
+    var head = '<div class="tc-head"><span class="tc-ico">' + ICO_CE + '</span>' + esc(C.ceTitle) + '</div>' +
+      '<div class="tc-sub">' + esc(C.ceSub) + '</div>';
+    var body;
+    if (!d) {
+      body = '<div class="ce-empty">' + esc(C.ceEmpty) + '</div>';
+    } else {
+      var rate = d.measured > 0 ? (1 - d.after / d.before) : null;
+      body = '<div class="ce-grid">' +
+        '<div class="ce-cell" title="失败含超时行；失败行只计次数、不计降幅"><div class="bd-label">' + esc(C.ceCountLabel) + '</div>' +
+        '<div class="tc-big">' + fmt(d.count) + '</div>' +
+        '<div class="tc-big-sub">成功 ' + fmt(d.ok) + ' · 失败 ' + fmt(d.failed) + '</div></div>' +
+        '<div class="ce-cell" title="' + esc(C.ceRateTitle) + '"><div class="bd-label">' + esc(C.ceRateLabel) + '</div>' +
+        (rate == null
+          ? '<div class="tc-big-row" style="margin-top:2px;"><span class="pill-t pill-miss">' + esc(C.ceMiss) + '</span></div>'
+          : '<div class="tc-big">' + (rate * 100).toFixed(1) + '%</div>') +
+        '<div class="tc-big-sub">已测得 ' + fmt(d.measured) + ' / 成功 ' + fmt(d.ok) + '</div></div>' +
+        '</div>';
+    }
+    var note = '<div class="kv-row"><span class="kv-label">成本与配额口径</span><span class="kv-val">' + esc(C.ceCostNote) + '</span></div>';
+    host.innerHTML = '<div class="tel-card" style="margin-bottom:16px;">' + head + body + note + '</div>';
+  }
+
+  var ceArea = $('#ceArea');
+  var ceState = 'normal';
+  $$('input[name=ceState]').forEach(function (r) {
+    r.addEventListener('change', function () { ceState = r.value; renderCe(ceArea, ceState); });
+  });
+  renderCe(ceArea, ceState);
+
+  /* ================= §5.2 锁定帧：卡 E 缺失态（浅 ↔ 暗） ================= */
+  renderCe($('#lockCeL'), 'unmeasured');
+  renderCe($('#lockCeD'), 'unmeasured');
+})();
+</script>
+</body>
+</html>
