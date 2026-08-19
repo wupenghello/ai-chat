@@ -141,3 +141,14 @@ telemetry v8 表无会话关联列，无法满足 REQ-039「**该会话**上一�
 - **日志零泄露**：摘要调用失败仅 warning `status=%s session_id=%s`，不含 key/内容（沿 REQ-031 卫生口径）；摘要 prompt 与调用体不入日志。
 - **与 LWW/409 守卫/整档透传零交互**：压缩产物存独立表、不随会话 PUT 回写，会话档结构零变化（REQ-006/022 零波及明示承接）；前端数据面 client.ts/sessions.ts 零改动。
 - **密钥安全**：摘要调用 Authorization 头全新构造、不入日志/响应；统一 key 与自填 key 均不出现在任何新增表/日志。
+
+### §8 偏离与决策点清单（含合同外最小决策）
+
+| # | 事项 | 处置 |
+|---|------|------|
+| 1 | telemetry.session_id 加法列（CHG-010 schema 拟稿之外） | 已拍板的实现级加法列，落地情况：迁移 v9 建列、存量 NULL 不回填、turn 端点 llm/tool/compress 行写入均携带（tool/compress 行同列为零成本一致性携带，阈值判定仅用 llm 行）；登记见 §6 |
+| 2 | test_search db_version 版本位断言 8→9 | 迁移版本位随 v9 推进，改写映射登记见 §5；业务用例零改动 |
+| 3 | usage 帧 requests 不含摘要调用（tokens 含） | 合同外最小决策：任务书⑦定「turn.end usage 与 usage_daily 落账含摘要消耗」仅指 tokens；摘要调用不占回合 step 序列（REQ-030 波及口径），故 requests（回合内步数）不计摘要调用，tokens 如实计入（用例数值断言 600+900=1500、requests=1） |
+| 4 | 摘要调用失败码体系 | compress 行 error_code 取 summary_timeout / summary_empty / summary_error 三值（status 列仍为 timeout/error 两态，与 llm 行 status 枚举对齐；错误码体系为 compress 行新增面，非 §3.1 映射码复用） |
+| 5 | 摘要输入工具结果单条 1000 字符上限 | 合同外最小决策：摘要输入体量护栏（结论要点保留、超长截断），避免中段历史多工具结果叠加撑爆摘要调用自身；与 T0 冒烟 [:2000] 同为截断口径、取值更保守，不影响 R2 prompt 定稿逐字一致 |
+| 6 | 有效摘要复用不写 compress 行 | 「compress 行 = 压缩执行」口径：复用非执行、零摘要调用、零新增行（用例断言零行 + 产物行不覆盖）；降级与生成两路径照常落行 |
