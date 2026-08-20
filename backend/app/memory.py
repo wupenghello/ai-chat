@@ -102,7 +102,7 @@ def is_memory_enabled(conn: sqlite3.Connection, user_id: int) -> bool:
 
 def load_entries(conn: sqlite3.Connection, user_id: int) -> list[sqlite3.Row]:
     return conn.execute(
-        "SELECT id, content, source_session_id, model, created_at, updated_at"
+        "SELECT id, user_id, content, source_session_id, model, created_at, updated_at"
         " FROM user_memories WHERE user_id = ? ORDER BY id",
         (user_id,),
     ).fetchall()

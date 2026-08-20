@@ -46,6 +46,7 @@ def test_GET_列表_停用状态_注入预览同源(alice: TestClient):
     assert body["memory_enabled"] is True
     assert [e["content"] for e in body["entries"]] == [MEM_A, MEM_B]
     assert body["entries"][0]["source_session_id"] == "s0"
+    assert body["entries"][0]["source_session_title"] is None  # 来源会话不存在 → M11 分支
     # 注入预览 = 组装时点同源取值（单一链路：与回合注入共用 render_memory_text）
     assert body["injection_preview"] == (
         "<user_memory>\n"
@@ -76,6 +77,12 @@ def test_PUT_编辑生效_来源归零(alice: TestClient):
     (eid,) = _seed(alice, 1, [MEM_A])
     r = alice.put(f"/api/memory/{eid}", json={"content": "手工改写后的记忆"})
     assert r.status_code == 200
+    body = r.json()
+    # design-iter-17 §4.2：返回更新后条目全形，来源归零
+    assert body["content"] == "手工改写后的记忆"
+    assert body["source_session_id"] is None and body["model"] is None
+    assert body["source_session_title"] is None
+    assert body["updated_at"]
     row = sqlite3.connect(alice.app.state.db_path)
     row.row_factory = sqlite3.Row
     got = row.execute("SELECT * FROM user_memories WHERE id = ?", (eid,)).fetchone()
@@ -89,8 +96,10 @@ def test_PUT_超150字_422(alice: TestClient):
     (eid,) = _seed(alice, 1, [MEM_A])
     r = alice.put(f"/api/memory/{eid}", json={"content": "字" * 151})
     assert r.status_code == 422
-    r2 = alice.put(f"/api/memory/{eid}", json={"content": ""})
+    assert r.json()["detail"]["code"] == "memory_content_invalid"
+    r2 = alice.put(f"/api/memory/{eid}", json={"content": "   "})  # trim 为空
     assert r2.status_code == 422
+    assert r2.json()["detail"]["code"] == "memory_content_invalid"
 
 
 def test_PUT_他人条目_404(client_factory):
@@ -99,7 +108,8 @@ def test_PUT_他人条目_404(client_factory):
     register(b, "bob")
     login(b, "bob", "password123")
     (eid,) = _seed(a, 1, [MEM_A])
-    assert b.put(f"/api/memory/{eid}", json={"content": "恶意改写"}).status_code == 404
+    r = b.put(f"/api/memory/{eid}", json={"content": "恶意改写"})
+    assert r.status_code == 404 and r.json()["detail"]["code"] == "memory_not_found"
     # 原条目逐字不动
     got = a.get("/api/memory").json()
     assert got["entries"][0]["content"] == MEM_A
@@ -109,7 +119,8 @@ def test_PUT_他人条目_404(client_factory):
 
 def test_DELETE_生效(alice: TestClient):
     eid1, eid2 = _seed(alice, 1, [MEM_A, MEM_B])
-    assert alice.delete(f"/api/memory/{eid1}").status_code == 200
+    r = alice.delete(f"/api/memory/{eid1}")
+    assert r.status_code == 200 and r.json() == {"detail": "deleted"}
     assert [e["content"] for e in alice.get("/api/memory").json()["entries"]] == [MEM_B]
     # 重复删除 → 404
     assert alice.delete(f"/api/memory/{eid1}").status_code == 404
@@ -130,11 +141,11 @@ def test_DELETE_他人条目_404(client_factory):
 
 def test_settings_开关幂等(alice: TestClient):
     assert alice.put("/api/memory/settings", json={"memory_enabled": False}).json() \
-        == {"ok": True, "memory_enabled": False}
+        == {"memory_enabled": False}
     assert alice.put("/api/memory/settings", json={"memory_enabled": False}).status_code == 200
     assert alice.get("/api/memory").json()["memory_enabled"] is False
     assert alice.put("/api/memory/settings", json={"memory_enabled": True}).json() \
-        == {"ok": True, "memory_enabled": True}
+        == {"memory_enabled": True}
 
 
 # ---------- REQ-043 验收 5：归属隔离 ----------

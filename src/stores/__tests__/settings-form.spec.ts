@@ -284,11 +284,13 @@ describe('REQ-021 账号管理 · 注销（design-iter-9 §3）', () => {
 })
 
 describe('SettingsForm 设置弹窗化（REQ-028，iter-11 T3，design-iter-11 §4 走查 37~40）', () => {
-  it('弹窗结构：role=dialog + 左导航五分区，默认落「外观」分区（v-show 单显示）', async () => {
+  it('弹窗结构：role=dialog + 左导航六分区，默认落「外观」分区（v-show 单显示）', async () => {
+    // CHG-011 改写映射（iter-17 T3）：五分区 → 六分区，「AI 的记忆」插在对话设置之后、
+    // 账号之前（REQ-028 改写定序）；旧断言五项列表 → 新断言六项，功能性删除为零
     const w = await mountForm()
     expect(w.find('.settings-modal[role="dialog"]').exists()).toBe(true)
     const navLabels = w.findAll('.sm-nav [role="tab"]').map((b) => b.text())
-    expect(navLabels).toEqual(['外观', '密钥模式', '高级设置', '对话设置', '账号'])
+    expect(navLabels).toEqual(['外观', '密钥模式', '高级设置', '对话设置', 'AI 的记忆', '账号'])
     const visible = w.findAll('.sm-pane').filter((p) => (p.element as HTMLElement).style.display !== 'none')
     expect(visible.length).toBe(1)
     expect(visible[0].text()).toContain('外观')
@@ -299,8 +301,8 @@ describe('SettingsForm 设置弹窗化（REQ-028，iter-11 T3，design-iter-11 �
     // 先在对话设置输入草稿
     await w.findAll('.sm-nav [role="tab"]')[3].trigger('click')
     await w.find('.prompt-ta').setValue('草稿内容')
-    // 切去账号再切回，草稿仍在（分区隐藏不销毁）
-    await w.findAll('.sm-nav [role="tab"]')[4].trigger('click')
+    // 切去账号（索引 5，CHG-011 加法分区后平移）再切回，草稿仍在（分区隐藏不销毁）
+    await w.findAll('.sm-nav [role="tab"]')[5].trigger('click')
     let visible = w.findAll('.sm-pane').filter((p) => (p.element as HTMLElement).style.display !== 'none')
     expect(visible[0].text()).toContain('注销账号')
     await w.findAll('.sm-nav [role="tab"]')[3].trigger('click')

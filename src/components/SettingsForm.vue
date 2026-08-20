@@ -10,6 +10,7 @@ import { clearPendingOps } from '../db/persistence'
 import ConfirmModal from './ConfirmModal.vue'
 import KeyModeCard from './KeyModeCard.vue'
 import DeleteAccountModal from './DeleteAccountModal.vue'
+import MemoryPane from './MemoryPane.vue'
 import ToggleSwitch from './ToggleSwitch.vue'
 
 const settings = useSettingsStore()
@@ -32,11 +33,15 @@ const TABS = [
   { key: 'mode', label: '密钥模式' },
   { key: 'adv', label: '高级设置' },
   { key: 'chat', label: '对话设置' },
+  // CHG-011/REQ-043（iter-17 T3）：第六分区「AI 的记忆」——对话设置之后、账号之前
+  // （REQ-028 改写定序）；导航取模机制随 TABS.length 5→6 自然涵盖，零改动
+  { key: 'memory', label: 'AI 的记忆' },
   { key: 'account', label: '账号' },
 ] as const
 type PaneKey = (typeof TABS)[number]['key']
 const pane = ref<PaneKey>('appearance')
 const advSection = ref<HTMLElement | null>(null) // 「前往高级设置」分区直达 + 高亮目标
+const memPane = ref<InstanceType<typeof MemoryPane> | null>(null) // Esc 链加法插入点（记忆编辑态）
 const closeBtn = ref<HTMLButtonElement | null>(null)
 let flashTimer: ReturnType<typeof setTimeout> | undefined
 let openerEl: HTMLElement | null = null
@@ -112,7 +117,8 @@ function close() {
   emit('close')
 }
 
-/** 弹窗层 Esc（走查 43：先关最上层）：未保存确认 > 档案编辑模态 > （注销/删除确认各自组件处理）> 外层弹窗 */
+/** 弹窗层 Esc（走查 43：先关最上层）：未保存确认 > 档案编辑模态 > 记忆编辑态（CHG-011
+ * 加法插入点，design-iter-17 §2.3：取消还原不关弹窗）> （注销/删除确认各自组件处理）> 外层弹窗 */
 function onModalKey(e: KeyboardEvent) {
   if (e.key !== 'Escape') return
   if (dirtyConfirm.value) {
@@ -123,6 +129,7 @@ function onModalKey(e: KeyboardEvent) {
     editing.value = false
     return
   }
+  if (memPane.value?.cancelEditing()) return
   if (deleteOpen.value || pendingDelete.value) return // DeleteAccountModal/ConfirmModal 各有 Esc
   attemptClose()
 }
@@ -531,7 +538,12 @@ async function confirmDeleteAccount(password: string) {
       </div>
         </div>
 
-        <!-- 分区五：账号（REQ-021，design-iter-9 §2~3）：改密 + 注销危险区 -->
+        <!-- 分区五：AI 的记忆（CHG-011 REQ-043，design-iter-17：七态自含组件） -->
+        <div v-show="pane === 'memory'" class="sm-pane" role="tabpanel">
+          <MemoryPane ref="memPane" :active="pane === 'memory'" />
+        </div>
+
+        <!-- 分区六：账号（REQ-021，design-iter-9 §2~3）：改密 + 注销危险区 -->
         <div v-show="pane === 'account'" class="sm-pane" role="tabpanel">
           <div class="section-label pane-label">账号</div>
 

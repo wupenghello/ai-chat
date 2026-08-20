@@ -246,6 +246,26 @@ export interface CompactResult {
   reason?: 'too_short'
 }
 
+/** CHG-011/REQ-043（iter-17，design-iter-17 §4.1）：记忆条目出参——
+ * source_session_title = 组装时读会话档 title，会话已删 → null（UI 落 M11 分支）；
+ * 手工编辑后 source_session_id/model 归零（UI 落 M12 分支）。entries 顺序 = 注入组装顺序 */
+export interface MemoryEntry {
+  id: number
+  content: string
+  source_session_id: string | null
+  source_session_title: string | null
+  model: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface MemoryState {
+  entries: MemoryEntry[]
+  memory_enabled: boolean
+  /** 组装时点逐字同源取值（「看到的就是注入的」，前端零本地拼装）；停用/无条目 → null */
+  injection_preview: string | null
+}
+
 export interface ProfilePayload {
   name: string
   base_url: string
@@ -325,4 +345,14 @@ export const backend = {
       `/api/admin/users/${id}/quota`,
       { daily_limit: dailyLimit },
     ),
+  // CHG-011/REQ-043（iter-17 T2/T3，design-iter-17 §4 口径定案）：记忆管理四端点——
+  // GET 一次取全（列表+停用状态+注入预览单一链路）/ PUT 条目（来源归零，422 服务端唯一权威校验）
+  // / DELETE 条目 / PUT settings 整体停用；跨用户操作一律 404 memory_not_found（归属隔离）
+  getMemory: () => request<MemoryState>('GET', '/api/memory'),
+  updateMemoryEntry: (id: number, content: string) =>
+    request<MemoryEntry>('PUT', `/api/memory/${id}`, { content }),
+  deleteMemoryEntry: (id: number) =>
+    request<{ detail: string }>('DELETE', `/api/memory/${id}`),
+  setMemoryEnabled: (memory_enabled: boolean) =>
+    request<{ memory_enabled: boolean }>('PUT', '/api/memory/settings', { memory_enabled }),
 }

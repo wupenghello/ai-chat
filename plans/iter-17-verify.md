@@ -169,3 +169,45 @@ REQ-043 验收 5（归属隔离）：test_memory_api.py test_归属隔离_他人
 - memory_extract 行不含记忆内容全文与 key（列白名单约束 + 用例断言双重背书）；抽取失败 warning 日志仅 status/session_id/user_id，无内容
 - 统一 key 仅进程内传递（.env → Settings → Authorization 头），脚本/留档零 key 明文
 - 扫描任务不触配额（quota.py 零导入零调用）、不触回合登记（generating_sessions 零交互）
+
+## T3 前端记忆分区 + 全局回归 C 面收口（2026-08-21；REQ-043 前端全量 + REQ-042 前端零触达面）
+
+### §1 实现结构（新增 / 改动）
+
+- `src/components/MemoryPane.vue`（新增，~450 行）：七态自含分区组件——加载/失败重试（bootFailed 先例）/ 列表（元信息三分支 metaOf）/ 行内编辑（150 字计数 + trim 空禁存 + 函数式 ref 规避 v-for 具名 ref 数组化）/ 删除确认（ConfirmModal 照搬）/ 整体停用（ToggleSwitch + 灰显 opacity .45 + 操作冻结）/ 注入预览（折叠 + 代码块族 + `injection_preview` 逐字单一链路零本地拼装）/ 空态；`cancelEditing()` defineExpose 供 Esc 链调用；全部写操作「toast + 重取 GET」零乐观更新
+- `src/components/SettingsForm.vue`：TABS 加法第六项「AI 的记忆」（对话设置后、账号前，REQ-028 改写定序）+ 分区面板挂载 + onModalKey Esc 链加法插入点（dirty 确认 > 档案模态 > **记忆编辑** > 删除确认 > 关弹窗）；REQ-028 既有机制（导航取模/焦点/Esc/遮罩/未保存拦截判定链与文案）字节级零变化（定夺⑧：记忆编辑态不参与 dirty）
+- `src/api/backend.ts`：记忆四端点方法 + MemoryEntry/MemoryState 类型（source_session_title 组装时读会话档 title 分支承载）
+- 回合数据面 client.ts/sessions.ts **零改动**（记忆注入为服务端行为，REQ-042 验收 6 前端面锚点）
+
+### §2 走查留档（design-iter-17 §7.2 全清单；scripts/e2e-walkthrough-17.mjs 真实 Chrome + 真实后端，/tmp 独立库）
+
+**结果：34 PASS / 0 FAIL**（截图 8 帧 /tmp/e2e17/shots/：01-list-light / 02-off-light / 03-after-edit-delete-light / 04-empty-light / 05-failed-light / 06-list-dark / 07-off-dark / 99-final）
+
+承载划分（浏览器脚本断言 vs pytest/vitest 承载）：
+- **浏览器脚本承载（32 断言点）**：条 1/2（弹窗 720×560 + 导航六项定序 + 项高 36px + 方向键取模含新项）/ 5/6（Esc 关闭零回退 + 记忆编辑态不参与 dirty 拦截）/ 10~17（分区可达 M2/M3 逐字、开关行 M4/M37/M5、列表头 M7~M9、条目卡几何与不 ellipsis、元信息三分支 M10/M11/M12 逐字、操作钮 26px + aria-label）/ 18~22（编辑链路 toast M30 + 来源转 M12、计数 M15 + maxlength + trim 空禁存、Esc 取消还原**且弹窗不关**、删除确认 M19~M21 逐字 + 360px、删除链路 M31 + 计数 −1）/ 23~27（预览折叠→代码块深底、预览 = injection_preview 逐字 + 包裹标签可见 + 编号一一对应、停用/空分支 M24/M25、空态 M26/M27、失败态 M28/M29 + 控制件全不渲染）/ 12/13（停用链路 M32 + 通知条 M6 + 灰显冻结）/ 12b（启用 M33）/ 32（暗色全元素 + 代码块暗色仍深底 computed）/ 33（样件全虚构声明）
+- **pytest/vitest 承载（交叉引用，不在脚本重复）**：条 24 取值比对的 pytest 面（REQ-043 验收 4：后端 build_injection 与 GET 预览同源函数）/ 条 28 回合中编辑无 409（REQ-043 异常分支定案 + API 无 generating 预判面）/ 条 29 生效时效组装断言（REQ-042 验收 1~2：注入/停用 pytest 面 + MemoryPane.spec 写后重取语义）/ 条 30 toast 全量逐字的单元面（MemoryPane.spec M30~M36 断言）/ 条 31 归属隔离（REQ-043 验收 5，test_memory_api.py）
+- **条 3/4/7/8/9（容器零回退组）**：settings-form.spec.ts 全量复跑（六分区改写映射 2 处登记，见 §3）+ 走查条 1/2/5/6 浏览器面覆盖；iter-11#37~45 锚点口径不动
+
+### §3 改写映射登记（全局回归基线 C 面口径，功能性删除为零）
+
+| 存量用例 | 演进 | 依据 |
+|---|---|---|
+| settings-form.spec.ts「弹窗结构：左导航五分区」 | 五分区断言 → 六分区（「AI 的记忆」插入对话设置后、账号前），用例名同步改「六分区」 | REQ-028 CHG-011 改写（五区块→六区块） |
+| settings-form.spec.ts「分区切换：点账号」 | 账号 tab 索引 4 → 5（加法分区平移） | 同上 |
+| 其余 364 − 21（MemoryPane 新增）− 2（上映射）= 341 例 | 逐字节零改动复跑全绿 | — |
+
+vitest 345 → 364（+19：MemoryPane.spec.ts 纯新文件；七态全覆盖 + toast M30~M36 逐字 + 预览同源 + 停用冻结 + 零乐观更新重取 + 顺序纪律）。
+
+### §4 走查中发现并当轮修复的缺陷
+
+**DEF-037（Esc 双重消费，当轮修复，已登记 plans/defects.md）**：首轮走查条 20 FAIL——编辑态 Esc 取消编辑的同时连带关闭设置弹窗。根因 = textarea 本地 `@keydown.esc` 与遮罩层 onModalKey Esc 链双重消费（本地先取消、冒泡后链继续下探关弹窗）。修复 = 移除本地监听，Esc 统一走 onModalKey → `memPane.cancelEditing()` 单一消费点；复验 PASS。
+
+另两处走查脚本侧修正（非产品缺陷，登记防复发）：暗色主题 localStorage 键名为 `ai-chat-theme`（非 `ai-chat:theme`）；trim 空断言改编程式置空 + input 事件（避免无头浏览器选区键序不稳定）。
+
+### §5 全局回归基线 C 面收口（REQ-042/043 全量 + RTM 独立行）
+
+- **pytest 312 全绿**（iter-16 终态 282 + T2 新增 30；既有 282 例仅迁移版本位断言 9→10 一处演进映射）+ ruff clean
+- **vitest 364 全绿**（iter-16 终态 345 + T3 新增 19；改写映射 2 处登记如上）+ vue-tsc clean + guard:style 通过 + 生产构建通过
+- **走查 34 PASS / 0 FAIL**（真实 Chrome + 真实后端，§2）
+- quota.py 与 usage_daily 数据面零改动（定夺③双轨）；client.ts/sessions.ts 回合数据面零改动（REQ-042 验收 6）；REQ-028 拦截链与既有五分区口径字节级零变化（定夺⑧）
+- C 面收口结论：基线 v7 全量达成基础上的 C 期增量全绿、存量零回退、功能性删除为零、度量机器采集（铁律 5）——RTM 全局回归基线行 C 面勾验为全期达成
