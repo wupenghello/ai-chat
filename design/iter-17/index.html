@@ -1,0 +1,1208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-chat · iter-17 设计稿（C「AI 的记忆」设置分区，已基线）</title>
+<!--
+  ============================================================
+  ai-chat 迭代 17 T1 设计稿（设计稿即页面骨架，开发对照实现）
+  依据（逐条登记）：
+  1. projects/ai-chat/plans/iter-17.md T1 行（验收合同）：
+     分区页七态形态与样件文案定死（逐字断言面 v1.4.10 B）——列表 / 编辑 / 删除确认 /
+     整体停用（停用态明示语义文案）/ 注入文案预览块（逐字 = 实际组装注入内容含 <user_memory>
+     包裹，CHG-011 定夺⑨）/ 空态（含「记忆在对话中自动沉淀」说明）/ 加载失败态（沿
+     settings bootFailed/retryBoot 先例）；记忆管理 API 口径章节随稿定案（GET /api/memory /
+     PUT /api/memory/{id} / DELETE /api/memory/{id} / PUT /api/memory/settings，错误形态沿
+     sessions.py 404/409 detail 形状先例）；走查清单随稿（亮/暗双主题 + 几何断言面 v1.4.11 B、
+     行为断言面适用项 v1.4.13 B = REQ-043 验收 6 断言面）；REQ-028 既有五分区口径零回退锚点
+     逐条映射 design-iter-11 §7.2 走查编号（#37~45 设置弹窗面）
+  2. requirements/spec.md（req-baseline-v8）：REQ-043 全文（主流程 3 步 + 异常分支 4 条 +
+     验收 6 条：分区可达 / 查看编辑删除闭环 / 整体停用 / 注入可见逐字一致 / 归属隔离 404 /
+     design-iter-17 走查留档）；REQ-028（设置弹窗容器机制：720px 模态、左导航 168px
+     role=tablist 方向键、未保存拦截、Esc/遮罩/关闭钮、locateAdv 直达——本稿第六分区复用
+     该机制、口径零变化；CHG-011 正式改写已定序：外观 / 密钥模式 / 高级设置 / 对话设置 /
+     AI 的记忆 / 账号）
+  3. requirements/changes.md CHG-011（已批准 2026-08-20，基线 req-baseline-v8）：
+     内容 3.7（记忆管理 API 框架口径：四端点 + 用户 token scope 归属隔离 + 注入预览 =
+     组装时点逐字同源取值）；定夺⑥（整体一键停用必做、单条停用本期不做）；
+     定夺⑦（设置弹窗第六分区，复用 REQ-028 容器与分区导航机制）；
+     定夺⑨（记忆页展示实际注入文案逐字预览含包裹标签、回合内不提示）；
+     定夺⑩（REQ-044 不立项——admin 面不在本期，本稿零 admin 元素）
+  4. plans/iter-17-verify.md §5（T0 注入文案定稿，注入预览逐字同源依据）：
+     <user_memory> + 说明行「以下是关于用户的长期记忆（自动从历史对话抽取），回复时作为
+     用户背景参考：」+ 条目编号行 + </user_memory>；记忆条目上限口径（T0 收紧定案）：
+     30 条 × 单条 ≤150 字（§3 体量复核四点实测支撑）
+  5. design/iter-16/ + design/iter-15/（已基线）：交付体例范本（依据逐条 / 范围与不做 /
+     触点章节 / 样件文案逐字登记表 / API 口径章节 / 零回退映射 / 令牌卫生评估 / 走查清单 /
+     CEO 定夺项 / 基线声明）；design/iter-11/index.html（已基线）：设置弹窗容器规格
+     （§4 + §7.2 走查 37~45 = 弹窗面零回退基线，本稿零回退映射列「iter-11#」）
+  6. 现状实现取证（逐项核实）：src/components/SettingsForm.vue（TABS 五分区结构 L30-36、
+     showPane 机制 L51-59、onNavKey 方向键循环 L61-68、isDirty 未保存判定 L97-99、
+     onModalKey Esc 链 L116-128、bootFailed/retryBoot 重试先例 L246-257、
+     ConfirmModal 档案删除复用先例 L690-697）；src/components/ToggleSwitch.vue
+     （components.md v1.3 开关形态：36×20 轨道 + 16px 白滑块）；
+     src/components/ConfirmModal.vue（360px alertdialog + danger-solid 确认钮 + Esc/遮罩取消）；
+     backend/app/routers/sessions.py（409 detail {code,message} 形状先例 session_schema_conflict
+     L60-66 + DELETE 返回 {"detail":"deleted"} 形状先例 L91）
+  7. 公司设计规范 design-system/tokens.md v1.3/v1.3.1 + components.md v1.4：只用既有令牌，
+     零新增令牌、零自造色值、零新增组件形态（硬约束，自查结论 §8 评估表）
+  视觉基调（CEO 已定，不得偏离）：延续 iter-9/11/12/15/16——页面灰底 --c-bg、内容白卡
+     --c-surface、主色飞书蓝 #3370FF（暗色前景 #5C8DFF）。本稿 = 设置弹窗 TABS 加法第六项，
+     弹窗容器（720×560、左导航 168px、Esc/遮罩/未保存拦截）口径零变化；
+     注入预览用代码块族令牌（--c-code-bg/--c-code-text 既有）承载「逐字注入」语义。
+  硬约束落实：REQ-028 既有五分区与 REQ-007「前往高级设置」直达验收口径全部保留
+     （§6 映射 + §7 条 1~9 复跑）；单条停用不做（CHG-011 定夺⑥）；admin 抽取卡不画
+     （定夺⑩不立项）；手动新增记忆入口不做（API 框架无 POST 端点，CHG-011 内容 3.7）；
+     注入预览前端零本地拼装（= GET /api/memory injection_preview 字段逐字，单一链路）；
+     样件数据全为虚构（铁律 5）。
+  状态：已基线（design-iter-17，2026-08-20 CEO「批准，全部按推荐」；tag design-iter-17）。设计师只产出，
+     不打 tag、不做 git 操作、不改 spec/RTM（批准后由主会话执行基线动作——任务边界）。
+  可交互：右上「演示控制」一键亮/暗 + 分区数据态切换（有记忆 / 空态 / 加载失败）+
+     操作结果场景（成功 / 失败）；§1 主样件可真实操作——六分区导航切换、条目编辑
+     （150 字计数）、删除确认（ConfirmModal 形态）、停用开关、注入预览折叠展开、
+     失败重试。零外部依赖，双击即开。
+  ============================================================
+-->
+<style>
+/* ============================================================
+   一、文档外壳（说明页自身，浅色固定，不随演示切换；色值 = tokens 浅色原值，沿 iter-5~16 惯例）
+   ============================================================ */
+:root { --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-full: 999px; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-size: 14px; line-height: 1.6; color: #1F2329; background: #F5F6F7; padding: 40px 32px 80px;
+}
+.page { max-width: 1160px; margin: 0 auto; }
+h1 { font-size: 20px; font-weight: 600; }
+.sub { font-size: 13px; color: #8F959E; margin: 4px 0 8px; }
+.sub b { color: #646A73; }
+.badge {
+  display: inline-block; padding: 1px 10px; border-radius: var(--r-full);
+  font-size: 12px; font-weight: 500; background: #FFF7E8; color: #B45309; margin-bottom: 24px;
+}
+section { margin-bottom: 48px; }
+h2 { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+h2 .no { color: #3370FF; margin-right: 4px; }
+.sec-desc { font-size: 13px; color: #8F959E; margin-bottom: 16px; }
+.sec-desc b { color: #646A73; }
+
+table { width: 100%; border-collapse: collapse; background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-md); overflow: hidden; font-size: 13px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #E5E6EB; vertical-align: top; }
+th { color: #8F959E; font-weight: 500; background: #FAFBFC; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+td code, li code, .ann code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; background: #F2F3F5; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
+pre { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; background: #F2F3F5; border: 1px solid #E5E6EB; border-radius: var(--r-md); padding: 10px 14px; overflow: auto; line-height: 1.7; color: #1F2329; margin: 8px 0 0; }
+pre code { background: none; padding: 0; white-space: pre; }
+
+.spec { background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-lg); padding: 24px; box-shadow: 0 1px 2px rgba(31,35,41,.06); margin-bottom: 16px; }
+.spec-title { font-size: 13px; font-weight: 600; color: #646A73; margin-bottom: 12px; }
+.spec-title .tag { font-weight: 400; color: #8F959E; margin-left: 8px; }
+.stage { border: 1px dashed #E5E6EB; border-radius: var(--r-md); padding: 16px; background: #F5F6F7; }
+.ann { font-size: 12px; color: #8F959E; margin-top: 8px; line-height: 1.8; }
+.ann b { color: #646A73; font-weight: 600; }
+.sim-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; font-size: 12px; color: #646A73; margin-bottom: 12px; }
+.sim-row label { cursor: pointer; white-space: nowrap; }
+.frame-cap { text-align: center; font-size: 12px; color: #8F959E; margin-bottom: 8px; }
+.cols { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+.cols > div { flex: 1; min-width: 340px; max-width: 600px; }
+
+/* ---- 演示控制条（文档功能件，非产品组件） ---- */
+.demo-ctl {
+  position: sticky; top: 0; z-index: 500; display: flex; align-items: center; gap: 12px;
+  background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-md);
+  padding: 10px 16px; margin-bottom: 32px; box-shadow: 0 1px 2px rgba(31,35,41,.06);
+  font-size: 13px; color: #646A73; flex-wrap: wrap;
+}
+.demo-ctl .seg { display: inline-flex; border: 1px solid #E5E6EB; border-radius: var(--r-md); overflow: hidden; }
+.demo-ctl .seg button {
+  height: 30px; padding: 0 14px; border: none; background: #FFFFFF; color: #646A73;
+  font-size: 13px; cursor: pointer; transition: background .15s ease, color .15s ease;
+}
+.demo-ctl .seg button.on { background: #3370FF; color: #fff; font-weight: 600; }
+.demo-ctl .note { font-size: 12px; color: #8F959E; }
+
+/* ============================================================
+   二、演示令牌作用域 .tk（组件全部引用 var()，同 src 范式；浅 = tokens v1.3 浅值，暗 = v1.3 暗值，零自造）
+   ============================================================ */
+.tk {
+  --c-bg: #F5F6F7; --c-surface: #FFFFFF; --c-border: #E5E6EB;
+  --c-text-1: #1F2329; --c-text-2: #646A73; --c-text-3: #8F959E;
+  --c-primary: #3370FF; --c-primary-h: #2E5FDF; --c-primary-a: #2860D8; --c-primary-l: #F0F4FF;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #2E5FDF; --c-primary-solid-a: #2860D8;
+  --c-danger: #D93025; --c-danger-l: #FDECEA; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #1A9E5C; --c-success-on-dark: #4CC38A;
+  --c-warning: #B45309; --c-warning-l: #FFF7E8;
+  --c-code-head: #23272E; --c-code-bg: #2B303A; --c-code-head-text: #9AA4B2; --c-code-text: #E6EAF0;
+  --c-hover-bg: #F2F3F5; --c-disabled-bg: #C9CFDB; --c-subtle-bg: #FAFBFC;
+  --c-avatar-bg: #E8EBF2; --c-scrollbar: #D5D9E0;
+  --c-toast-bg: #23272E; --c-toast-border: #23272E; --c-primary-on-dark: #A3BCFF;
+  --c-mask: rgba(31,35,41,.4); --c-focus-ring: rgba(51,112,255,.12);
+  --shadow-1: 0 1px 2px rgba(31,35,41,.06);
+  --shadow-2: 0 4px 16px rgba(31,35,41,.10);
+  --shadow-3: 0 12px 40px rgba(31,35,41,.16);
+  color: var(--c-text-1);
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+.tk.dark {
+  --c-bg: #131417; --c-surface: #1E2026; --c-border: #33363E;
+  --c-text-1: #E6EAF0; --c-text-2: #A2A9B6; --c-text-3: #808896;
+  --c-primary: #5C8DFF; --c-primary-h: #7AA4FF; --c-primary-a: #4C84FF; --c-primary-l: #1D2740;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #4C84FF; --c-primary-solid-a: #3D78FF;
+  --c-danger: #FF8073; --c-danger-l: #361B18; --c-danger-solid: #D93025; --c-danger-solid-h: #B7251C;
+  --c-success: #4CC38A;
+  --c-warning: #EDA23B; --c-warning-l: #38290F;
+  --c-code-head: #141518; --c-code-bg: #191B20; --c-code-head-text: #9AA4B2; --c-code-text: #E6EAF0;
+  --c-hover-bg: #262930; --c-disabled-bg: #3D414A; --c-subtle-bg: #24272E;
+  --c-avatar-bg: #33363E; --c-scrollbar: #3A3E46;
+  --c-toast-bg: #2A2D34; --c-toast-border: #33363E; --c-primary-on-dark: #A3BCFF;
+  --c-mask: rgba(0,0,0,.55); --c-focus-ring: rgba(92,141,255,.25);
+  --shadow-1: 0 1px 2px rgba(0,0,0,.4);
+  --shadow-2: 0 4px 16px rgba(0,0,0,.45);
+  --shadow-3: 0 12px 40px rgba(0,0,0,.6);
+}
+.tk.force-light {
+  --c-bg: #F5F6F7; --c-surface: #FFFFFF; --c-border: #E5E6EB;
+  --c-text-1: #1F2329; --c-text-2: #646A73; --c-text-3: #8F959E;
+  --c-primary: #3370FF; --c-primary-h: #2E5FDF; --c-primary-a: #2860D8; --c-primary-l: #F0F4FF;
+  --c-primary-solid: #3370FF;
+  --c-danger: #D93025; --c-danger-l: #FDECEA;
+  --c-success: #1A9E5C;
+  --c-warning: #B45309; --c-warning-l: #FFF7E8;
+  --c-code-bg: #2B303A; --c-code-text: #E6EAF0;
+  --c-hover-bg: #F2F3F5; --c-subtle-bg: #FAFBFC; --c-avatar-bg: #E8EBF2;
+  --c-toast-bg: #23272E; --c-toast-border: #23272E;
+  --shadow-1: 0 1px 2px rgba(31,35,41,.06); --shadow-2: 0 4px 16px rgba(31,35,41,.10);
+  color: var(--c-text-1);
+}
+.tk.force-dark {
+  --c-bg: #131417; --c-surface: #1E2026; --c-border: #33363E;
+  --c-text-1: #E6EAF0; --c-text-2: #A2A9B6; --c-text-3: #808896;
+  --c-primary: #5C8DFF; --c-primary-h: #7AA4FF; --c-primary-l: #1D2740;
+  --c-primary-solid: #3370FF;
+  --c-danger: #FF8073; --c-danger-l: #361B18;
+  --c-success: #4CC38A;
+  --c-warning: #EDA23B; --c-warning-l: #38290F;
+  --c-code-bg: #191B20; --c-code-text: #E6EAF0;
+  --c-hover-bg: #262930; --c-subtle-bg: #24272E; --c-avatar-bg: #33363E;
+  --c-toast-bg: #2A2D34; --c-toast-border: #33363E;
+  --shadow-1: 0 1px 2px rgba(0,0,0,.4); --shadow-2: 0 4px 16px rgba(0,0,0,.45);
+  color: var(--c-text-1);
+}
+
+/* ============================================================
+   三、产品组件样式（全部 var() 引用，零裸色值）
+   3a. 主界面衬景（静态，弹窗背后的应用骨架）
+   3b. 设置弹窗容器（REQ-028 / design-iter-11 基线承载，参数沿 SettingsForm.vue 取证）
+   3c. 「AI 的记忆」分区（本稿新增面：列表 / 编辑 / 停用 / 预览 / 空态 / 失败态）
+   3d. 内层确认模态（ConfirmModal 现状形态照搬）+ toast
+   ============================================================ */
+
+/* ---- 3a. 主界面衬景 ---- */
+.app-stage { position: relative; border: 1px solid var(--c-border); border-radius: var(--r-lg); overflow: hidden; background: var(--c-bg); }
+.bg-app { display: flex; height: 640px; }
+.bg-side { width: 264px; flex: none; background: var(--c-bg); border-right: 1px solid var(--c-border); padding: 12px 8px; }
+.bg-brand { display: flex; align-items: center; gap: 8px; padding: 0 10px 12px; font-size: 15px; font-weight: 600; color: var(--c-text-1); }
+.bg-new { margin: 0 2px 10px; height: 36px; border: none; border-radius: var(--r-md); background: var(--c-primary-solid); color: #fff; font-size: 13px; font-weight: 600; font-family: inherit; }
+.bg-row { height: 34px; border-radius: 8px; padding: 6px 10px; font-size: 13px; color: var(--c-text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bg-row.on { background: var(--c-primary-l); color: var(--c-primary); }
+.bg-gh { font-size: 12px; color: var(--c-text-3); padding: 12px 10px 4px; }
+.bg-main { flex: 1; background: var(--c-surface); display: flex; flex-direction: column; padding: 24px 32px; gap: 16px; }
+.bg-mu { align-self: flex-end; max-width: 70%; background: var(--c-avatar-bg); color: var(--c-text-1); font-size: 15px; line-height: 1.75; padding: 10px 14px; border-radius: 12px 12px 4px 12px; }
+.bg-ma { font-size: 15px; line-height: 1.75; color: var(--c-text-1); max-width: 712px; }
+
+/* ---- 3b. 设置弹窗容器（720×560 固定，z-100；参数逐字沿 SettingsForm.vue / design-iter-11 §4） ---- */
+.settings-mask { position: absolute; inset: 0; background: var(--c-mask); display: flex; align-items: center; justify-content: center; z-index: 100; animation: smask-in .15s ease; }
+@keyframes smask-in { from { opacity: 0; } }
+.settings-modal { position: relative; width: 720px; max-width: calc(100% - 32px); height: 560px; max-height: calc(100% - 32px); display: flex; flex-direction: column; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px; box-shadow: var(--shadow-3); overflow: hidden; animation: smodal-in .15s ease; }
+@keyframes smodal-in { from { opacity: 0; transform: scale(.98); } }
+.sm-head { flex: none; display: flex; align-items: center; gap: 12px; padding: 14px 16px 14px 24px; border-bottom: 1px solid var(--c-border); }
+.sm-title { font-size: 17px; font-weight: 600; color: var(--c-text-1); }
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; border-radius: 6px; background: none; color: var(--c-text-3); cursor: pointer; transition: background .15s ease, color .15s ease; }
+.icon-btn:hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+.sm-close { margin-left: auto; }
+.sm-body { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+.sm-nav { flex: none; width: 168px; border-right: 1px solid var(--c-border); background: var(--c-subtle-bg); padding: 12px 8px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+.sm-nav button { display: flex; align-items: center; height: 36px; padding: 0 12px; border: none; border-radius: 8px; background: none; font-size: 13px; font-family: inherit; color: var(--c-text-2); cursor: pointer; text-align: left; transition: background .15s ease, color .15s ease; white-space: nowrap; }
+.sm-nav button:hover { background: var(--c-hover-bg); color: var(--c-text-1); }
+.sm-nav button.on { background: var(--c-primary-l); color: var(--c-primary); font-weight: 500; }
+.sm-pane { flex: 1; min-width: 0; overflow-y: auto; padding: 16px 24px 24px; scrollbar-width: thin; scrollbar-color: var(--c-scrollbar) transparent; }
+.pane-label { font-size: 14px; font-weight: 600; color: var(--c-text-1); margin: 4px 0 0; }
+.pane-ph { margin-top: 12px; border: 1px dashed var(--c-border); border-radius: var(--r-md); padding: 24px 16px; font-size: 12px; color: var(--c-text-3); text-align: center; line-height: 1.8; }
+
+/* ---- 3c. 「AI 的记忆」分区 ---- */
+.mem-note { margin: 8px 0 12px; font-size: 12px; line-height: 1.7; color: var(--c-text-3); }
+/* 停用开关行（subtle 底行容器，沿 tools-field 家族参数：padding 12px + border + r-md） */
+.mem-swrow { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--c-border); border-radius: 8px; background: var(--c-subtle-bg); }
+.mem-swrow .sw-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mem-swrow .sw-t { font-size: 13px; font-weight: 500; color: var(--c-text-1); }
+.mem-swrow .sw-d { font-size: 12px; color: var(--c-text-3); }
+/* 开关（ToggleSwitch 现状形态逐参数照搬：36×20 轨道 + 16px 白滑块 + 1px border + shadow-1） */
+.tsw { position: relative; flex: none; width: 36px; height: 20px; padding: 0; border: none; border-radius: 999px; background: var(--c-hover-bg); cursor: pointer; transition: background .15s ease; font-family: inherit; }
+.tsw::after { content: ''; position: absolute; top: 1.5px; left: 1.5px; width: 16px; height: 16px; box-sizing: border-box; border-radius: 50%; background: #fff; border: 1px solid var(--c-border); box-shadow: var(--shadow-1); transition: transform .15s ease; }
+.tsw.on { background: var(--c-primary-solid); }
+.tsw.on::after { transform: translateX(16px); }
+.tsw:disabled { cursor: not-allowed; opacity: .45; }
+/* 停用通知条（warning 族 = 注意语义，非错误） */
+.mem-warnbar { display: flex; gap: 8px; align-items: flex-start; background: var(--c-warning-l); color: var(--c-warning); border-radius: var(--r-md); padding: 8px 12px; font-size: 12px; line-height: 1.7; margin-top: 12px; }
+.mem-warnbar .wb-ico { flex: none; font-weight: 600; }
+/* 列表头 */
+.mem-listhead { display: flex; align-items: baseline; gap: 8px; margin: 16px 0 8px; }
+.mem-listhead .lh-t { font-size: 13px; font-weight: 600; color: var(--c-text-2); }
+.mem-listhead .lh-n { font-size: 12px; color: var(--c-text-3); font-variant-numeric: tabular-nums; }
+/* 条目卡（profile-item 家族参数：padding 10px 12px + 1px border + r-md；卡间距 8px） */
+.mem-list { display: flex; flex-direction: column; gap: 8px; }
+.mem-list.off { opacity: .45; }
+.mem-item { display: grid; grid-template-columns: 20px minmax(0,1fr) auto; gap: 8px; padding: 10px 12px; border: 1px solid var(--c-border); border-radius: 8px; background: var(--c-surface); align-items: start; }
+.mem-item.editing { border-color: var(--c-primary); }
+.mem-num { font-size: 12px; color: var(--c-text-3); font-variant-numeric: tabular-nums; line-height: 1.9; }
+.mem-text { font-size: 13px; color: var(--c-text-1); line-height: 1.6; overflow-wrap: anywhere; }
+.mem-meta { font-size: 12px; color: var(--c-text-3); margin-top: 4px; line-height: 1.6; }
+.mem-ops { display: flex; gap: 2px; }
+/* 条目操作图标钮（p-icon 家族：26px r-sm text-3，hover hover-bg + text-1；删除 hover danger） */
+.p-icon { flex: none; width: 26px; height: 26px; border: none; border-radius: 6px; background: transparent; color: var(--c-text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .15s ease, color .15s ease; }
+.p-icon:hover:not(:disabled) { background: var(--c-hover-bg); color: var(--c-text-1); }
+.p-icon.danger:hover:not(:disabled) { background: var(--c-danger-l); color: var(--c-danger); }
+.p-icon:disabled { opacity: .35; cursor: not-allowed; }
+/* 行内编辑（textarea = prompt-ta 家族收窄：13px 字号 + focus 主色描边 + 3px focus-ring） */
+.mem-ta { width: 100%; min-height: 64px; max-height: 160px; resize: vertical; border: 1px solid var(--c-border); border-radius: 8px; padding: 8px 12px; font-size: 13px; line-height: 1.6; font-family: inherit; color: var(--c-text-1); background: var(--c-surface); outline: none; transition: border-color .15s ease, box-shadow .15s ease; }
+.mem-ta:focus { border-color: var(--c-primary); box-shadow: 3px 3px 0 var(--c-focus-ring); }
+.mem-count { font-size: 12px; color: var(--c-text-3); text-align: right; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.mem-count.over { color: var(--c-danger); }
+.mem-err { font-size: 12px; color: var(--c-danger); margin-top: 2px; }
+.mem-editops { display: flex; gap: 8px; margin-top: 8px; justify-content: flex-end; }
+.s-btn { height: 26px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--c-border); background: transparent; color: var(--c-text-2); font-size: 12px; font-family: inherit; cursor: pointer; transition: border-color .15s ease, color .15s ease, background .15s ease; }
+.s-btn:hover:not(:disabled) { border-color: var(--c-primary); color: var(--c-primary); }
+.s-btn:disabled { opacity: .35; cursor: not-allowed; }
+.s-btn.primary { border-color: var(--c-primary); background: var(--c-primary-solid); color: #fff; }
+.s-btn.primary:hover:not(:disabled) { background: var(--c-primary-solid-h); color: #fff; }
+/* 空态 / 加载失败（p-empty 家族：1px dashed + 13px text-3 居中） */
+.mem-empty, .mem-fail { padding: 24px 16px; font-size: 13px; color: var(--c-text-3); text-align: center; border: 1px dashed var(--c-border); border-radius: 8px; line-height: 1.8; }
+.mem-empty .me-t, .mem-fail .me-t { font-weight: 500; color: var(--c-text-2); }
+.retry-btn { display: inline-flex; align-items: center; height: 26px; padding: 0 14px; margin-top: 8px; border: 1px solid var(--c-border); border-radius: 6px; background: transparent; color: var(--c-text-2); font-size: 12px; font-family: inherit; cursor: pointer; transition: border-color .15s ease, color .15s ease; }
+.retry-btn:hover:not(:disabled) { border-color: var(--c-primary); color: var(--c-primary); }
+.retry-btn:disabled { opacity: .5; cursor: not-allowed; }
+/* 注入预览块（折叠 + 代码块族令牌承载「逐字注入」语义） */
+.mem-preview { margin-top: 16px; border: 1px solid var(--c-border); border-radius: var(--r-md); overflow: hidden; background: var(--c-surface); }
+.mp-head { display: flex; align-items: center; gap: 6px; width: 100%; padding: 10px 12px; background: var(--c-subtle-bg); border: none; font-size: 13px; font-weight: 500; font-family: inherit; color: var(--c-text-1); cursor: pointer; text-align: left; }
+.mp-head .mp-chev { flex: none; display: inline-flex; color: var(--c-text-3); transition: transform .15s ease; }
+.mp-head.open .mp-chev { transform: rotate(90deg); }
+.mp-head .mp-sub { font-size: 12px; font-weight: 400; color: var(--c-text-3); margin-left: auto; }
+.mp-body { padding: 12px; background: var(--c-code-bg); color: var(--c-code-text); font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--c-scrollbar) transparent; }
+.mp-line { padding: 12px; font-size: 12px; color: var(--c-text-3); line-height: 1.7; }
+
+/* ---- 3d. 内层确认模态（ConfirmModal 现状形态：360px + 标题 17px + 正文 14px text-2 + 32px 钮）+ toast ---- */
+.confirm-mask { position: absolute; inset: 0; background: var(--c-mask); display: flex; align-items: center; justify-content: center; z-index: 150; animation: smask-in .15s ease; }
+.confirm-modal { width: 360px; max-width: calc(100% - 48px); background: var(--c-surface); border-radius: 12px; box-shadow: var(--shadow-3); padding: 24px; }
+.cm-title { margin: 0 0 8px; font-size: 17px; color: var(--c-text-1); font-weight: 600; }
+.cm-body { margin: 0 0 20px; font-size: 14px; line-height: 1.6; color: var(--c-text-2); }
+.cm-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.cm-btn { height: 32px; padding: 0 16px; border-radius: 6px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-1); font-size: 13px; font-family: inherit; cursor: pointer; transition: background .15s ease; }
+.cm-btn:hover { background: var(--c-hover-bg); }
+.cm-btn.danger { border-color: var(--c-danger); background: var(--c-danger-solid); color: #fff; font-weight: 600; }
+.toast-wrap { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 200; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
+.toast { pointer-events: auto; display: flex; align-items: center; gap: 12px; background: var(--c-toast-bg); border: 1px solid var(--c-toast-border); color: #fff; font-size: 13px; padding: 10px 14px; border-radius: 8px; box-shadow: var(--shadow-2); animation: tin .25s ease; }
+@keyframes tin { from { opacity: 0; transform: translateY(-8px); } }
+.toast .t-msg.success { color: var(--c-success-on-dark); font-weight: 600; }
+.open-again { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 90; }
+.open-again button { height: 36px; padding: 0 20px; border: none; border-radius: var(--r-md); background: var(--c-primary-solid); color: #fff; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; }
+.open-again button:hover { background: var(--c-primary-solid-h); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>ai-chat · iter-17 设计稿（C 五层记忆体系 · 「AI 的记忆」设置分区 REQ-043）</h1>
+  <div class="sub">
+    依据：<b>plans/iter-17.md</b> T1（分区页七态形态与样件文案定死 + 记忆管理 API 口径随稿定案 +
+    走查清单随稿 + REQ-028 五分区零回退映射）· <b>req-baseline-v8</b> REQ-043（验收 6 条）/
+    REQ-028（弹窗容器机制零变化，CHG-011 改写已定序六分区）·
+    <b>CHG-011</b> 内容 3.7（API 框架口径）/ 定夺⑥（整体停用必做、单条停用不做）/
+    定夺⑦（设置弹窗第六分区）/ 定夺⑨（注入逐字预览、回合内不提示）/ 定夺⑩（REQ-044 不立项，admin 面不在本期）·
+    注入预览逐字同源依据 = <b>plans/iter-17-verify.md §5</b>（T0 注入文案定稿）+ 上限口径 30 条 × ≤150 字（T0 §3 收紧定案）·
+    容器宿主 = <b>design-iter-11</b>（设置弹窗 §4 + §7.2 走查 37~45 = 弹窗面零回退基线）·
+    令牌全部来自 <b>design-system/tokens.md v1.3/v1.3.1 + components.md v1.4</b>，本稿<b>零新增令牌、零自造色值、零新增组件形态</b>（§8 评估表）
+  </div>
+  <div class="badge">状态：设计稿 iter-17 —— <b>已基线</b>（2026-08-20 CEO「批准，全部按推荐」；§8 八项定夺全部按推荐定案）</div>
+  <div style="font-size:12px;color:#3370FF;background:#F0F4FF;border:1px solid #E5E6EB;border-radius:8px;padding:8px 12px;margin:-12px 0 28px;line-height:1.7;">
+    <b>加法扩展纪律：</b>设置弹窗 TABS 5 → 6 项（既有五分区字段/逻辑/文案零变化，「只加容器项不改逻辑」）；
+    弹窗容器（720×560 / 左导航 168px / Esc / 遮罩 / 未保存拦截 / locateAdv 直达）口径<b>零变化</b>。
+    <b>注入预览前端零本地拼装</b>——恒为服务端 <code>injection_preview</code> 字段逐字（「看到的就是注入的」，单一链路）。
+    <b>样件内全部记忆条目为虚构演示数据（铁律 5）</b>；admin 抽取卡不画（定夺⑩不立项）。
+  </div>
+
+  <!-- 演示控制 -->
+  <div class="demo-ctl">
+    <b>演示控制：</b>
+    <span class="seg">
+      <button id="btnLight" class="on">浅色</button>
+      <button id="btnDark">暗色</button>
+    </span>
+    <span style="border-left:1px solid #E5E6EB;padding-left:16px;"><b>分区数据态：</b>
+      <label><input type="radio" name="memScene" value="normal" checked> 有记忆</label>
+      <label><input type="radio" name="memScene" value="empty"> 空态</label>
+      <label><input type="radio" name="memScene" value="failed"> 加载失败</label>
+    </span>
+    <span style="border-left:1px solid #E5E6EB;padding-left:16px;"><b>操作结果：</b>
+      <label><input type="radio" name="opResult" value="ok" checked> 成功</label>
+      <label><input type="radio" name="opResult" value="fail"> 失败</label>
+    </span>
+    <span class="note">§1 主样件可操作：六分区导航 / 行内编辑（150 字计数）/ 删除确认 / 停用开关 / 预览折叠。§5 锁定帧不随主题切换。</span>
+  </div>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">1</span>主样件：设置弹窗第六分区「AI 的记忆」（可交互 · 七态全覆盖）</h2>
+    <div class="sec-desc">
+      REQ-043 主流程：打开设置 →「AI 的记忆」分区 → 加载记忆列表 + 注入预览 + 停用状态 → 编辑 / 删除 / 整体停用。
+      分区 = CHG-011 定夺⑦定案（设置弹窗 TABS 加法第六项，复用 REQ-028 容器与分区导航机制）；
+      注入预览 = 定夺⑨定案（逐字 = 实际组装注入内容含包裹标签）；整体停用 = 定夺⑥定案（一键必做、单条停用不做）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.1 设置弹窗 ·「AI 的记忆」分区（可交互）<span class="tag">弹窗容器 iter-11 基线静态承载 + 分区七态可切换</span></div>
+      <div class="sim-row"><b>试：</b>左导航六项点击 / 方向键切换（「AI 的记忆」在对话设置之后、账号之前）→ 条目「编辑」出行内 textarea（试输 150 字看计数变红）→「删除」出确认模态 → 顶部开关停用看灰显与通知条 → 底部「注入内容预览」展开看逐字代码块。切「操作结果 = 失败」试三类失败 toast。</div>
+      <div class="stage">
+        <div class="tk app-stage" id="appFrame">
+          <!-- 主界面衬景（静态：弹窗背后应用骨架，本期零触达） -->
+          <div class="bg-app">
+            <aside class="bg-side">
+              <div class="bg-brand">
+                <svg viewBox="0 0 128 128" width="18" height="18" style="color:var(--c-primary)"><path fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" d="M 20 98 V 36 M 108 98 V 36 M 20 36 L 64 78 L 108 36 M 64 78 C 64 102 96 102 96 82"/></svg>
+                喵喵
+              </div>
+              <button class="bg-new">＋ 新建会话</button>
+              <div class="bg-gh">今天</div>
+              <div class="bg-row on">C 期记忆体系设计评审</div>
+              <div class="bg-row">周报草稿</div>
+              <div class="bg-gh">近 7 天</div>
+              <div class="bg-row">前端组件重构</div>
+              <div class="bg-row">架构升级评审</div>
+            </aside>
+            <main class="bg-main">
+              <div class="bg-mu">按我平时的偏好来，帮我起个 iter-17 的迭代目标。</div>
+              <div class="bg-ma">好的——按简洁中文、三段式结构的习惯起草（演示衬景：记忆注入后 AI 自然记得用户偏好；主对话面本期零触达，消息流/输入区/顶区零新增元素）。</div>
+            </main>
+          </div>
+
+          <!-- 设置弹窗（z-100，容器参数沿 design-iter-11 §4 零变化） -->
+          <div class="settings-mask" id="settingsMask">
+            <div class="settings-modal" role="dialog" aria-modal="true" aria-label="设置">
+              <header class="sm-head">
+                <div class="sm-title">设置</div>
+                <button type="button" class="icon-btn sm-close" id="btnClose" title="关闭设置" aria-label="关闭设置">
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                </button>
+              </header>
+              <div class="sm-body">
+                <nav class="sm-nav" role="tablist" aria-label="设置分区" id="smNav"></nav>
+                <div class="sm-pane" role="tabpanel" id="smPane"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 关闭后的重开入口（演示用） -->
+          <div class="open-again" id="openAgain" style="display:none;">
+            <button type="button">账户「···」→ 设置（点击重新打开弹窗）</button>
+          </div>
+
+          <div class="toast-wrap" id="toastWrap"></div>
+        </div>
+      </div>
+      <div class="ann">
+        <b>容器零变化（REQ-028 / design-iter-11 §4 逐参数承载）</b>：弹窗 720px × 固定高 560px（R2 定夺：不随内容跳变）+ 左导航 168px <code>--c-subtle-bg</code> 底 + 右分区面板（一次一个、独立滚动、padding 16px 24px 24px）+ 遮罩 <code>--c-mask</code> z-100 + r-lg 12px + shadow-3 + .15s 动效。
+        <b>分区序（CHG-011/REQ-028 改写定序）</b>：外观 / 密钥模式 / 高级设置 / 对话设置 / <b>AI 的记忆（加法第六项）</b> / 账号——导航项规格 36px/13px/r-md 8px，选中 <code>--c-primary-l</code> 底 + <code>--c-primary</code> 字/500；方向键循环含新项（onNavKey 取模机制零改动，TABS.length 5→6 自然涵盖）。
+        既有五分区样件以占位框引用（形态沿 design-iter-11 §4.1，本稿不重画——「只加容器项不改逻辑」，走查条 3）。
+        <b>Esc 链（onModalKey 加法插入点）</b>：未保存确认 &gt; 档案编辑模态 &gt; <b>记忆条目编辑（新：取消编辑）</b> &gt; 记忆删除确认（ConfirmModal 自带）&gt; 关闭弹窗；
+        <b>未保存拦截 dirty 判定链零变化</b>（提示词 + 改密字段；记忆编辑态不参与，定夺⑧推荐——拦截文案逐字面零回退）。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.2 分区页结构（自上而下，定夺①推荐）+ 关键几何参数</div>
+      <table>
+        <tr><th style="width:150px">区块</th><th>规格（令牌名标注）</th></tr>
+        <tr><td>① 标题 + 说明</td><td><code>section-label pane-label</code> 14px/600 <code>--c-text-1</code>（既有分区标题形态）；说明句 12px/1.7 <code>--c-text-3</code>（mode-note 家族）——说明句承担「下一回合生效」时效口径的常驻自释</td></tr>
+        <tr><td>② 停用开关行</td><td>行容器 = tools-field 家族参数（padding 12px + 1px <code>--c-border</code> + r-md 8px + <code>--c-subtle-bg</code> 底）；标题 13px/500 <code>--c-text-1</code> + 说明 12px <code>--c-text-3</code>；开关 = ToggleSwitch 组件零改动（components.md v1.3：36×20 轨道 / 16px 白滑块 / 开 = <code>--c-primary-solid</code> / 关 = <code>--c-hover-bg</code>）；停用后其下出通知条（<code>--c-warning-l</code> 底 + <code>--c-warning</code> 字，12px/1.7）</td></tr>
+        <tr><td>③ 记忆列表</td><td>列表头 = 「记忆条目」13px/600 <code>--c-text-2</code> + 计数 12px <code>--c-text-3</code> tabular-nums + title 上限口径；条目卡 = profile-item 家族参数（1px <code>--c-border</code> + r-md 8px + padding 10px 12px + <code>--c-surface</code> 底，卡间距 8px）；条目文本 13px/1.6 <code>--c-text-1</code> <b>全文展示不 ellipsis</b>（可检视优先，上限 150 字可控）；元信息 12px <code>--c-text-3</code>；操作 = p-icon 家族 26px 图标钮（编辑 hover <code>--c-hover-bg</code>/<code>--c-text-1</code>；删除 hover <code>--c-danger-l</code>/<code>--c-danger</code>）</td></tr>
+        <tr><td>④ 注入预览</td><td>折叠块置底：头行 <code>--c-subtle-bg</code> 底（button 语义 + chevron .15s 旋转）+ 标题 13px/500 + 说明 12px <code>--c-text-3</code>；展开区 = 代码块族令牌 <code>--c-code-bg</code> 底 + <code>--c-code-text</code> 字 + mono 12px/1.7 + pre-wrap + max-height 220px 内滚——深底代码语义承载「这是逐字注入物，不是界面文案」；默认折叠（定夺⑤推荐）</td></tr>
+      </table>
+      <div class="ann"><b>位置理由（定夺①）</b>：开关 = 分区级总闸置顶（停用语义影响其下全部区块的呈现）；列表 = 主任务居中；预览 = 证据链置底且默认折叠——30 条满载预览约 4.8k 字符，常显会把列表挤出首屏。<b>备选（未采纳）</b>：预览置顶常显（「注入可见」优先）——列表主任务被挤压，且可见性不因折叠受损（一次点击展开）。</div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">1.3 七态规格总表（只画理想路径不合格——异常态逐态定稿）</div>
+      <table>
+        <tr><th style="width:100px">态</th><th>触发（API 事实）</th><th>用户所见（= 验收口径）</th></tr>
+        <tr><td><b>列表态（主态）</b></td><td>GET 200 + entries 非空 + memory_enabled=1</td><td>开关行（开态）+ 列表头（共 N 条）+ 条目卡（文本全文 + 元信息 + 编辑/删除）+ 预览折叠块（可展开）</td></tr>
+        <tr><td><b>编辑态</b></td><td>用户点「编辑」（行内，定夺②推荐）</td><td>条目文本位换 textarea（焦点即入）+ 计数「N / 150」+ 取消/保存；保存 → PUT → 成功 toast + 整分区刷新（服务端取真）；达 150 字 → 计数变红 + 「最多 150 字」+ 保存禁用；trim 为空 → 保存禁用；Esc/取消 → 还原</td></tr>
+        <tr><td><b>删除确认</b></td><td>用户点「删除」（ConfirmModal 形态，定夺③推荐）</td><td>360px alertdialog：「删除这条记忆？」+「删除后 AI 将不再参考这条记忆，此操作不可撤销。」+ 取消/危险实底「删除」；Esc/遮罩 = 取消（ConfirmModal 既有行为）；确认 → DELETE → toast + 刷新</td></tr>
+        <tr><td><b>停用态</b></td><td>memory_enabled=0</td><td>开关行（关态）+ 通知条「记忆已停用：AI 不再参考任何记忆…」+ 列表<b>灰显 opacity .45 + 条目操作冻结</b>（定夺④推荐）+ 预览块显停用句（不呈现注入内容——没有注入发生，铁律 5）；toast M32</td></tr>
+        <tr><td><b>注入预览</b></td><td>injection_preview 非 null（启用且有条目）</td><td>折叠块展开 = <code>injection_preview</code> 字段<b>逐字</b>（含 <code>&lt;user_memory&gt;</code> 包裹标签与说明行）——前端零本地拼装；条目编号与列表顺序一一对应（GET entries 顺序 = 注入顺序）</td></tr>
+        <tr><td><b>空态</b></td><td>GET 200 + entries 空</td><td>开关行正常可用 + 虚线框「暂无记忆」+「记忆在对话中自动沉淀：对话结束后，AI 自动抽取关于你的身份、偏好与约定等值得记住的信息。」+ 预览块显空句「暂无记忆条目，暂无注入内容。」</td></tr>
+        <tr><td><b>加载失败态</b></td><td>GET 失败（后端不可达）</td><td>仅说明句 + 虚线框「记忆加载失败，请检查网络」+「重试」钮（沿 bootFailed/retryBoot 先例：可重入、成功即恢复）；<b>开关/列表/预览均不渲染</b>（状态未知不渲染控制件——不呈现无法反映事实的状态）</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">2</span>样件文案逐字登记表（v1.4.10 B 断言面 · 唯一来源）</h2>
+    <div class="sec-desc">本表为分区全部新增用户可见文案的<b>唯一来源</b>；走查逐字断言（§7 标「文」条目）对照本表，一字一符不差。模板位以「{…}」占位。注入预览内容本体不在此表——其逐字来源 = plans/iter-17-verify.md §5 模板（后端拥有，本稿同源引用不重造）。</div>
+    <div class="spec">
+      <table>
+        <tr><th style="width:44px">编号</th><th style="width:190px">位置</th><th>文案（逐字）</th></tr>
+        <tr><td>M1</td><td>左导航加法项</td><td><code>AI 的记忆</code></td></tr>
+        <tr><td>M2</td><td>分区标题</td><td><code>AI 的记忆</code></td></tr>
+        <tr><td>M3</td><td>分区说明句</td><td><code>记忆由对话自动沉淀，AI 在回复时参考；你的修改自下一回合起生效。</code></td></tr>
+        <tr><td>M4</td><td>开关行标题</td><td><code>AI 参考记忆</code></td></tr>
+        <tr><td>M5</td><td>开关 aria-label</td><td><code>AI 参考记忆开关</code></td></tr>
+        <tr><td>M6</td><td>停用通知条</td><td><code>记忆已停用：AI 不再参考任何记忆，也不再进行新的沉淀。已有记忆保留，重新启用即恢复。</code></td></tr>
+        <tr><td>M7</td><td>列表头</td><td><code>记忆条目</code></td></tr>
+        <tr><td>M8</td><td>列表计数</td><td>模板 <code>共 {N} 条</code></td></tr>
+        <tr><td>M9</td><td>列表头 title（上限口径）</td><td><code>上限 30 条，自动抽取超限时按上限截断</code></td></tr>
+        <tr><td>M10</td><td>元信息 · 自动抽取</td><td>模板 <code>自动抽取 ·「{会话名}」· 更新于 {YYYY-MM-DD}</code>（会话名 ellipsis，title 全文）</td></tr>
+        <tr><td>M11</td><td>元信息 · 自动抽取（来源会话已删）</td><td>模板 <code>自动抽取 · 更新于 {YYYY-MM-DD}</code></td></tr>
+        <tr><td>M12</td><td>元信息 · 手工编辑</td><td>模板 <code>手工编辑 · 更新于 {YYYY-MM-DD}</code>（PUT 编辑后来源归零的分支，§4.2）</td></tr>
+        <tr><td>M13</td><td>编辑按钮</td><td>title / aria-label <code>编辑记忆</code></td></tr>
+        <tr><td>M14</td><td>删除按钮</td><td>title / aria-label <code>删除记忆</code></td></tr>
+        <tr><td>M15</td><td>编辑计数</td><td>模板 <code>{N} / 150</code>（达上限转 <code>--c-danger</code> 色）</td></tr>
+        <tr><td>M16</td><td>编辑达上限提示</td><td><code>最多 150 字</code></td></tr>
+        <tr><td>M17</td><td>编辑取消钮</td><td><code>取消</code></td></tr>
+        <tr><td>M18</td><td>编辑保存钮</td><td><code>保存</code></td></tr>
+        <tr><td>M19</td><td>删除确认标题</td><td><code>删除这条记忆？</code></td></tr>
+        <tr><td>M20</td><td>删除确认正文</td><td><code>删除后 AI 将不再参考这条记忆，此操作不可撤销。</code></td></tr>
+        <tr><td>M21</td><td>删除确认钮</td><td><code>删除</code>（danger-solid 实底白字）</td></tr>
+        <tr><td>M22</td><td>预览头标题</td><td><code>注入内容预览</code></td></tr>
+        <tr><td>M23</td><td>预览头说明</td><td><code>所见即所注：以下文本在每个回合组装时逐字注入对话开头</code></td></tr>
+        <tr><td>M24</td><td>预览 · 停用句</td><td><code>记忆已停用，记忆内容不会注入对话。重新启用即恢复注入。</code></td></tr>
+        <tr><td>M25</td><td>预览 · 空句</td><td><code>暂无记忆条目，暂无注入内容。</code></td></tr>
+        <tr><td>M26</td><td>空态主文案</td><td><code>暂无记忆</code></td></tr>
+        <tr><td>M27</td><td>空态说明（含「自动沉淀」语义）</td><td><code>记忆在对话中自动沉淀：对话结束后，AI 自动抽取关于你的身份、偏好与约定等值得记住的信息。</code></td></tr>
+        <tr><td>M28</td><td>加载失败句</td><td><code>记忆加载失败，请检查网络</code></td></tr>
+        <tr><td>M29</td><td>重试钮</td><td><code>重试</code> / 重试中 <code>重试中…</code></td></tr>
+        <tr><td>M30</td><td>保存成功 toast（success 绿字）</td><td><code>✓ 记忆已保存，下一回合生效</code></td></tr>
+        <tr><td>M31</td><td>删除成功 toast（success 绿字）</td><td><code>✓ 记忆已删除，下一回合生效</code></td></tr>
+        <tr><td>M32</td><td>停用 toast</td><td><code>记忆已停用：AI 将不再参考任何记忆</code></td></tr>
+        <tr><td>M33</td><td>重新启用 toast（success 绿字）</td><td><code>✓ 记忆已重新启用，下一回合生效</code></td></tr>
+        <tr><td>M34</td><td>保存失败 toast</td><td><code>保存失败，请重试</code></td></tr>
+        <tr><td>M35</td><td>删除失败 toast</td><td><code>删除失败，请重试</code></td></tr>
+        <tr><td>M36</td><td>开关失败 toast</td><td><code>操作失败，请重试</code></td></tr>
+        <tr><td>M37</td><td>开关行说明（M4 之下）</td><td><code>开启后，AI 在每个回合回复时参考下方记忆</code></td></tr>
+      </table>
+      <div class="ann"><b>注入预览内容模板（同源引用，plans/iter-17-verify.md §5 逐字，后端拥有）</b>：<code>&lt;user_memory&gt;</code> + 换行 + <code>以下是关于用户的长期记忆（自动从历史对话抽取），回复时作为用户背景参考：</code> + 逐条 <code>{序号}. {条目}</code> + 换行 + <code>&lt;/user_memory&gt;</code>。
+      <b>toast 成功态形态</b>：✓ 前缀由调用方拼入 + success 变体绿字（沿 SettingsForm 改密/注销成功先例）；3s 自动消失（toast.ts 现状口径）。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">3</span>注入预览逐字核对（「看到的就是注入的」—— 定夺⑨）</h2>
+    <div class="sec-desc">REQ-043 验收 4 断言面：预览文案与组装注入内容逐字一致（含 <code>&lt;user_memory&gt;</code> 包裹，pytest/vitest 取值比对）。单一链路口径：<b>前端恒展示服务端 <code>injection_preview</code> 字段，零本地拼装</b>；服务端预览取值与回合组装共用同一拼装函数（组装时点逐字同源）。</div>
+    <div class="spec">
+      <div class="spec-title">3.1 样件预览全文（§1 主样件展开态的逐字内容，虚构样件数据）</div>
+      <pre><code>&lt;user_memory&gt;
+以下是关于用户的长期记忆（自动从历史对话抽取），回复时作为用户背景参考：
+1. 要求 AI 用简洁的中文回复，避免冗长解释，不使用表情符号。
+2. 与 AI 约定：周报按「本周完成 / 下周计划 / 风险」三段式输出。
+3. 写前端代码时偏好 Vue 3 组合式 API，主色遵循飞书蓝 #3370FF。
+4. 正在负责 ai-chat 产品迭代，重点是 agent 架构升级七期路线。
+5. 提交信息只写实际代码改动，不写流程叙事。
+&lt;/user_memory&gt;</code></pre>
+      <div class="ann">
+        <b>核对三项（走查条 24）</b>：① 包裹标签 <code>&lt;user_memory&gt;</code>/<code>&lt;/user_memory&gt;</code> 在预览中<b>可见</b>（不隐藏、不转义为装饰）——包裹是防注入机制的一部分，用户可见即真实；
+        ② 说明行逐字 = verify §5 定稿（模型语义锚点，后端拥有断言面）；③ 条目编号与列表顺序一一对应（GET entries 数组顺序 = 注入顺序 = 预览编号，前端不排序不改序）。
+        <b>变化联动</b>：编辑/删除/停用任一写操作成功后前端重取 GET /api/memory——预览随之刷新，永不出现「列表已改、预览仍旧」的陈旧态。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">4</span>API 口径（随稿定案——T2/T3 直接对照实现；体例沿 design-iter-14 §6 / design-iter-16 §5）</h2>
+    <div class="sec-desc">
+      硬门槛：既有全部端点形状零变化（turn/sessions/profiles/admin/settings/telemetry 逐字节不动，仅加法四个 memory 端点）。
+      框架口径 = CHG-011 内容 3.7；错误形态沿 sessions.py 404/409 detail 形状先例（<code>{code, message}</code>，client.ts 既有消费链路直接支持）。
+      鉴权 = 会话 token（CurrentUser 同款依赖）；user_id = token 身份，跨用户操作一律 404（归属隔离沿复合主键哲学，REQ-043 验收 5）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.1 GET /api/memory（列表 + 停用状态 + 注入预览，一次取全）</div>
+      <pre><code>GET /api/memory
+→ 200 {
+  "entries": [
+    {
+      "id": 1,
+      "content": "要求 AI 用简洁的中文回复，避免冗长解释，不使用表情符号。",
+      "source_session_id": "s_c7d2",            ← 抽取来源会话；用户手工编辑后归 null（§4.2）
+      "source_session_title": "迭代计划流程设计", ← 来源会话标题（组装时读会话档 title；会话已删 → null，UI 落 M11 分支）
+      "model": "deepseek-chat",                 ← 抽取模型（机器记录；手工编辑后归 null）
+      "created_at": "2026-08-19 21:04:11",
+      "updated_at": "2026-08-19 21:04:11"
+    }, …
+  ],
+  "memory_enabled": true,
+  "injection_preview": "&lt;user_memory&gt;\n以下是关于用户的长期记忆（自动从历史对话抽取），回复时作为用户背景参考：\n1. …\n&lt;/user_memory&gt;" | null
+}
+
+口径（定死）：
+  entries 数组顺序 = 注入组装顺序 = 预览编号顺序（一一对应；前端不排序）
+  injection_preview = 回合组装同一拼装函数的组装时点逐字取值（「看到的就是注入的」，定夺⑨）；
+  memory_enabled=0 或 entries 为空 → injection_preview = null（没有注入发生，不呈现注入物——铁律 5）
+  上限口径：entries ≤ 30 条、单条 ≤ 150 字（T0 收紧定案，verify §3；本端点只读，截断在抽取侧）
+→ 失败：网络/5xx → 前端落加载失败态（M28/M29，§4.5 消费规则）</code></pre>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.2 PUT /api/memory/{id}（条目编辑）与 DELETE /api/memory/{id}（条目删除）</div>
+      <pre><code>PUT /api/memory/{id}
+{ "content": "…" }                               ← body 仅此一字段
+→ 200 { "id": 1, "content": "…", "source_session_id": null, "source_session_title": null,
+        "model": null, "updated_at": "2026-08-20 10:31:02" }
+        手工编辑 = 条目转用户所有：来源与模型归零（UI 元信息落 M12「手工编辑」分支）；
+        注入预览不受影响（包裹与编号口径不变，仅内容逐字更新）
+→ 404 { "detail": { "code": "memory_not_found", "message": "记忆不存在" } }
+        不存在或属他人（归属隔离一律 404，不泄露归属）
+→ 422 { "detail": { "code": "memory_content_invalid", "message": "记忆内容不能为空，且不超过 150 字" } }
+        trim 为空 / 超 150 字（前端 maxlength 双保险，此为服务端唯一权威校验）
+
+DELETE /api/memory/{id}
+→ 200 { "detail": "deleted" }                    ← 形状沿 sessions.py DELETE 先例
+→ 404 memory_not_found（同上归属隔离）
+
+回合进行中编辑/删除：允许，无 409 竞态面——记忆非会话组装实体组成部分，
+注入在回合受理组装时点读库，本回合进行中的修改自下一回合生效（REQ-043 异常分支定案）。
+生效时效：编辑/删除/停用均自下一回合生效（组装读库时点天然涵盖，REQ-042 主流程 4）。</code></pre>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.3 PUT /api/memory/settings（整体停用开关）</div>
+      <pre><code>PUT /api/memory/settings
+{ "memory_enabled": false }
+→ 200 { "memory_enabled": false }
+→ 422 非法 body（缺字段 / 非布尔）
+
+语义（CHG-011 定夺⑥/REQ-042 异常分支）：
+  memory_enabled=0 → 注入跳过且后台扫描跳过（不新抽取）；存量记忆保留，重新启用即恢复注入。
+  停用零回退：组装与基线 v7 口径逐字段等价（REQ-042 验收 2，pytest 面，不在本稿呈现）。</code></pre>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.4 无 POST 端点（有意边界，登记防膨胀）</div>
+      <div class="ann" style="margin-top:0;">
+        CHG-011 内容 3.7 API 框架仅四端点（GET / PUT / DELETE / PUT settings）——<b>不提供手动新增记忆</b>：记忆的唯一来源 = 对话自动抽取（审核稿「自动沉淀」叙事），
+        「手工编辑」仅指对既有抽取条目的改写（PUT 后来源归零，M12 分支）；手动新增入口如未来需要走 CHG。本期 UI 无「添加记忆」按钮（走查条 34 反向断言）。
+      </div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">4.5 前端消费规则（定死，走查条 12/18/22/27 断言面）</div>
+      <table>
+        <tr><th style="width:220px">场景</th><th>前端动作</th></tr>
+        <tr><td>打开分区（pane 切入）</td><td>GET /api/memory → 成功渲染三态之一；失败 → 加载失败态（M28+M29）</td></tr>
+        <tr><td>重试</td><td>重发 GET（可重入，沿 retryBoot 先例）→ 成功恢复列表态；失败停留失败态（文案常驻，不重复 toast 打扰）</td></tr>
+        <tr><td>PUT 条目成功</td><td>toast M30（success）→ <b>重取 GET 整分区刷新</b>（列表 + 预览 + 开关态全部服务端取真；前端零本地拼装预览）</td></tr>
+        <tr><td>PUT 条目 422/404/其他失败</td><td>toast M34 → 重取 GET 恢复服务端真态（404 = 条目已在别处消失，以服务端为准）；编辑态关闭</td></tr>
+        <tr><td>DELETE 成功 / 失败</td><td>成功：toast M31 + 重取 GET；失败：toast M35 + 重取 GET（列表不变为兜底真态）</td></tr>
+        <tr><td>PUT settings 成功 / 失败</td><td>成功：toast M32/M33 + 重取 GET（停用态呈现以服务端 memory_enabled 为准）；失败：toast M36 + 重取 GET 回滚开关（不做乐观更新——状态真值唯一来源服务端）</td></tr>
+        <tr><td>请求在途</td><td>开关切换在途 → 开关 disabled 防重复；编辑保存在途 → 保存钮禁用；无全局 loading 遮罩（分区级轻操作）</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">5</span>亮暗锁定对照（双帧并置，走查方法 = 找亮色残留）</h2>
+    <div class="sec-desc">同一 DOM，仅根节点令牌覆盖；暗色帧内任何肉眼发白块即为漏改裸色值。本节锁定帧不随「演示控制」切换。双主题承载口径（v1.4.10 B）：浅色逐条 + 暗色全元素亮色残留扫描 + 关键文字令牌断言。</div>
+
+    <div class="spec">
+      <div class="spec-title">5.1 列表态 · 条目卡与操作（浅 ↔ 暗）</div>
+      <div class="cols" id="lockList"></div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">5.2 停用态 · 通知条 + 灰显列表（浅 ↔ 暗）</div>
+      <div class="cols" id="lockOff"></div>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">5.3 注入预览 · 代码块族令牌（浅 = #2B303A 底 / 暗 = #191B20 底，两模式均深底白字——逐字注入物语义恒定）</div>
+      <div class="cols" id="lockPrev"></div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">6</span>零回退映射（REQ-028 既有五分区 + REQ-007 直达，逐条对既有走查编号 · 复跑不改）</h2>
+    <div class="sec-desc">「iter-11#」= design/iter-11/index.html §7.2 走查编号（37~45 = 设置弹窗面基线）。本稿为加法扩展：<b>变的是 TABS 多一项与分区面板多一页，不变的是容器机制与既有五分区全部口径</b>。</div>
+    <div class="spec">
+      <table>
+        <tr><th style="width:250px">既有触点 / 口径</th><th style="width:130px">既有走查编号</th><th>本次处置</th></tr>
+        <tr><td>REQ-028 弹窗打开/尺寸/分区（720×560 固定高、左右分栏、遮罩 z-100、一次一面板独立滚动、切分区不丢表单状态）</td><td>iter-11#37</td><td><b>零变化</b>（§7 条 1）；分区数 5→6，导航方向键取模机制零改动自然涵盖新项</td></tr>
+        <tr><td>REQ-028 五分区完整（外观/密钥模式/高级设置/对话设置/账号字段与整页版一致，「只改容器不改逻辑」）</td><td>iter-11#38</td><td><b>零变化</b>（§7 条 3）：五分区字段/逻辑/文案零改动；「AI 的记忆」为第六加法分区</td></tr>
+        <tr><td>REQ-017 外观分段与全局主题同状态同存储</td><td>iter-11#39</td><td><b>零变化</b>（外观分区不受记忆加法影响）</td></tr>
+        <tr><td>REQ-028 关闭方式（Esc/遮罩/关闭钮三方式 + 焦点回触发入口 + 头部 sticky）</td><td>iter-11#40</td><td><b>零变化</b>（§7 条 5）；Esc 链加法插入点 = 记忆编辑态先取消编辑（新断言条 20，既有层级序不破）</td></tr>
+        <tr><td>REQ-028 未保存拦截（dirty = 提示词改动 + 改密字段非空 → 拦截确认）</td><td>iter-11#41</td><td><b>零变化</b>（§7 条 6）：判定链与拦截文案<b>字节级不变</b>——记忆编辑态不参与 dirty（定夺⑧推荐，关闭 = 取消编辑）</td></tr>
+        <tr><td>REQ-007 错误气泡「前往高级设置」直达（locateAdv 分区直达 + 高亮）</td><td>iter-11#42</td><td><b>零变化</b>（§7 条 7）：直达目标恒为高级设置分区，不误达记忆分区；iter-2 走查 15 场景复跑口径不动</td></tr>
+        <tr><td>REQ-021 内层级叠（注销/档案编辑内层模态 z-110+，Esc 先关最上层）</td><td>iter-11#43</td><td><b>延伸复跑</b>（§7 条 8）：记忆删除确认复用 ConfirmModal 现状组件（z-150 Teleport 形态零改动），Esc 栈行为带新消费者复跑</td></tr>
+        <tr><td>REQ-028 滚动行为（仅内容区滚动、内层模态开时外层不滚、窄屏不溢出）</td><td>iter-11#45</td><td><b>零变化</b>（§7 条 9）；记忆分区面板独立滚动（30 条满载列表 + 展开预览不撑破 560px 固定高）</td></tr>
+        <tr><td>亮暗双主题 / 样件数据虚构 / 适用性</td><td>iter-11#46~49</td><td><b>延伸复跑</b>（§7 条 32~34）</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">7</span>T1 验收对照 + 走查清单（v1.4.4 硬要求，T3 任务级门槛）</h2>
+    <div class="sec-desc">
+      7.1 对照 plans/iter-17.md T1 验收与 REQ-043 验收原文；7.2 走查清单 34 条——断言面标注：
+      <b>[文]</b> = 样件文案逐字（v1.4.10 B，对照 §2 登记表唯一来源）；<b>[几]</b> = 几何断言（v1.4.11 B，computed 值）；
+      <b>[行]</b> = 行为断言（v1.4.13 B 适用项）；<b>[零]</b> = 零回退复跑（§6 映射）。
+      <b>所有条目均须在浅色与暗色两个主题下逐条通过</b>（承载口径见 §5 说明）。
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">7.1 T1 验收 + REQ-043 验收对照（原文落点）</div>
+      <table>
+        <tr><th style="width:46%">验收标准（原文摘要）</th><th>本稿落点</th><th>状态</th></tr>
+        <tr><td>〔T1〕CEO 批准基线（tag design-iter-17）</td><td>2026-08-20 CEO「批准，全部按推荐」；§8 八项定夺全部按推荐定案</td><td>☑ 已基线</td></tr>
+        <tr><td>〔T1〕分区页七态形态与样件文案定死（逐字断言面 v1.4.10 B）</td><td>§1.3 七态总表 + §2 登记表 M1~M37 + 走查条 10~31</td><td>☑ 已定案待批</td></tr>
+        <tr><td>〔T1〕API 口径定稿（四端点 + 错误形态沿 sessions.py 先例）</td><td>§4.1~4.5（端点形状 / 归属隔离 404 / 422 校验 / 前端消费规则 / 无 POST 边界）</td><td>☑ 已定案待批</td></tr>
+        <tr><td>〔T1〕走查清单随稿（亮/暗双主题 + 空态 + 停用态 + 加载失败态 + 编辑/删除交互 + 注入预览逐字核对；几何断言面 v1.4.11 B、行为断言面适用项 v1.4.13 B）</td><td>7.2 共 34 条（[几] 7 条 / [行] 13 条 / 双主题全条目 + 条 32 专门承载；空态 26、停用态 13、失败态 27、编辑 18~20、删除 21~22、预览核对 24~25）</td><td>☑ 已随稿</td></tr>
+        <tr><td>〔T1〕REQ-028 五分区零回退映射</td><td>§6 映射表 + 7.2 条 1~9（iter-11#37~45 逐条标注）</td><td>☑ 已映射</td></tr>
+        <tr><td>〔T1 卫生项〕spec「涉及页面」指针零滞后回填（v1.4.10 A）</td><td>本稿产出会话不改 spec/RTM（任务边界）——指针回填由主会话随基线执行</td><td>☑ 交接明示</td></tr>
+        <tr><td>〔REQ-043 验收 1〕分区可达 + REQ-028 既有断言复跑零回退</td><td>走查条 1~10（vitest 为 T3 执行）</td><td>☑ 规格落点</td></tr>
+        <tr><td>〔REQ-043 验收 2〕查看/编辑/删除闭环（编辑保存 → 下一回合注入 = 新文本；删除 → 注入不含该条）</td><td>§4 口径 + 走查条 18/22/29（pytest + vitest 联动，T3 执行）</td><td>☑ 规格落点（T3 执行）</td></tr>
+        <tr><td>〔REQ-043 验收 3〕整体停用（下一回合请求体无记忆消息 + 页面停用态）</td><td>§4.3 + 走查条 12/13（T3 执行）</td><td>☑ 规格落点（T3 执行）</td></tr>
+        <tr><td>〔REQ-043 验收 4〕注入可见：预览与组装注入逐字一致（含包裹）</td><td>§3 核对专章 + 走查条 23~25（pytest/vitest 取值比对，T3 执行）</td><td>☑ 规格落点（T3 执行）</td></tr>
+        <tr><td>〔REQ-043 验收 5〕归属隔离：跨用户标识操作 404</td><td>§4.1~4.3 归属口径 + 走查条 31（pytest，T3 执行）</td><td>☑ 规格落点（T3 执行）</td></tr>
+        <tr><td>〔REQ-043 验收 6〕design-iter-17 走查清单留档（亮/暗 + 空态 + 停用态 + 加载失败 + 编辑/删除交互）</td><td>7.2 全清单 + §5 锁定帧（T3 执行留档）</td><td>☑ 已随稿</td></tr>
+      </table>
+    </div>
+
+    <div class="spec">
+      <div class="spec-title">7.2 走查清单（design-iter-17，34 条；勾选框供 T3 自查与 QA 取证）</div>
+      <table>
+        <tr><th style="width:26px">过</th><th style="width:36px">序号</th><th>断言面</th><th>触点</th><th>期望表现（= 验收口径）</th><th style="width:56px">样件</th><th style="width:92px">零回退引用</th></tr>
+        <tr><td colspan="7" style="background:#FAFBFC;color:#646A73;font-weight:600;">A 组 · 设置弹窗容器零回退（iter-11#37~45 复跑不改，REQ-028/REQ-017/REQ-007）</td></tr>
+        <tr><td><input type="checkbox"></td><td>1</td><td>[零][几]</td><td>弹窗框架</td><td>720px × 固定高 560px + 左右分栏（左导航 168px subtle-bg + 右面板 padding 16px 24px 24px）+ 遮罩 <code>--c-mask</code> z-100 + r-lg + shadow-3 + .15s 动效——iter-11#37 逐参数零变化（computed）</td><td>1.1</td><td>iter-11#37</td></tr>
+        <tr><td><input type="checkbox"></td><td>2</td><td>[零][几]</td><td>左导航六项</td><td>分区数 5→6 加法；项高 36px / 13px / r-md 8px（computed）；选中 primary-l 底 + primary 字 500；点击与方向键（↑↓←→ 循环）切换含新项——onNavKey 取模机制零改动（TABS.length 自然涵盖）</td><td>1.1</td><td>iter-11#37/38</td></tr>
+        <tr><td><input type="checkbox"></td><td>3</td><td>[零]</td><td>既有五分区</td><td>外观/密钥模式/高级设置/对话设置/账号——字段、逻辑、文案逐字零变化（「只加容器项不改逻辑」；settings/settings-form/账号全量 spec 弹窗下全绿为 T3 门槛）</td><td>1.1（占位引用）</td><td>iter-11#38</td></tr>
+        <tr><td><input type="checkbox"></td><td>4</td><td>[零]</td><td>外观分区联动</td><td>弹窗内浅/深分段与全局主题同状态同存储——记忆加法零影响</td><td>1.1</td><td>iter-11#39</td></tr>
+        <tr><td><input type="checkbox"></td><td>5</td><td>[零][行]</td><td>关闭三方式</td><td><b>行为 · 链路</b>：Esc / 遮罩 / 关闭钮均可关弹窗 + 关闭后焦点回触发入口——iter-11#40 零变化；记忆分区打开时关闭链路不破（Esc 先处理分区内层状态，见条 20）</td><td>1.1</td><td>iter-11#40</td></tr>
+        <tr><td><input type="checkbox"></td><td>6</td><td>[零]</td><td>未保存拦截</td><td>dirty 判定链<b>字节级零变化</b>（提示词改动 + 改密字段非空 → 拦截确认）；拦截文案逐字不动——记忆编辑态不参与 dirty（定夺⑧定案面，关闭弹窗 = 取消记忆编辑）</td><td>1.1</td><td>iter-11#41</td></tr>
+        <tr><td><input type="checkbox"></td><td>7</td><td>[零]</td><td>locateAdv 直达</td><td>错误气泡「前往高级设置」→ 弹窗开 + 直达高级设置分区 + 高亮 ≈1.6s——目标分区恒为 adv，不误达记忆分区；iter-2 走查 15 场景复跑口径不动（T3）</td><td>—</td><td>iter-11#42</td></tr>
+        <tr><td><input type="checkbox"></td><td>8</td><td>[零][行]</td><td>内层级叠</td><td><b>行为 · 层级</b>：记忆删除确认复用 ConfirmModal 现状组件（z-150 Teleport，叠于弹窗之上、toast 之下）；Esc 栈先关最上层——记忆删除确认与档案编辑模态/注销模态不并开（单弹窗纪律）</td><td>1.1</td><td>iter-11#43</td></tr>
+        <tr><td><input type="checkbox"></td><td>9</td><td>[零]</td><td>滚动行为</td><td>仅面板内容区滚动（细滚动条 <code>--c-scrollbar</code>）；30 条满载 + 预览展开不撑破 560px 固定高；弹窗不溢出视口（≤480px 宽仅保证不溢出）</td><td>1.1</td><td>iter-11#45</td></tr>
+        <tr><td colspan="7" style="background:#FAFBFC;color:#646A73;font-weight:600;">B 组 · 「AI 的记忆」分区新增断言（REQ-043）</td></tr>
+        <tr><td><input type="checkbox"></td><td>10</td><td>[文]</td><td>分区可达</td><td>左导航第六项逐字 M1「AI 的记忆」，位于「对话设置」之后、「账号」之前（CHG-011/REQ-028 改写定序）；点击/方向键切入；分区标题逐字 M2 + 说明句逐字 M3（「下一回合生效」时效常驻自释）</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>11</td><td>[文][几]</td><td>开关行</td><td>标题逐字 M4 + 说明 12px text-3；ToggleSwitch 36×20 轨道 + 16px 白滑块（computed，components.md v1.3 逐参数）+ aria-label 逐字 M5；行容器 subtle-bg + border + r-md + padding 12px</td><td>1.1/5.2</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>12</td><td>[文][行]</td><td>开关链路</td><td><b>行为 · 链路</b>：点击 → PUT /api/memory/settings（在途开关 disabled）→ 成功重取 GET 整分区刷新 → toast：停用逐字 M32（默认白字）/ 启用逐字 M33（success 绿字）；失败 → toast M36 + 重取 GET 回滚开关位（零乐观更新）</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>13</td><td>[文][行]</td><td>停用态呈现</td><td><b>行为 · 状态</b>：memory_enabled=0 → 通知条逐字 M6（warning-l 底 + warning 字）+ 列表灰显 opacity .45 + 条目编辑/删除钮 disabled（冻结不可点）+ 预览块显停用句 M24（不呈现注入内容——没有注入发生）；重新启用即全量恢复（存量记忆保留，REQ-042 异常分支）</td><td>1.1/5.2</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>14</td><td>[文]</td><td>列表头</td><td>逐字 M7「记忆条目」+ 计数模板 M8「共 {N} 条」（tabular-nums）+ title 逐字 M9（上限口径常驻：30 条，自动抽取超限截断）</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>15</td><td>[文][几]</td><td>条目卡几何与文本</td><td>条目文本 13px/1.6 text-1 <b>全文展示不 ellipsis</b>（可检视优先）；条目卡 1px border + r-md 8px + padding 10px 12px + 卡间距 8px（computed，profile-item 家族参数）；序号列 20px 与预览编号一一对应</td><td>1.1/5.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>16</td><td>[文]</td><td>元信息三分支</td><td>自动抽取有会话名 → 模板 M10（会话名 ellipsis + title 全文）；来源会话已删 → M11；手工编辑（PUT 后来源归零）→ M12；均含「更新于 {YYYY-MM-DD}」；<b>不显示 model</b>（定夺⑥定案面）</td><td>1.1/5.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>17</td><td>[几]</td><td>条目操作钮</td><td>编辑/删除 = 26px 图标钮 r-sm text-3（computed，p-icon 家族）；编辑 hover hover-bg + text-1、删除 hover danger-l + danger；title/aria-label 逐字 M13/M14；停用态 disabled（opacity .35）</td><td>1.1/5.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>18</td><td>[文][行]</td><td>编辑链路</td><td><b>行为 · 链路</b>：点编辑 → 条目文本位换 textarea（焦点即入、边框 primary 描边 + 3px focus-ring、13px/1.6）→ 保存 → PUT → 成功 toast M30 + 重取 GET（条目更新、来源转 M12 手工编辑、预览同步刷新）；失败 toast M34 + 重取 GET 恢复</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>19</td><td>[文][几]</td><td>编辑计数与校验</td><td>计数模板 M15「{N} / 150」12px text-3 右对齐 tabular-nums；maxlength=150；达上限 → 计数 danger 色 + 提示逐字 M16 + 保存禁用；trim 为空 → 保存禁用；422 为服务端双保险（前端不呈现 422 分支文案，toast M34 兜底）</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>20</td><td>[行]</td><td>编辑取消与 Esc 链</td><td><b>行为 · 层级</b>：点取消（M17）/ Esc → 退出编辑态、还原原文本（不落库）；Esc 优先级 = dirty 确认 &gt; 档案模态 &gt; <b>记忆编辑</b> &gt; 删除确认 &gt; 关闭弹窗——既有链插入不破序；关闭弹窗 = 编辑态取消（不参与 dirty，条 6）</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>21</td><td>[文][几]</td><td>删除确认形态</td><td>ConfirmModal 现状形态逐参数：360px 面板 + 标题 17px 逐字 M19 + 正文 14px text-2 逐字 M20 + 32px 钮「取消 / 删除（danger-solid 白字）」逐字 M21；Esc / 遮罩点击 = 取消（组件既有行为）</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>22</td><td>[行]</td><td>删除链路</td><td><b>行为 · 链路</b>：确认 → DELETE → 成功 toast M31 + 重取 GET（条目消失、计数 −1、预览编号重排 = 服务端取真）；失败 toast M35 + 重取 GET；删除后下一回合注入不含该条（T3 pytest 面）</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>23</td><td>[文][行]</td><td>注入预览形态</td><td><b>行为 · 链路</b>：头行逐字 M22 + 说明逐字 M23；<b>默认折叠</b>，点击展开（chevron .15s 旋转，button 语义 aria-expanded）；展开区 = 代码块族（code-bg 底 + code-text 字 + mono 12px/1.7 pre-wrap + max-height 220px 内滚）；预览内容 = <code>injection_preview</code> 字段逐字，<b>前端零本地拼装</b></td><td>1.1/3.1/5.3</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>24</td><td>[文][行]</td><td>预览逐字核对</td><td><b>行为 · 如实性</b>：预览与 plans/iter-17-verify.md §5 模板逐字一致——<code>&lt;user_memory&gt;</code>/<code>&lt;/user_memory&gt;</code> 包裹标签可见 + 说明行逐字 + 条目编号与列表顺序一一对应（pytest/vitest 取值比对，REQ-043 验收 4）；写操作成功后预览随 GET 重取刷新（无陈旧态）</td><td>3.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>25</td><td>[文]</td><td>预览停用/空分支</td><td>injection_preview=null 且停用 → 停用句逐字 M24；null 且启用无条目 → 空句逐字 M25——<b>不呈现未注入内容为已注入</b>（铁律 5）</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>26</td><td>[文]</td><td>空态</td><td>entries 空 → 虚线框（p-empty 家族：1px dashed + 13px 居中）主文案逐字 M26 + 说明逐字 M27（含「记忆在对话中自动沉淀」语义，REQ-043 异常分支）；开关行正常可用；非错误态（不用 danger/warning 色）</td><td>1.1（切 empty）</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>27</td><td>[文][行]</td><td>加载失败态</td><td><b>行为 · 降级</b>：GET 失败 → 仅分区标题/说明 + 失败框逐字 M28 + 重试钮 M29（沿 bootFailed/retryBoot 先例）；<b>开关/列表/预览均不渲染</b>（状态未知不渲染控制件）；重试成功恢复正常态、失败停留失败态（不重复 toast）</td><td>1.1（切 failed）</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>28</td><td>[行]</td><td>回合中编辑</td><td><b>行为 · 竞态</b>：回合生成进行中编辑/删除/停用均允许、无 409（注入在组装时点读库，REQ-043 异常分支定案）；vitest 不断言前端按 generating 拦截（单一链路面同 iter-16 定夺④哲学）</td><td>§4.2</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>29</td><td>[行]</td><td>生效时效</td><td><b>行为 · 语义</b>：编辑保存 → 下一回合请求体注入 = 新文本；删除 → 下一回合注入不含该条；停用 → 下一回合请求体无记忆消息（pytest + vitest 联动，REQ-043 验收 2/3）；时效口径用户可见面 = toast 逐字（M30/M31/M33 均含「下一回合生效」）</td><td>§4</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>30</td><td>[文]</td><td>toast 全量逐字</td><td>M30~M36 七串逐字核对；成功态 = success 变体绿字 + ✓ 前缀调用方拼入（沿 SettingsForm 先例）；失败态默认白字；3s 自动消失、顶部居中（AppToast 现状形态零改动）</td><td>1.1</td><td>—</td></tr>
+        <tr><td><input type="checkbox"></td><td>31</td><td>[行]</td><td>归属隔离</td><td><b>行为 · 安全</b>：UI 仅渲染本人记忆；跨用户 id 的 PUT/DELETE → 404 memory_not_found（不泄露归属）→ 前端 toast 兜底 + 重取 GET 归真（pytest，REQ-043 验收 5）</td><td>§4</td><td>—</td></tr>
+        <tr><td colspan="7" style="background:#FAFBFC;color:#646A73;font-weight:600;">C 组 · 全局</td></tr>
+        <tr><td><input type="checkbox"></td><td>32</td><td>[零]</td><td>亮暗双主题</td><td>全部条目浅/暗各过一遍；§5 三组锁定帧暗色无亮色残留；关键文字令牌断言（text-1/2/3、warning 族、code 族、success-on-dark）；正文对比度 ≥4.5:1（tokens v1.3 计算值）；预览代码块两模式均深底（code-bg 浅 #2B303A / 暗 #191B20）</td><td>5.1~5.3</td><td>iter-11#46</td></tr>
+        <tr><td><input type="checkbox"></td><td>33</td><td>[零]</td><td>样件数据</td><td>wupeng 的 5 条记忆样件全为虚构演示数据（铁律 5）；注入预览生产实现恒为服务端 injection_preview 字段渲染，前端不拼装不编造；演示页本地拼装仅为原型展示（头部声明在案）</td><td>头部声明</td><td>iter-11#48</td></tr>
+        <tr><td><input type="checkbox"></td><td>34</td><td>[零]</td><td>适用性</td><td>admin 面不在本期（CHG-011 定夺⑩ REQ-044 不立项——本稿零 admin 元素、不画抽取卡）；单条停用不做（定夺⑥）；手动新增记忆入口不做（API 框架无 POST，§4.4——本稿无「添加记忆」按钮，反向断言）；移动端不承诺（弹窗沿 iter-11 适用性口径）；回合内注入提示不做（定夺⑨：SSE 事件流零变化）</td><td>§1/§4</td><td>iter-11#49</td></tr>
+      </table>
+      <div class="ann">共 <b>34</b> 条（弹窗容器零回退 1~9 / 分区新增 10~31 / 全局 32~34）。
+      断言面计数：[文] 16 条、[几] 7 条、[行] 13 条、[零] 12 条（一条可多标）。零回退组（末列非「—」）复验时对照 design-iter-11 §7.2 走查 37~45 原清单期望逐条取证（<b>复跑不改</b>）；
+      行为类由 T3 pytest/vitest 或手工走查留档（plans/iter-17-verify.md）。<b>所有条目须在浅色与暗色双主题下各过一遍</b>（承载口径 = §5 说明）。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">8</span>CEO 定夺项（8 项 —— 2026-08-20 全部按推荐定案，CEO「批准，全部按推荐」）</h2>
+    <div class="sec-desc">沿 iter-1~16 固化模式：设计师给推荐方案与理由 → CEO 拍板 → 固化为决策记录，T2/T3 按定案实现。本稿全部样件已按「推荐」落形。</div>
+
+    <table>
+      <tr><th style="width:40px">编号</th><th>问题</th><th>选项与推荐（样件已按推荐落形）</th><th>理由 / 备选（未采纳留档）</th></tr>
+      <tr>
+        <td>①</td>
+        <td>分区内布局（列表与预览的排布）</td>
+        <td><b>推荐：自上而下 = 标题+说明 → 停用开关行 → 记忆列表 → 注入预览（折叠置底）</b></td>
+        <td>开关 = 分区级总闸置顶（其态决定下方列表/预览的呈现分支）；列表 = 主任务居中；预览 30 条满载约 4.8k 字符，置底折叠不挤列表首屏。<br>备选 A（未采纳）：预览置顶常显（「注入可见」优先）——列表主任务被挤压，可见性不因折叠受损；备选 B（未采纳）：列表/预览左右分栏——面板有效宽 ≈500px，分栏后两列均过窄</td>
+      </tr>
+      <tr>
+        <td>②</td>
+        <td>编辑交互形态（行内 vs 模态）</td>
+        <td><b>推荐：条目卡内行内 textarea</b>（prompt-ta 家族 + 150 字计数 + 取消/保存，Esc 取消）</td>
+        <td>单字段短文本（≤150 字）行内最轻；不新增 z-110 层叠消费者（弹窗内层模态面不膨胀）；行内重命名（iter-11#8）与对话设置提示词（textarea + 显式保存）双先例的组合。<br>备选（未采纳）：编辑模态——多一层遮罩与 Esc 栈节点，收益为零；模态适合多字段表单（档案编辑五字段先例），单字段不配</td>
+      </tr>
+      <tr>
+        <td>③</td>
+        <td>删除确认形态（强确认模态 vs 行内确认 vs 无确认）</td>
+        <td><b>推荐：ConfirmModal 现状组件照搬</b>（360px + danger-solid「删除」+ Esc/遮罩取消）</td>
+        <td>删除不可逆需确认；档案删除已用 ConfirmModal（同重量级先例，组件零改动）；单条记忆非账号级不可逆，不配 DeleteAccountModal 密码强确认。<br>备选 A（未采纳）：行内二次点击确认（「再点一次删除」）——无组件先例、误触保护弱；备选 B（未采纳）：无确认直接删（沿「解封/导出无确认」哲学）——删除不可逆且记忆为自动沉淀产物，误删恢复依赖下次抽取，成本不对称</td>
+      </tr>
+      <tr>
+        <td>④</td>
+        <td>停用态列表呈现（灰显 vs 收起 vs 照常可操作）</td>
+        <td><b>推荐：灰显（opacity .45）+ 条目操作冻结 + 停用通知条</b></td>
+        <td>停用 = AI 不使用记忆，管理操作也无即时可见效果——冻结避免「改了但不生效」困惑；信息仍可见（可检视性不回退，审核稿「记忆可检视」承诺）；重启用即恢复，状态转换一步完成。<br>备选 A（未采纳）：收起为一句话——可检视性回退，重启用后用户需重新定位；备选 B（未采纳）：照常可操作——停用态下编辑/删除的生效语义需额外解释面（「改了要启用才注入」），认知成本高</td>
+      </tr>
+      <tr>
+        <td>⑤</td>
+        <td>注入预览形态（折叠/常显/代码样式）</td>
+        <td><b>推荐：可折叠（默认折叠）+ 代码块样式</b>（code-bg/code-text 族令牌，mono 12px，pre-wrap，max-height 220px 内滚）</td>
+        <td>代码块深底 = 「这是逐字注入物，不是界面文案」的语义自释（令牌语义现成，零新增）；默认折叠守住列表首屏；「所见即所注」由展开即满足（REQ-043 验收 4 是取值一致性，不是常显性）。<br>备选 A（未采纳）：常显——满载预览把列表挤出首屏；备选 B（未采纳）：普通文本样式——与界面文案混同，用户难辨「这段会真的发给模型」</td>
+      </tr>
+      <tr>
+        <td>⑥</td>
+        <td>元信息呈现粒度（来源会话名 / 时间 / 模型显示哪些）</td>
+        <td><b>推荐：显示来源（自动抽取 ·「会话名」/ 手工编辑）+ 更新日期；不显示模型</b></td>
+        <td>来源会话名给可追溯性（「这条是哪次对话沉淀的」），ellipsis + title 防长标题破行；日期到「日」精度足够（记忆为天级节奏）；模型名对用户零行动价值（技术细节），且自填模式下模型名随档案变化徒增噪音。<br>备选 A（未采纳）：显示模型——信息密度升、行动价值零；备选 B（未采纳）：不显会话名只显「自动抽取」——追溯性损失，来源会话名为记忆可信度的证据链</td>
+      </tr>
+      <tr>
+        <td>⑦</td>
+        <td>toast 文案三态（保存/删除/停用）</td>
+        <td><b>推荐：保存 M30 / 删除 M31 / 停用 M32 + 启用 M33（成功态 success 绿字 ✓ 前缀）+ 三失败态 M34~M36；成功文案统一带「下一回合生效」时效标注</b></td>
+        <td>「下一回合生效」是用户唯一需要知道的时效事实（注入读库时点），常驻 toast 自释、免生「为什么 AI 这轮还不知道」的疑惑；失败态一句兜底不暴露技术细节（REQ-007 精神）；✓ + success 变体沿 SettingsForm 改密/注销成功先例。<br>备选（未采纳）：成功 toast 不带时效——用户当回合测试「AI 记得吗」必失望，先问后答不如先说</td>
+      </tr>
+      <tr>
+        <td>⑧</td>
+        <td>记忆编辑态是否纳入未保存拦截（dirty 判定）</td>
+        <td><b>推荐：不纳入</b>——关闭弹窗 = 取消记忆编辑；dirty 判定链与拦截文案字节级零变化</td>
+        <td>REQ-028 dirty 拦截文案「（系统提示词 / 密码输入）」是既有逐字面——纳入记忆编辑必改文案，破零回退纪律；记忆编辑为行内瞬态（≤150 字短文本），关闭即弃的损失与行内重命名同量级（iter-11 先例亦不拦截）；Esc 链已给编辑态专属取消位（条 20），误关损失有显式退出路径兜底。<br>备选（未采纳）：纳入——拦截哲学更彻底，但代价 = 既有逐字面改写 + dirty 判定链扩展，收益不对称</td>
+      </tr>
+    </table>
+
+    <div class="spec" style="margin-top:16px;">
+      <div class="spec-title">令牌 / 组件 / 卫生评估结论（零新增令牌自查）</div>
+      <table>
+        <tr><th style="width:190px">项</th><th>结论</th></tr>
+        <tr><td>新令牌</td><td><b>无提案</b>——零新增令牌、零自造色值（逐项自查：条目卡 = profile-item 家族既有参数；开关 = ToggleSwitch components.md v1.3 既有形态；停用通知条 = warning-l/warning 既有族（「生成中断」pill 同族）；注入预览 = 代码块族 code-bg/code-text 既有令牌；空态/失败态 = p-empty 家族既有形态；toast = AppToast 既有深底 + success 变体；确认模态 = ConfirmModal 既有形态）</td></tr>
+        <tr><td>components.md</td><td><b>零新增组件形态</b>——全部为既有家族消费：ToggleSwitch（v1.3 已登记）/ ConfirmModal（模态确认已登记）/ 列表项（profile-item 家族）/ 代码块（iter-3 基线）/ p-empty 虚线框（iter-7 先例）——无需登记动作</td></tr>
+        <tr><td>卫生（铁律 5）</td><td>样件记忆条目全虚构（wupeng 五条演示数据）；注入预览生产实现恒为服务端字段渲染，前端零拼装零编造；预览在停用/空态不呈现注入物（没有注入发生）；加载失败态不渲染状态未知控制件；UI 零 key / 零会话内容泄露（元信息仅会话标题，不含消息正文）</td></tr>
+        <tr><td>design/proto</td><td><b>不同步</b>（proto 定位 iter-1 核心闭环原型，记忆对其不可见，CHG-011 影响评估口径）；其余 design/iter-* 不同步（无对应 REQ 界面口径变化）</td></tr>
+      </table>
+    </div>
+
+    <div class="ann" style="margin-top:16px;">
+      <b>基线声明</b>：本稿为 iter-17 T1 交付物，呈 CEO 评审；设计稿基线批准权限归 CEO。批准后由主会话：① 打 tag <code>design-iter-17</code>；
+      ② spec REQ-043「涉及页面」指针由「待基线」更新为「已基线」（v1.4.10 A 防线，零滞后——本稿产出会话不改 spec/RTM，任务边界交接明示）；
+      ③ 定夺结论回填本文件与 design-iter-17.md；④ 定案值（四端点形状 / M1~M37 文案 / 前端消费规则 / PUT 来源归零语义）同步 T2/T3。
+      基线后任何改动须先登记变更，不接受「顺手改」。
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (s) { return document.querySelector(s); };
+  var $$ = function (s) { return Array.prototype.slice.call(document.querySelectorAll(s)); };
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+  /* ================= 主题（演示控制；锁定帧 force-* 不随动） ================= */
+  var TK_KEY = 'mm-demo-theme-17';
+  function applyTheme(dark) {
+    $$('.tk').forEach(function (t) {
+      if (t.classList.contains('force-light') || t.classList.contains('force-dark')) return;
+      t.classList.toggle('dark', dark);
+    });
+    $('#btnLight').classList.toggle('on', !dark);
+    $('#btnDark').classList.toggle('on', dark);
+  }
+  $('#btnLight').addEventListener('click', function () { applyTheme(false); try { localStorage.setItem(TK_KEY, 'light'); } catch (e) {} });
+  $('#btnDark').addEventListener('click', function () { applyTheme(true); try { localStorage.setItem(TK_KEY, 'dark'); } catch (e) {} });
+  try { if (localStorage.getItem(TK_KEY) === 'dark') applyTheme(true); } catch (e) {}
+
+  /* ================= §2 逐字登记表（唯一来源；JS 常量与表格逐字一致） ================= */
+  var M = {
+    tab: 'AI 的记忆',
+    paneTitle: 'AI 的记忆',
+    note: '记忆由对话自动沉淀，AI 在回复时参考；你的修改自下一回合起生效。',
+    swTitle: 'AI 参考记忆',
+    swAria: 'AI 参考记忆开关',
+    swDesc: '开启后，AI 在每个回合回复时参考下方记忆',
+    warn: '记忆已停用：AI 不再参考任何记忆，也不再进行新的沉淀。已有记忆保留，重新启用即恢复。',
+    listHead: '记忆条目',
+    capTitle: '上限 30 条，自动抽取超限时按上限截断',
+    editAria: '编辑记忆',
+    delAria: '删除记忆',
+    capHint: '最多 150 字',
+    cancel: '取消',
+    save: '保存',
+    delTitle: '删除这条记忆？',
+    delBody: '删除后 AI 将不再参考这条记忆，此操作不可撤销。',
+    delConfirm: '删除',
+    prevTitle: '注入内容预览',
+    prevSub: '所见即所注：以下文本在每个回合组装时逐字注入对话开头',
+    prevOff: '记忆已停用，记忆内容不会注入对话。重新启用即恢复注入。',
+    prevEmpty: '暂无记忆条目，暂无注入内容。',
+    emptyT: '暂无记忆',
+    emptyD: '记忆在对话中自动沉淀：对话结束后，AI 自动抽取关于你的身份、偏好与约定等值得记住的信息。',
+    failT: '记忆加载失败，请检查网络',
+    retry: '重试',
+    retrying: '重试中…',
+    tSave: '✓ 记忆已保存，下一回合生效',
+    tDel: '✓ 记忆已删除，下一回合生效',
+    tOff: '记忆已停用：AI 将不再参考任何记忆',
+    tOn: '✓ 记忆已重新启用，下一回合生效',
+    tSaveFail: '保存失败，请重试',
+    tDelFail: '删除失败，请重试',
+    tSwFail: '操作失败，请重试',
+    injIntro: '以下是关于用户的长期记忆（自动从历史对话抽取），回复时作为用户背景参考：'
+  };
+  var PANES = [
+    { key: 'appearance', label: '外观', ref: '外观分区 —— design-iter-11 §4.1 基线形态零变化（浅色/深色分段与全局同状态同存储，iter-11#39；本稿不重画）' },
+    { key: 'mode', label: '密钥模式', ref: '密钥模式分区 —— design-iter-11 §4.1 基线形态零变化（模式卡 + 免费额度行 + 回退统一密钥；本稿不重画）' },
+    { key: 'adv', label: '高级设置', ref: '高级设置分区 —— design-iter-11 §4.1 基线形态零变化（自填供应商档案 + locateAdv 直达目标，iter-11#42；本稿不重画）' },
+    { key: 'chat', label: '对话设置', ref: '对话设置分区 —— design-iter-11 §4.1 基线形态零变化（系统提示词 textarea + 显式保存 + dirty 判定参与项，iter-11#41；本稿不重画）' },
+    { key: 'memory', label: 'AI 的记忆', ref: '' },
+    { key: 'account', label: '账号', ref: '账号分区 —— design-iter-11 §4.1 基线形态零变化（改密 + 注销危险区，iter-11#43/44；本稿不重画）' }
+  ];
+
+  /* ================= 样件数据（全虚构，铁律 5；用户 wupeng，贴合产品语境） ================= */
+  var SAMPLE = [
+    { id: 1, content: '要求 AI 用简洁的中文回复，避免冗长解释，不使用表情符号。', src: 's_c7d2', srcTitle: '迭代计划流程设计', model: 'deepseek-chat', updated: '2026-08-19' },
+    { id: 2, content: '与 AI 约定：周报按「本周完成 / 下周计划 / 风险」三段式输出。', src: 's_w3k9', srcTitle: '周报草稿', model: 'deepseek-chat', updated: '2026-08-18' },
+    { id: 3, content: '写前端代码时偏好 Vue 3 组合式 API，主色遵循飞书蓝 #3370FF。', src: 's_f8m1', srcTitle: '前端组件重构', model: 'deepseek-chat', updated: '2026-08-15' },
+    { id: 4, content: '正在负责 ai-chat 产品迭代，重点是 agent 架构升级七期路线。', src: 's_a2b6', srcTitle: '架构升级评审', model: 'deepseek-chat', updated: '2026-08-12' },
+    { id: 5, content: '提交信息只写实际代码改动，不写流程叙事。', src: null, srcTitle: null, model: null, updated: '2026-08-10' }
+  ];
+  function cloneSample() { return SAMPLE.map(function (e) { return Object.assign({}, e); }); }
+
+  var S = {
+    pane: 'memory',
+    scene: 'normal',       /* normal | empty | failed */
+    opFail: false,         /* 演示控制：操作结果 = 失败 */
+    enabled: true,
+    entries: cloneSample(),
+    editingId: null,
+    deleteId: null,
+    previewOpen: false,
+    modalOpen: true
+  };
+
+  /* ================= toast（AppToast 现状形态：顶部居中深底；success 变体绿字） ================= */
+  function toast(msg, ok) {
+    var wrap = $('#toastWrap');
+    var el = document.createElement('div');
+    el.className = 'toast';
+    el.setAttribute('role', 'status');
+    el.innerHTML = '<span class="t-msg' + (ok ? ' success' : '') + '">' + esc(msg) + '</span>';
+    wrap.appendChild(el);
+    setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 3000);
+  }
+
+  /* ================= 注入预览拼装（仅原型演示用；生产实现 = 服务端 injection_preview 字段逐字，前端零拼装——§3/走查条 23） ================= */
+  function injectionText(entries) {
+    var lines = entries.map(function (e, i) { return (i + 1) + '. ' + e.content; });
+    return '<user_memory>\n' + M.injIntro + '\n' + lines.join('\n') + '\n</user_memory>';
+  }
+
+  /* ================= 元信息三分支（M10/M11/M12） ================= */
+  function metaOf(e) {
+    var src;
+    if (!e.src && !e.srcTitle) src = '手工编辑';
+    else if (e.srcTitle) src = '自动抽取 ·「<span title="' + esc(e.srcTitle) + '">' + esc(e.srcTitle) + '</span>」';
+    else src = '自动抽取';
+    return src + ' · 更新于 ' + esc(e.updated);
+  }
+
+  var ICO_EDIT = '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>';
+  var ICO_DEL = '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-3 6h12l-1 12H7L6 9Zm4 2v8h1.5v-8H10Zm3 0v8h1.5v-8H13Z"/></svg>';
+  var ICO_CHEV = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M4 2.5 8 6l-4 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var ICO_WARN = '!';
+
+  /* ================= 「AI 的记忆」分区渲染（七态状态机） ================= */
+  function renderMemPane() {
+    var h = '';
+    h += '<div class="pane-label">' + esc(M.paneTitle) + '</div>';
+    h += '<p class="mem-note">' + esc(M.note) + '</p>';
+
+    if (S.scene === 'failed') {
+      /* 加载失败态：开关/列表/预览均不渲染（状态未知不渲染控制件） */
+      h += '<div class="mem-fail"><div class="me-t">' + esc(M.failT) + '</div>' +
+        '<button type="button" class="retry-btn" data-act="retry">' + esc(M.retry) + '</button></div>';
+      return h;
+    }
+
+    /* 开关行（ToggleSwitch 形态） */
+    h += '<div class="mem-swrow">' +
+      '<div class="sw-info"><span class="sw-t">' + esc(M.swTitle) + '</span><span class="sw-d">' + esc(M.swDesc) + '</span></div>' +
+      '<button type="button" class="tsw' + (S.enabled ? ' on' : '') + '" role="switch" aria-checked="' + S.enabled + '" aria-label="' + esc(M.swAria) + '" data-act="toggle"></button>' +
+      '</div>';
+    if (!S.enabled) {
+      h += '<div class="mem-warnbar"><span class="wb-ico">' + ICO_WARN + '</span><span>' + esc(M.warn) + '</span></div>';
+    }
+
+    /* 列表 / 空态 */
+    if (S.scene === 'empty' || S.entries.length === 0) {
+      h += '<div class="mem-listhead"><span class="lh-t">' + esc(M.listHead) + '</span><span class="lh-n">共 0 条</span></div>';
+      h += '<div class="mem-empty"><div class="me-t">' + esc(M.emptyT) + '</div>' + esc(M.emptyD) + '</div>';
+    } else {
+      h += '<div class="mem-listhead"><span class="lh-t">' + esc(M.listHead) + '</span>' +
+        '<span class="lh-n" title="' + esc(M.capTitle) + '">共 ' + S.entries.length + ' 条</span></div>';
+      h += '<div class="mem-list' + (S.enabled ? '' : ' off') + '">';
+      S.entries.forEach(function (e, i) {
+        if (S.editingId === e.id) {
+          var len = e.draft.length;
+          var over = len >= 150;
+          var empty = e.draft.trim().length === 0;
+          h += '<div class="mem-item editing">' +
+            '<span class="mem-num">' + (i + 1) + '</span>' +
+            '<div style="min-width:0;">' +
+            '<textarea class="mem-ta" maxlength="150" data-act="draft" aria-label="' + esc(M.editAria) + '">' + esc(e.draft) + '</textarea>' +
+            '<div class="mem-count' + (over ? ' over' : '') + '" data-count>' + len + ' / 150</div>' +
+            (over ? '<div class="mem-err">' + esc(M.capHint) + '</div>' : '') +
+            '<div class="mem-editops">' +
+            '<button type="button" class="s-btn" data-act="edit-cancel">' + esc(M.cancel) + '</button>' +
+            '<button type="button" class="s-btn primary" data-act="edit-save"' + (empty ? ' disabled' : '') + '>' + esc(M.save) + '</button>' +
+            '</div></div><span></span></div>';
+        } else {
+          var frozen = !S.enabled;
+          h += '<div class="mem-item">' +
+            '<span class="mem-num">' + (i + 1) + '</span>' +
+            '<div style="min-width:0;"><div class="mem-text">' + esc(e.content) + '</div>' +
+            '<div class="mem-meta">' + metaOf(e) + '</div></div>' +
+            '<div class="mem-ops">' +
+            '<button type="button" class="p-icon" data-act="edit" data-id="' + e.id + '" title="' + esc(M.editAria) + '" aria-label="' + esc(M.editAria) + '"' + (frozen ? ' disabled' : '') + '>' + ICO_EDIT + '</button>' +
+            '<button type="button" class="p-icon danger" data-act="del" data-id="' + e.id + '" title="' + esc(M.delAria) + '" aria-label="' + esc(M.delAria) + '"' + (frozen ? ' disabled' : '') + '>' + ICO_DEL + '</button>' +
+            '</div></div>';
+        }
+      });
+      h += '</div>';
+    }
+
+    /* 注入预览块 */
+    h += '<div class="mem-preview">';
+    if (!S.enabled) {
+      h += '<div class="mp-head" style="cursor:default;">' + esc(M.prevTitle) + '</div><div class="mp-line">' + esc(M.prevOff) + '</div>';
+    } else if (S.entries.length === 0) {
+      h += '<div class="mp-head" style="cursor:default;">' + esc(M.prevTitle) + '</div><div class="mp-line">' + esc(M.prevEmpty) + '</div>';
+    } else {
+      h += '<button type="button" class="mp-head' + (S.previewOpen ? ' open' : '') + '" data-act="preview" aria-expanded="' + S.previewOpen + '">' +
+        '<span class="mp-chev">' + ICO_CHEV + '</span>' + esc(M.prevTitle) +
+        '<span class="mp-sub">' + esc(M.prevSub) + '</span></button>';
+      if (S.previewOpen) h += '<div class="mp-body">' + esc(injectionText(S.entries)) + '</div>';
+    }
+    h += '</div>';
+    return h;
+  }
+
+  /* ================= 弹窗整体渲染（六分区导航 + 当前面板） ================= */
+  function render() {
+    var nav = '';
+    PANES.forEach(function (p, i) {
+      nav += '<button type="button" role="tab" data-pane="' + p.key + '" data-idx="' + i + '" aria-selected="' + (S.pane === p.key) + '"' +
+        (S.pane === p.key ? ' class="on"' : '') + '>' + esc(p.label) + '</button>';
+    });
+    $('#smNav').innerHTML = nav;
+
+    var pane;
+    if (S.pane === 'memory') {
+      pane = renderMemPane();
+    } else {
+      var p = PANES.filter(function (x) { return x.key === S.pane; })[0];
+      pane = '<div class="pane-label">' + esc(p.label) + '</div><div class="pane-ph">' + esc(p.ref) + '</div>';
+    }
+    $('#smPane').innerHTML = pane;
+
+    /* 删除确认（ConfirmModal 形态，z-150 叠于弹窗之上） */
+    var cm = document.getElementById('confirmMask');
+    if (S.deleteId !== null && !cm) {
+      var d = document.createElement('div');
+      d.className = 'confirm-mask'; d.id = 'confirmMask';
+      d.innerHTML = '<div class="confirm-modal" role="alertdialog" aria-label="' + esc(M.delTitle) + '">' +
+        '<h3 class="cm-title">' + esc(M.delTitle) + '</h3>' +
+        '<p class="cm-body">' + esc(M.delBody) + '</p>' +
+        '<div class="cm-actions"><button type="button" class="cm-btn" data-act="del-cancel">' + esc(M.cancel) + '</button>' +
+        '<button type="button" class="cm-btn danger" data-act="del-confirm">' + esc(M.delConfirm) + '</button></div></div>';
+      $('#appFrame').appendChild(d);
+    } else if (S.deleteId === null && cm) {
+      cm.parentNode.removeChild(cm);
+    }
+
+    $('#settingsMask').style.display = S.modalOpen ? '' : 'none';
+    $('#openAgain').style.display = S.modalOpen ? 'none' : '';
+
+    /* 编辑态 textarea 焦点（行内编辑焦点即入） */
+    if (S.editingId !== null) {
+      var ta = $('#smPane textarea.mem-ta');
+      if (ta && document.activeElement !== ta) { ta.focus(); var v = ta.value; ta.setSelectionRange(v.length, v.length); }
+    }
+  }
+
+  /* ================= 交互（事件委托） ================= */
+  document.addEventListener('click', function (e) {
+    /* 遮罩外点关闭弹窗（iter-11#40：遮罩为关闭方式之一） */
+    if (e.target === $('#settingsMask')) { S.modalOpen = false; render(); return; }
+    /* 删除确认遮罩点击 = 取消（ConfirmModal 既有行为） */
+    var cm0 = document.getElementById('confirmMask');
+    if (cm0 && e.target === cm0) { S.deleteId = null; render(); return; }
+
+    var t = e.target.closest('[data-act], .sm-nav [data-pane], #btnClose, #openAgain button');
+    if (!t) return;
+
+    if (t.id === 'btnClose') { S.modalOpen = false; render(); return; }
+    if (t.closest('#openAgain')) { S.modalOpen = true; render(); return; }
+
+    if (t.hasAttribute('data-pane')) { S.pane = t.getAttribute('data-pane'); render(); return; }
+
+    var act = t.getAttribute('data-act');
+    if (!act) return;
+
+    if (act === 'toggle') {
+      if (S.opFail) { toast(M.tSwFail); render(); return; } /* 失败：回滚 = 状态本未变（零乐观更新），重取真态语义由 render 承担 */
+      S.enabled = !S.enabled;
+      toast(S.enabled ? M.tOn : M.tOff, S.enabled);
+      render(); /* 生产实现：PUT settings 成功 → 重取 GET 整分区刷新 */
+      return;
+    }
+    if (act === 'edit') {
+      var id = Number(t.getAttribute('data-id'));
+      var en = S.entries.filter(function (x) { return x.id === id; })[0];
+      if (!en) return;
+      S.editingId = id; en.draft = en.content; render(); return;
+    }
+    if (act === 'edit-cancel') { S.editingId = null; render(); return; }
+    if (act === 'edit-save') {
+      var e2 = S.entries.filter(function (x) { return x.id === S.editingId; })[0];
+      if (!e2 || e2.draft.trim().length === 0) return;
+      S.editingId = null;
+      if (S.opFail) { toast(M.tSaveFail); render(); return; }
+      e2.content = e2.draft.trim();
+      e2.src = null; e2.srcTitle = null; e2.model = null;   /* 手工编辑：来源归零（§4.2 PUT 语义） */
+      e2.updated = '2026-08-20';
+      toast(M.tSave, true); render();
+      return;
+    }
+    if (act === 'del') { S.deleteId = Number(t.getAttribute('data-id')); render(); return; }
+    if (act === 'del-cancel') { S.deleteId = null; render(); return; }
+    if (act === 'del-confirm') {
+      var did = S.deleteId; S.deleteId = null;
+      if (S.opFail) { toast(M.tDelFail); render(); return; }
+      S.entries = S.entries.filter(function (x) { return x.id !== did; });
+      toast(M.tDel, true); render();
+      return;
+    }
+    if (act === 'preview') { S.previewOpen = !S.previewOpen; render(); return; }
+    if (act === 'retry') {
+      t.disabled = true; t.textContent = M.retrying;
+      setTimeout(function () { S.scene = 'normal'; S.enabled = true; S.entries = cloneSample(); render(); }, 700);
+      return;
+    }
+  });
+
+  /* 编辑态输入 → 计数即时（150 字上限口径） */
+  document.addEventListener('input', function (e) {
+    if (!e.target.classList || !e.target.classList.contains('mem-ta')) return;
+    var en = S.entries.filter(function (x) { return x.id === S.editingId; })[0];
+    if (!en) return;
+    en.draft = e.target.value;
+    var len = en.draft.length;
+    var box = e.target.closest('.mem-item');
+    var c = box.querySelector('[data-count]');
+    if (c) { c.textContent = len + ' / 150'; c.classList.toggle('over', len >= 150); }
+    var err = box.querySelector('.mem-err');
+    if (len >= 150 && !err) {
+      var d = document.createElement('div'); d.className = 'mem-err'; d.textContent = M.capHint;
+      c.parentNode.insertBefore(d, c.nextSibling);
+    } else if (len < 150 && err) { err.parentNode.removeChild(err); }
+    var sv = box.querySelector('[data-act="edit-save"]');
+    if (sv) sv.disabled = en.draft.trim().length === 0;
+  });
+
+  /* Esc 链（onModalKey 加法插入点演示）：删除确认 > 记忆编辑 > 关闭弹窗 */
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' || !S.modalOpen) return;
+    if (S.deleteId !== null) { S.deleteId = null; render(); return; }
+    if (S.editingId !== null) { S.editingId = null; render(); return; }
+    S.modalOpen = false; render();
+  });
+
+  /* 左导航方向键循环（onNavKey 机制零改动，含第六项） */
+  $('#smNav').addEventListener('keydown', function (e) {
+    var b = e.target.closest('[data-pane]'); if (!b) return;
+    var i = Number(b.getAttribute('data-idx')); var j = -1;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') j = (i + 1) % PANES.length;
+    else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') j = (i - 1 + PANES.length) % PANES.length;
+    else return;
+    e.preventDefault();
+    S.pane = PANES[j].key; render();
+    var nb = $('#smNav [data-pane="' + S.pane + '"]'); if (nb) nb.focus();
+  });
+
+  /* 演示控制：数据态 / 操作结果 */
+  $$('input[name=memScene]').forEach(function (r) {
+    r.addEventListener('change', function () {
+      S.scene = r.value; S.editingId = null; S.deleteId = null; S.previewOpen = false;
+      if (r.value === 'normal') { S.entries = cloneSample(); S.enabled = true; }
+      if (r.value === 'empty') { S.entries = []; S.enabled = true; }
+      S.pane = 'memory'; render();
+    });
+  });
+  $$('input[name=opResult]').forEach(function (r) {
+    r.addEventListener('change', function () { S.opFail = (r.value === 'fail'); });
+  });
+
+  render();
+
+  /* ================= §5 锁定帧（浅 ↔ 暗，不随演示切换） ================= */
+  function lockEntryHtml(off) {
+    var e1 = SAMPLE[1], e4 = SAMPLE[4];
+    return '<div class="mem-listhead"><span class="lh-t">' + esc(M.listHead) + '</span><span class="lh-n">共 5 条</span></div>' +
+      (off ? '<div class="mem-warnbar"><span class="wb-ico">!</span><span>' + esc(M.warn) + '</span></div>' : '') +
+      '<div class="mem-list' + (off ? ' off' : '') + '" style="margin-top:8px;">' +
+      '<div class="mem-item"><span class="mem-num">2</span><div style="min-width:0;"><div class="mem-text">' + esc(e1.content) + '</div>' +
+      '<div class="mem-meta">' + metaOf(e1) + '</div></div>' +
+      '<div class="mem-ops">' +
+      '<button type="button" class="p-icon"' + (off ? ' disabled' : '') + ' title="' + esc(M.editAria) + '">' + ICO_EDIT + '</button>' +
+      '<button type="button" class="p-icon danger"' + (off ? ' disabled' : '') + ' title="' + esc(M.delAria) + '">' + ICO_DEL + '</button>' +
+      '</div></div>' +
+      '<div class="mem-item"><span class="mem-num">5</span><div style="min-width:0;"><div class="mem-text">' + esc(e4.content) + '</div>' +
+      '<div class="mem-meta">' + metaOf(e4) + '</div></div>' +
+      '<div class="mem-ops">' +
+      '<button type="button" class="p-icon"' + (off ? ' disabled' : '') + ' title="' + esc(M.editAria) + '">' + ICO_EDIT + '</button>' +
+      '<button type="button" class="p-icon danger"' + (off ? ' disabled' : '') + ' title="' + esc(M.delAria) + '">' + ICO_DEL + '</button>' +
+      '</div></div></div>';
+  }
+  function frameCol(cls, cap, inner) {
+    return '<div><div class="frame-cap">' + cap + '</div>' +
+      '<div class="tk ' + cls + '" style="border:1px solid var(--c-border);border-radius:12px;background:var(--c-surface);padding:16px;">' + inner + '</div></div>';
+  }
+  function fillLockPair(hostId, capL, capD, inner) {
+    var host = document.getElementById(hostId);
+    if (!host) return;
+    host.innerHTML = frameCol('force-light', capL, inner) + frameCol('force-dark', capD, inner);
+  }
+  fillLockPair('lockList',
+    '浅色（条目卡 surface 底 + text-3 元信息 + hover 操作浮现）',
+    '暗色（条目卡 #1E2026 底 + 元信息 #808896）',
+    lockEntryHtml(false));
+  fillLockPair('lockOff',
+    '浅色（停用：warning-l 通知条 #FFF7E8/#B45309 + 列表灰显）',
+    '暗色（停用：通知条 #38290F/#EDA23B + 列表灰显）',
+    lockEntryHtml(true));
+  var prevHtml = '<div class="mem-preview" style="margin-top:0;"><div class="mp-head open"><span class="mp-chev" style="transform:rotate(90deg);">' + ICO_CHEV + '</span>' + esc(M.prevTitle) + '<span class="mp-sub">' + esc(M.prevSub) + '</span></div>' +
+    '<div class="mp-body">' + esc(injectionText(SAMPLE.slice(0, 3))) + '</div></div>';
+  fillLockPair('lockPrev',
+    '浅色（code-bg #2B303A 深底 + code-text #E6EAF0 —— 预览恒深底，逐字注入物语义）',
+    '暗色（code-bg #191B20 深底，与表面 #1E2026 以描边分层）',
+    prevHtml);
+})();
+</script>
+</body>
+</html>
