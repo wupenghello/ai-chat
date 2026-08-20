@@ -159,7 +159,7 @@ REQ-043 验收 5（归属隔离）：test_memory_api.py test_归属隔离_他人
 
 ### §4 测试计数与既有用例证明
 
-- pytest 282→312（+30：test_memory 19 + test_memory_api 11，均纯新文件）；既有 282 例仅 1 处演进：test_search 迁移版本位断言 9→10（迁移版本位演进，功能性删除为零，沿 iter-16 8→9 先例）
+- pytest 282→312（+30：test_memory 18 + test_memory_api 12，均纯新文件；OBS-1 子项计数修正 2026-08-21，总量不变）；既有 282 例仅 1 处演进：test_search 迁移版本位断言 9→10（迁移版本位演进，功能性删除为零，沿 iter-16 8→9 先例）
 - vitest 345/345 零改动复跑全绿（前端数据面零触达）
 - ruff clean
 - quota.py 与 usage_daily 数据面零改动（定夺③双轨哲学：test_quota 零改动复跑含于 312）
@@ -185,7 +185,7 @@ REQ-043 验收 5（归属隔离）：test_memory_api.py test_归属隔离_他人
 
 承载划分（浏览器脚本断言 vs pytest/vitest 承载）：
 - **浏览器脚本承载（32 断言点）**：条 1/2（弹窗 720×560 + 导航六项定序 + 项高 36px + 方向键取模含新项）/ 5/6（Esc 关闭零回退 + 记忆编辑态不参与 dirty 拦截）/ 10~17（分区可达 M2/M3 逐字、开关行 M4/M37/M5、列表头 M7~M9、条目卡几何与不 ellipsis、元信息三分支 M10/M11/M12 逐字、操作钮 26px + aria-label）/ 18~22（编辑链路 toast M30 + 来源转 M12、计数 M15 + maxlength + trim 空禁存、Esc 取消还原**且弹窗不关**、删除确认 M19~M21 逐字 + 360px、删除链路 M31 + 计数 −1）/ 23~27（预览折叠→代码块深底、预览 = injection_preview 逐字 + 包裹标签可见 + 编号一一对应、停用/空分支 M24/M25、空态 M26/M27、失败态 M28/M29 + 控制件全不渲染）/ 12/13（停用链路 M32 + 通知条 M6 + 灰显冻结）/ 12b（启用 M33）/ 32（暗色全元素 + 代码块暗色仍深底 computed）/ 33（样件全虚构声明）
-- **pytest/vitest 承载（交叉引用，不在脚本重复）**：条 24 取值比对的 pytest 面（REQ-043 验收 4：后端 build_injection 与 GET 预览同源函数）/ 条 28 回合中编辑无 409（REQ-043 异常分支定案 + API 无 generating 预判面）/ 条 29 生效时效组装断言（REQ-042 验收 1~2：注入/停用 pytest 面 + MemoryPane.spec 写后重取语义）/ 条 30 toast 全量逐字的单元面（MemoryPane.spec M30~M36 断言）/ 条 31 归属隔离（REQ-043 验收 5，test_memory_api.py）
+- **pytest/vitest 承载（交叉引用，不在脚本重复）**：条 24 取值比对的 pytest 面（REQ-043 验收 4：后端 build_injection 与 GET 预览同源函数）/ 条 28 回合中编辑无 409（REQ-043 异常分支定案 + API 无 generating 预判面）/ 条 29 生效时效组装断言（REQ-042 验收 1~2：注入/停用 pytest 面 + MemoryPane.spec 写后重取语义）/ 条 30 toast 全量逐字的单元面（MemoryPane.spec M30~M36 断言）/ 条 31 归属隔离（REQ-043 验收 5，test_memory_api.py）/ 条 34 反向断言面无 POST 手动新增（test_memory_api.py::test_无POST端点_手动新增不存在；其余子项为设计负范围事实——OBS-4 映射补登 2026-08-21）
 - **条 3/4/7/8/9（容器零回退组）**：settings-form.spec.ts 全量复跑（六分区改写映射 2 处登记，见 §3）+ 走查条 1/2/5/6 浏览器面覆盖；iter-11#37~45 锚点口径不动
 
 ### §3 改写映射登记（全局回归基线 C 面口径，功能性删除为零）
@@ -194,7 +194,7 @@ REQ-043 验收 5（归属隔离）：test_memory_api.py test_归属隔离_他人
 |---|---|---|
 | settings-form.spec.ts「弹窗结构：左导航五分区」 | 五分区断言 → 六分区（「AI 的记忆」插入对话设置后、账号前），用例名同步改「六分区」 | REQ-028 CHG-011 改写（五区块→六区块） |
 | settings-form.spec.ts「分区切换：点账号」 | 账号 tab 索引 4 → 5（加法分区平移） | 同上 |
-| 其余 364 − 21（MemoryPane 新增）− 2（上映射）= 341 例 | 逐字节零改动复跑全绿 | — |
+| 其余 364 − 19（MemoryPane 新增）− 2（上映射）= 343 例 | 逐字节零改动复跑全绿 | — |
 
 vitest 345 → 364（+19：MemoryPane.spec.ts 纯新文件；七态全覆盖 + toast M30~M36 逐字 + 预览同源 + 停用冻结 + 零乐观更新重取 + 顺序纪律）。
 
