@@ -146,3 +146,17 @@
 - **流程纪律（CEO 定夺 2026-08-20）**：T2 开发任务与设计并行偷跑两轮（iter-15/16）——偏离已登 tailoring；口径定为**严格串行**（开发任务一律在设计基线后启动），模板措辞澄清入本迭代复盘改进项；今日 T2 半成品阻塞门禁卡住 T1 基线提交为既显代价；当前在跑 T2 按 CEO 定夺跑完 + 主会话亲跑核验，不构成先例。
 - **T2 后端三级压缩管道核心 + 迁移 v9 完成**（2026-08-20，提交 e055e03）：新增 app/compress.py 管道核心（一级 snip 逐字占位 / 二级 compact 非流式摘要调用 30s 护栏跟随回合模式 / 三级阈值判定读该会话上一回合 step=1 机器实测值 / 失败恒降级基线 v6 / 水位失效判定）+ 迁移 v9（context_summary 产物表 PK(user_id,session_id) 水位 CASCADE + telemetry tokens_before/tokens_after/session_id 加法列，存量不回填）+ compress 行数据面（turn 关联、tokens_after=NULL 待 T3 懒回填）+ 摘要 tokens 计回合累计（quota.py 零改动）；阈值 7000 与 K=2/R=5/30s 入 config（.env 可覆盖），摘要 prompt R2 定稿逐字常量；session_id 加法列为实现级偏离已登记 verify。测试：pytest 239→255（+16，test_compact 覆盖 REQ-039 验收 1~6 逐条 + 30 轮机器读数 ≤7000 + 关键事实问答），vitest 324→325（+1，PUT 载荷零摘要字段），既有用例仅 1 处迁移版本位断言 8→9（映射已登记），ruff clean。
 - **T3 手动压缩 + admin 压缩卡与全局回归收口完成**（2026-08-20）：POST /api/chat/compact 端点（design §5.1 四语义逐字：200 compacted / 200 skipped too_short / 409 session_generating / 502·504 compact_failed + 404 归属隔离 + 422 corrupted 双保险；不计回合、usage_daily 零写入、tokens 仅落遥测）+ 侧栏「···」菜单加法项「压缩上下文」（导出后/danger 分隔前，DropdownMenu 零组件改动）+ 执行中 pill（primary 族 10px spinner）与四终态 toast 逐字（C5~C8；成功不带数字 / 409 服务端 message 直呈）+ tokens_after 懒回填（该会话下一次 step=1 usage 独立短连接回填，失败不阻塞不补造；REQ-041 验收 1 完整一致性断言补齐）+ GET /api/admin/telemetry 加法 compact 键（次数/降幅/measured/缺失 null；成本口径演进计入 unified compress 行 tokens_prompt×input 单价，既有形状零变化）+ AdminView 卡 E 上下文压缩（双卡区与卡 D 之间全宽，正常/缺失/空三态，C9~C16 逐字，零新增令牌）。数据面 client.ts/sessions.ts 零改动。测试：pytest 255→282（+27：test_compact_api 18 + test_admin_compact 9），vitest 325→345（+20：TheSidebarCompact 6 + AdminCompactCard 9 + SessionListItem 加法 5），既有 3 处改写映射登记（30 轮 tokens_after 断言演进 / telemetry 顶层形状加法 / 菜单项索引平移），ruff clean + guard:style + 生产构建。走查：scripts/e2e-walkthrough-16.mjs 真实 Chrome + 真实后端（真实 DeepSeek 摘要调用，key 经进程环境注入）**70 PASS / 0 FAIL**（design §7.2 全 44 条逐条留档 plans/iter-16-verify.md T3 段：亮/暗双主题、执行中/失败/无需压缩/缺失四态全实测，10 帧截图 /tmp/e2e16/shots/；真实回合摘要注入关键事实可答 + 懒回填机器读数一致性实证）；三轮脚本自迭代 FAIL 全为脚本断言问题，零产品缺陷。
+
+
+**iter-16 全量 review（459a065..7a15155 代码面；2026-08-20 产出，待 CEO 过目）**
+
+范围：代码面 2 笔提交（e055e03 T2 + 7a15155 T3）/ 19+ 文件 / 约 +3100 行。pytest 282 + vitest 345 实测复跑全绿 + 走查 70 PASS/0 FAIL 复跑（均为 QA 阶段主会话亲跑，结论复用不重跑）。
+
+**三问结论**：
+1. **有无偷换需求范围**：无。REQ-039 验收 1~7 / REQ-040 1~5 / REQ-041 1~5 逐条映射实现与用例；CHG-010 九定夺逐条核对执行；实现级加法一处（telemetry session_id 列，OBS-3 登记在案）+ T3 七项最小改动决策点（verify §7 登记），无未批准新增。
+2. **有无明显隐患**：无 NCR 级。八项重点核过——SQL 全参数绑定（压缩/遥测/回填三模块逐处）；404 不泄露归属；key 零日志零落库零响应；摘要注入字面包裹；409 进程内登记 finally 全路径清理（无泄漏死锁）；懒回填幂等单列 UPDATE（WAL 并发安全）；摘要 tokens 计入回合 usage（quota 路径零改动）；LWW/会话档零交互（产物独立表，前后比对测试背书）。
+3. **测试是否真实覆盖**：真实。三套全绿均主会话复跑；断言抽查零空转（snip 占位逐字/挂载位置逐条/30 轮机器读数/懒回填真实采集 963==963/聚合 round6 精确值/缺失态变异断言）；改写映射 4 处登记，功能性删除为零。
+
+**非阻塞已知取舍留档**（4 条，量级低）：①409 进程内状态重启即失（重启窗口判定失效，用户走失败 toast 路径可接受）②阈值交替形态（压缩回合回基线、下回合再触发——CHG-010 定死设计行为，走查已见节奏；如需「压缩粘性」另走 CHG）③摘要输入单工具结果 1000 字符截断（体量护栏，较 T0 冒烟更保守）④聚合 fetchall 内存面（单公司流量无压力，iter-15 同取舍延续）。
+
+**总评**：代码面与批准口径逐字对齐，压缩管道降级方向恒为基线组装（每步回归锚点成立）；范围零越界、测试零空转、卫生面贯彻铁律 5。NCR 级缺陷：无。
