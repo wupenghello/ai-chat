@@ -537,8 +537,9 @@ class TestSearchSwitchAPI:
                 assert conn.execute(
                     "SELECT value FROM app_settings WHERE key='search_enabled'"
                 ).fetchone() == ("1",)  # KV 落库（迁移 v7）
-                # 迁移 v9（CHG-010/REQ-041：context_summary + telemetry 加法列）
-                assert db_version(conn) == 9
+                # 迁移 v10（CHG-011/REQ-042：user_memories + memory_jobs + users.memory_enabled）
+                # 版本位断言 9→10 为迁移版本位演进（改写映射登记，功能性删除为零）
+                assert db_version(conn) == 10
             finally:
                 conn.close()
 

@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from app import agent, compress, quota, telemetry
+from app import agent, compress, memory, quota, telemetry
 from app.config import Settings, get_settings
 from app.db import DatabaseDep, is_search_enabled
 from app.routers.auth import CurrentUser
@@ -202,6 +202,14 @@ async def chat_turn(
         base_url=base_url, api_key=api_key, model=model, turn_id=turn_id,
         settings=settings,
     )
+
+    # CHG-011/REQ-042 五层注入序（iter-17 T2）：用户长期记忆独立 system 消息 =
+    # system[1] 动态尾区之后、摘要消息（如有）之前；停用/无记忆时组装口径与基线 v7
+    # 逐字段等价（零回退锚点）。记忆只影响发给上游的内容，回合数据面零变化。
+    memory_text = memory.build_injection(conn, user.id)
+    if memory_text:
+        messages = memory.inject_into_messages(
+            messages, memory_text, has_persona=bool(settings.product_persona))
 
     # 工具可用性（design-iter-14 §6.2/§6.3）：自填档案「支持工具」开关（定夺①，默认开；
     # 统一 key 恒开）× admin 联网搜索总开关（KV 落库，回合受理时实时读——PUT 后下一回合

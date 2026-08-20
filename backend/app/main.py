@@ -4,6 +4,7 @@
 （前端 dev server 经 Vite proxy 转发 /api 至本服务，同源无需 CORS——见 backend/README.md）
 """
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -11,10 +12,11 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI
 
+from app import memory as memorysvc
 from app import search as searchsvc  # noqa: F401 —— import 即静态注册 search 工具（REQ-035）
 from app.config import Settings
 from app.db import connect, db_version, init_db
-from app.routers import admin, auth, profiles, proxy, sessions
+from app.routers import admin, auth, memory, profiles, proxy, sessions
 
 # 可观测（非功能条款）：quota/转发结果日志默认可见（uvicorn 只配置自家 logger，
 # root 无 handler 时 INFO 会被吞掉；basicConfig 幂等，已有 handler 时不重复加）
@@ -41,9 +43,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # 的下发门控（admin 开关 ∧ key）在回合受理处按 settings 判定，此处只管客户端与 key
         if settings.search_key:
             searchsvc.bind(app.state.http, settings.search_key)
+        # CHG-011/REQ-042（iter-17 T2）记忆抽取常驻扫描任务——七期路线首个常驻后台任务：
+        # 静默窗口扫描（轮数 ≥ N + 静默 ≥ X 分钟 + 有未覆盖增量）→ 抽取执行；
+        # memory_jobs 持久化为重启恢复的唯一权威（pending 行进程重启不丢、启动后继续执行）。
+        # 任务引用取闭包局部变量（app.state 共享属性在多 lifespan 测试夹具下会被覆盖，
+        # 关停 await 错环——局部引用恒指向本次 lifespan 所创建的任务）
+        app.state.settings = settings
+        scan_task = asyncio.create_task(memorysvc.scan_loop(app))
         try:
             yield
         finally:
+            scan_task.cancel()
+            try:
+                await scan_task
+            except asyncio.CancelledError:
+                pass
             searchsvc.unbind()
             await app.state.http.aclose()
 
@@ -56,6 +70,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(sessions.router)
     app.include_router(profiles.router)
     app.include_router(proxy.router)
+    app.include_router(memory.router)
     app.include_router(admin.router)
 
     @app.get("/api/health", tags=["dev"])

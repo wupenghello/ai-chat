@@ -12,7 +12,7 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 MIGRATIONS: dict[int, str] = {
     1: """
@@ -162,6 +162,40 @@ MIGRATIONS: dict[int, str] = {
     ALTER TABLE telemetry ADD COLUMN tokens_before INTEGER;  -- compress 行：触发依据实测值
     ALTER TABLE telemetry ADD COLUMN tokens_after INTEGER;   -- compress 行：压缩后首测值懒回填
     ALTER TABLE telemetry ADD COLUMN session_id TEXT;        -- 会话关联（阈值判定依据，见注释③）
+    """,
+    # iter-17 T2（CHG-011 REQ-042，迁移 v10；审核稿 §四 C 行「迁移 v7」为迁移 v6 时代写法，
+    # v7~v9 已被 app_settings/telemetry/context_summary 占用，更正为 v10 并注记——changes.md
+    # CHG-011 原因/依据段）：
+    # ① user_memories 用户长期记忆表——五层第 3 层载体（用户级实体，独立于会话档，与 LWW/
+    #    409 守卫/整档透传零交互）；source_session_id/model 机器记录抽取来源，用户手工编辑
+    #    归零（design-iter-17 PUT 来源归零语义随稿定案）；注销级联 ON DELETE CASCADE
+    # ② memory_jobs 抽取任务表——「落库 + 重启恢复」口径的唯一权威（进程重启不丢 pending 行，
+    #    启动后继续执行）；watermark_msg_id = 本次抽取覆盖至的消息 id（增量判定依据）；
+    #    attempts 失败计数上限 3（超限留 error 行待观察，不无限重试）
+    # ③ users 加法列 memory_enabled——整体一键停用开关（审核稿「可整体停用」验收口径；
+    #    users 加法列沿 v5 quota_override 先例），默认 1 启用
+    10: """
+    CREATE TABLE user_memories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        content TEXT NOT NULL,               -- 记忆条目文本（一条一个独立记忆点）
+        source_session_id TEXT,              -- 抽取来源会话（机器记录；手工编辑归零）
+        model TEXT,                          -- 抽取模型（机器记录；手工编辑归零）
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX idx_user_memories_user ON user_memories(user_id);
+    CREATE TABLE memory_jobs (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        session_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',   -- pending | done | error
+        watermark_msg_id TEXT NOT NULL,           -- 本次抽取覆盖至的消息 id（增量判定依据）
+        attempts INTEGER NOT NULL DEFAULT 0,      -- 失败计数（上限 3，超限留 error 行待观察）
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (user_id, session_id)         -- 每会话至多一份在案任务（覆盖更新）
+    );
+    ALTER TABLE users ADD COLUMN memory_enabled INTEGER NOT NULL DEFAULT 1;
     """,
 }
 

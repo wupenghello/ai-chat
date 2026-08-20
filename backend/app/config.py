@@ -49,6 +49,15 @@ class Settings(BaseSettings):
     snip_keep_recent_tools: int = 2  # 一级 snip K：仅最近 K 条 tool 消息保留结果全文
     compact_recent_turns: int = 5  # 二级 compact R：压缩后保留最近 R 轮全文
     summary_timeout: float = 30.0  # 摘要调用独立超时护栏（秒，不占回合单步 120s 口径）
+    # CHG-011/REQ-042（iter-17 T2）用户长期记忆参数——默认值即 T0 取证定死值
+    # （plans/iter-17-verify.md T0 §3/§4：上限收紧 30×150 字为体量复核实测定案；
+    # 微参数 N=4 / X=10 分钟 / 扫描间隔 60s 论证定死）；.env 可覆盖
+    memory_min_turns: int = 4  # 抽取触发轮数下限 N：低于 N 轮的会话不触发抽取
+    memory_silence_minutes: int = 10  # 静默窗口 X：距最近回合 ≥ X 分钟视为「会话后」
+    memory_scan_interval: float = 60.0  # 常驻扫描间隔（秒）
+    memory_max_entries: int = 30  # 记忆条目上限（T0 体量复核定案，原拟稿 50）
+    memory_entry_max_chars: int = 150  # 单条记忆字符上限（T0 体量复核定案，原拟稿 200）
+    memory_extract_timeout: float = 30.0  # 抽取调用独立超时护栏（沿 summary_timeout 同值定案）
 
 
 @lru_cache

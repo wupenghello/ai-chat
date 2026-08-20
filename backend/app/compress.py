@@ -287,17 +287,21 @@ async def call_summary(
     model: str,
     transcript: str,
     timeout: float,
+    system_prompt: str = SUMMARY_PROMPT,
 ) -> SummaryOutcome:
     """一次非流式摘要调用（跟随回合当前模式：base_url/api_key/model 即回合解析结果）。
 
     独立超时护栏（不占 REQ-030 单步 120s 口径）；响应体直接含 usage，机器读数无歧义。
     失败形态（error/timeout/空摘要/4xx/5xx）由调用方降级为不压缩组装。
+    system_prompt 参数化（CHG-011/iter-17 T2）：默认 SUMMARY_PROMPT（B2 口径零变化），
+    C 期记忆抽取复用本调用器形态传入 EXTRACT_PROMPT（复用面 = 调用器/护栏/三终态，
+    changes.md CHG-011 原因/依据段）。
     """
     payload = {
         "model": model,
         "stream": False,
         "messages": [
-            {"role": "system", "content": SUMMARY_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": transcript},
         ],
     }

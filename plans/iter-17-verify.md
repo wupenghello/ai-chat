@@ -119,3 +119,53 @@ usage：prompt_tokens=434 / completion_tokens=97。合并行为一致、格式�
 4. **注入文案定稿**（§5 逐字）。
 5. 零产品代码改动（仅 scripts/c_t0_smoke.py 取证脚本）、无未登记变更、无 DEF；空输出语义按 spec 既有口径（抽取失败/空输出 → attempts+1 失败分支）不在本期调整——冒烟未见「有价值会话输出空列表」形态，观察项随迭代复盘评估。
 6. **携带至 T1**：design-iter-17 注入预览块按 §5 模板承载（逐字同源口径入设计稿 API 口径章节）；**携带至 T2**：EXTRACT_PROMPT/注入模板/微参数以本节为唯一实现输入（沿 SUMMARY_PROMPT T0 定稿先例）。
+
+## T2 后端记忆子系统核心 + 迁移 v10（2026-08-20；REQ-042 主体 + REQ-043 API 数据面）
+
+### §1 实现结构（新增 / 改动）
+
+- `app/memory.py`（新增，~430 行）：EXTRACT_PROMPT R1 定稿常量（§2 逐字断言面）/ 注入文案定稿模板（§5）/ parse_extract_output（编号行解析+截断）/ user_memories 读写与整体替换（先删后插同事务）/ build_injection + inject_into_messages（五层注入序挂载）/ memory_jobs 任务面 + execute_job（抽取执行器：call_summary 复用、失败降级 attempts≤3）/ scan_once（静默窗口扫描 + pending 恢复面）/ scan_loop（常驻循环，异常自吞）
+- `app/db.py`：SCHEMA_VERSION 9→10；迁移 v10 = user_memories + memory_jobs + users.memory_enabled 加法列（schema 与 CHG-011 内容 3.2 一致；审核稿「迁移 v7」更正注记随 CHG-011 原因段）
+- `app/config.py`：记忆六参数字段（T0 定死值：N=4 / X=10 分钟 / 扫描 60s / 上限 30 条 / 单条 150 字 / 抽取超时 30s，.env 可覆盖）
+- `app/telemetry.py`：record_memory_extract（kind 加法扩展，turn_id/step 恒 NULL、endpoint='memory'、行不含记忆内容全文）
+- `app/compress.py`：call_summary 增加 system_prompt 参数化（默认 SUMMARY_PROMPT，B2 口径零变化——复用面扩展的最小改动）
+- `app/routers/memory.py`（新增）：GET /api/memory（列表+停用+注入预览单一链路）/ PUT /settings（注册序在 /{id} 之前）/ PUT /{id}（来源归零）/ DELETE /{id}；归属隔离 404
+- `app/routers/proxy.py`：chat_turn 组装后记忆注入（build_injection + inject_into_messages，挂载位 = 2（有人设）/ 1（无人设）确定性）
+- `app/main.py`：lifespan 挂载常驻扫描任务（闭包局部任务引用——多 lifespan 测试夹具下 app.state 共享属性覆盖会错环，局部引用恒指向本次 lifespan 任务；app.state.settings 注入供 scan_loop 同源取值）
+
+### §2 REQ-042 验收 1~7 逐条对照（test_memory.py，30 例中承载）
+
+| # | 验收 | 用例 | 结论 |
+|---|------|------|------|
+| 1 | 注入正确性（位置 + 逐字；有摘要时记忆在前摘要在后） | test_注入_两条记忆启用_位置system1之后_内容逐字 / test_注入_压缩生效会话_记忆在前摘要在后 / test_注入挂载_无人设形态 | ✅ MockTransport 捕获：system[2]=render_memory_text 逐字、压缩会话 [2]=记忆 [3]=摘要、无人设挂载 index 1 |
+| 2 | 停用零回退（memory_enabled=0 → 基线 v7 等价） | test_停用_组装与基线v7逐字段等价 / test_注入_无记忆或停用_不注入 | ✅ 停用态无任何 <user_memory> 消息，system 段形状回基线，人设字节恒定 |
+| 3 | 抽取闭环（触发 → 整体替换 + job done + 恰 1 条 memory_extract 行，tokens=假 usage 机器读数） | test_抽取闭环_整体替换_job_done_遥测行 / test_抽取_存量合并输入携带现有记忆 | ✅ entries 逐字替换、source_session_id/model 机器记录、水位推进到增量末条、EXTRACT_PROMPT 定稿逐字进 system、现有记忆列表进输入 |
+| 4 | 失败降级（500/超时 → attempts+1、记忆表不变、回合主路径正常） | test_失败降级_500_attempts递增_记忆表不变 / test_失败降级_超时_遥测timeout | ✅ attempts 3 到顶置 error 留观不再重试；存量记忆逐字不动；行 status=error/timeout 如实记 |
+| 5 | 重启恢复（预写 pending 行 → 新实例拾起执行） | test_重启恢复_pending行新实例拾起执行 | ✅ 轮数不足 N 的会话仅经 pending 恢复面执行（重启恢复与触发条件独立），done + 水位推进 |
+| 6 | 存储隔离（会话 PUT 载荷零变化 + 注销级联清零） | test_存储隔离_注销级联清零（pytest 面；PUT 载荷面 = 记忆不写回会话档——前端数据面零改动，T3 vitest 复验锚点） | ✅ 注销后 user_memories/memory_jobs 级联清零；会话档结构零变化（无记忆字段写路径） |
+| 7 | 卫生断言（行与日志零记忆内容全文与 key） | test_卫生_遥测行零记忆内容全文 | ✅ telemetry 全行全列检索无记忆内容 |
+
+REQ-043 验收 5（归属隔离）：test_memory_api.py test_归属隔离_他人记忆不可见不可操作 / test_PUT_他人条目_404 / test_DELETE_他人条目_404 ✅（列表仅本人、跨用户 id 操作 404 不泄露存在性）。
+
+触发条件判定面（scan 侧）：test_触发_轮数不足 / 静默窗口未到 / 无未覆盖增量不重复抽取（done 水位语义）/ 停用用户扫描跳过 ✅ 4 例。
+
+### §3 实现级决策点登记（合同外最小决策，沿 iter-16 T2 §8 体例）
+
+1. **call_summary 参数化**（system_prompt 默认 SUMMARY_PROMPT）：B2 调用点零行为变化的最小复用面扩展——CHG-011 复用面授权的实现形态。
+2. **watermark 两段语义**：创建时写「上次覆盖水位」（首次空串哨兵）、成功时推进到「本次增量末条」——若创建即预写目标位，execute_job 增量判定自吞（开发中实测发现并修正，留档防复发）。
+3. **lifespan 任务引用取闭包局部变量**：app.state 共享属性在 client_factory 多 lifespan 夹具下被覆盖 → 关停 await 错环（开发中实测发现并修正）；app.state.settings 注入避免 scan_loop 取全局 get_settings() 缓存失配。
+4. **PUT /api/memory/settings 注册序在 /{id} 之前**：路径匹配先具体后参数（FastAPI 注册序语义），反序则 settings 被路径参数吞为 422。
+5. **扫描对 done 会话保留增量判定**：done 非终态豁免——水位后有新消息即重新触发（覆盖更新同行），error 留观不重试（attempts 到顶语义）。
+
+### §4 测试计数与既有用例证明
+
+- pytest 282→312（+30：test_memory 19 + test_memory_api 11，均纯新文件）；既有 282 例仅 1 处演进：test_search 迁移版本位断言 9→10（迁移版本位演进，功能性删除为零，沿 iter-16 8→9 先例）
+- vitest 345/345 零改动复跑全绿（前端数据面零触达）
+- ruff clean
+- quota.py 与 usage_daily 数据面零改动（定夺③双轨哲学：test_quota 零改动复跑含于 312）
+
+### §5 卫生自查（铁律 5 + 受保护存储口径）
+
+- memory_extract 行不含记忆内容全文与 key（列白名单约束 + 用例断言双重背书）；抽取失败 warning 日志仅 status/session_id/user_id，无内容
+- 统一 key 仅进程内传递（.env → Settings → Authorization 头），脚本/留档零 key 明文
+- 扫描任务不触配额（quota.py 零导入零调用）、不触回合登记（generating_sessions 零交互）

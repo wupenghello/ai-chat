@@ -10,6 +10,8 @@
 - 既有 usage_daily 回合/token 落账零变化：遥测为并行新轨（REQ-024/025/034 口径零回退）
 - CHG-010/B2（iter-16 T2）：kind 枚举加法扩展 'compress' 压缩执行行（REQ-041 承载）；
   llm/tool 行形状与采集口径零变化（仅 v9 加法列）；llm 行携带 session_id（阈值判定依据）
+- CHG-011/C（iter-17 T2）：kind 枚举加法扩展 'memory_extract' 记忆抽取行（REQ-042 承载，
+  非回合后台调用：turn_id/step 恒 NULL，endpoint='memory'）；llm/tool/compress 行零变化
 """
 
 from __future__ import annotations
@@ -210,6 +212,51 @@ def record_compress(
         "error_code": error_code,
         "tokens_before": tokens_before,
         "tokens_after": tokens_after,
+        "session_id": session_id,
+    })
+
+
+def record_memory_extract(
+    db_path: str,
+    *,
+    day: str,
+    user_id: int,
+    mode: str,
+    session_id: str,
+    model: str,
+    latency_ms: int,
+    status: str,
+    usage: dict[str, Any] | None = None,
+    error_code: str | None = None,
+) -> None:
+    """记忆抽取执行行（kind='memory_extract'，CHG-011/REQ-042，iter-17 T2）：非回合后台
+    调用——turn_id/step 恒 NULL（不占回合 step 序列），endpoint='memory'，session_id =
+    触发来源会话；抽取调用自身 token 消耗记 tokens_prompt 同列口径（usage 字段映射与
+    llm/compress 行一致）；**行不含记忆内容全文**（卫生口径同 REQ-037，铁律 5）；
+    失败如实记 status=error/timeout，不补造。"""
+    usage = usage or {}
+
+    def _int(name: str) -> int | None:
+        value = usage.get(name)
+        return int(value) if isinstance(value, (int, float)) else None
+
+    _write(db_path, {
+        "day": day,
+        "user_id": user_id,
+        "mode": mode,
+        "turn_id": None,
+        "endpoint": "memory",
+        "kind": "memory_extract",
+        "step": None,
+        "model": model,
+        "latency_ms": latency_ms,
+        "status": status,
+        "tokens_prompt": _int("prompt_tokens"),
+        "tokens_completion": _int("completion_tokens"),
+        "tokens_total": int(usage.get("total_tokens") or 0),
+        "cache_hit_tokens": _int("prompt_cache_hit_tokens"),
+        "cache_miss_tokens": _int("prompt_cache_miss_tokens"),
+        "error_code": error_code,
         "session_id": session_id,
     })
 
