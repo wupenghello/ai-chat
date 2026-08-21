@@ -68,11 +68,11 @@ export type TurnEvent =
   | { type: 'tool.result'; tool_call_id: string; status: 'ok' | 'error' | 'timeout'; result: string; duration_ms: number; sources?: SourceItem[] }
   | { type: 'turn.step'; step: number; max_steps: number }
   | { type: 'usage'; requests: number; tokens: number }
-  | { type: 'turn.end'; reason: 'done' | 'max_steps' | 'aborted' | 'error' }
+  | { type: 'turn.end'; reason: 'done' | 'max_steps' | 'aborted' | 'time_limit' | 'error' }
   | { type: 'error'; code: string; message: string }
   | { type: string; [key: string]: unknown }
 
-export type TurnEndReason = 'done' | 'max_steps' | 'aborted'
+export type TurnEndReason = 'done' | 'max_steps' | 'aborted' | 'time_limit'
 
 export interface TurnHandlers {
   onEvent: (ev: TurnEvent) => void
@@ -117,13 +117,15 @@ function errorKindOf(code: string): ApiErrorKind {
  * 发起服务端回合（REQ-030~033）：请求体 = 本条消息 + 会话 id（+ 可选 system_prompt，
  * REQ-008 客户端设置随回合上传——design-iter-13 §4.2 基线后补注），无历史数组。
  *
- * resolve 于 turn.end（done/max_steps/aborted）；流内 error 事件与 HTTP 层错误抛 ApiError
- * （已生成文本与工具步骤由调用方保留——store 侧 aiMsg 已累积的 blocks 不回滚）。
+ * CHG-012/REQ-046（iter-18 T3）：opts.mode 加法可选字段——缺省不传 = 请求体零变化
+ * （现状锚点）；'research' = deep-research 回合（请求体携带 mode 字段）。
+ * resolve 于 turn.end（done/max_steps/aborted/time_limit）；流内 error 事件与 HTTP 层错误
+ * 抛 ApiError（已生成文本与工具步骤由调用方保留——store 侧 aiMsg 已累积的 blocks 不回滚）。
  */
 export async function runChatTurn(
   sessionId: string,
   message: string,
-  opts: { systemPrompt?: string },
+  opts: { systemPrompt?: string; mode?: 'research' },
   handlers: TurnHandlers,
   signal?: AbortSignal,
 ): Promise<TurnEndReason> {
@@ -136,6 +138,7 @@ export async function runChatTurn(
         session_id: sessionId,
         message,
         ...(opts.systemPrompt ? { system_prompt: opts.systemPrompt } : {}),
+        ...(opts.mode ? { mode: opts.mode } : {}),
       }),
       credentials: 'same-origin',
       signal,
@@ -199,7 +202,7 @@ export async function runChatTurn(
       handlers.onEvent(ev)
       if (ev.type === 'turn.end') {
         const r = (ev as { reason: string }).reason
-        if (r === 'done' || r === 'max_steps' || r === 'aborted') reason = r
+        if (r === 'done' || r === 'max_steps' || r === 'aborted' || r === 'time_limit') reason = r
         break
       }
     } catch (e) {

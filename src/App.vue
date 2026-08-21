@@ -4,6 +4,7 @@ import { useSessionsStore } from './stores/sessions'
 import { useSettingsStore } from './stores/settings'
 import { useToastStore } from './stores/toast'
 import { useAuthStore } from './stores/auth'
+import { useQuotaStore } from './stores/quota'
 import { exportSession } from './utils/export'
 import TheSidebar from './components/TheSidebar.vue'
 import MessageList from './components/MessageList.vue'
@@ -20,6 +21,7 @@ const settings = useSettingsStore()
 const toast = useToastStore()
 const auth = useAuthStore()
 const migration = useMigrationStore()
+const quota = useQuotaStore()
 
 const settingsOpen = ref(false)
 const locateAdv = ref(false)
@@ -40,6 +42,9 @@ onMounted(() => {
   })
   // iter-8 T3（REQ-022/018）：存量本地数据上云检测（登录后；无旧数据零打扰）
   void migration.detect()
+  // CHG-012/REQ-047（design-iter-18 §6.2）：登录后拉取 quota → 定深度研究开关可用性
+  // （refresh 内 catch 失败降级为「不确定即禁用」，无需此处再兜）
+  void quota.refresh()
 })
 
 function openSettings(locateAdvanced = false) {
@@ -47,10 +52,17 @@ function openSettings(locateAdvanced = false) {
   settingsOpen.value = true
 }
 
-async function send(text: string) {
+/** REQ-047（design-iter-18 §6.2）：设置弹窗关闭后重取 quota（档案「支持工具」/密钥模式切换可能改变三与门第一项） */
+function onSettingsClose() {
+  settingsOpen.value = false
+  void quota.refresh()
+}
+
+async function send(text: string, mode?: 'research') {
   // v3 双模式（design-iter-7 §3.1）：「未配置密钥即发送」分支消亡——
   // 无档案 = 统一 key 模式零配置可用（REQ-023），自填必填校验在档案保存时拦截
-  await sessions.send(text)
+  // CHG-012/REQ-047：mode 加法透传（'research' = 深度研究回合；缺省 undefined = 普通回合）
+  await sessions.send(text, mode)
 }
 
 /** REQ-013（走查 36，design-iter-11 §3.4）：导出入口迁至列表项「···」菜单，按会话导出；空会话 toast */
@@ -95,6 +107,7 @@ function editMessage(id: string, text: string) {
           <div class="composer-col">
             <ComposerBox
               :generating="sessions.isGenerating(sessions.activeId)"
+              :research-available="quota.researchAvailable"
               @send="send"
               @stop="sessions.stopGeneration()"
             />
@@ -105,7 +118,7 @@ function editMessage(id: string, text: string) {
 
     <!-- REQ-028：设置弹窗（叠加于聊天现场之上，关闭即回对话现场）。
          v-if 卸载重建：每次打开都是干净表单态——「直接关闭将丢弃」的承诺由卸载兑现（常驻挂载会残留草稿） -->
-    <SettingsForm v-if="settingsOpen" :open="settingsOpen" :locate-adv="locateAdv" @close="settingsOpen = false" />
+    <SettingsForm v-if="settingsOpen" :open="settingsOpen" :locate-adv="locateAdv" @close="onSettingsClose" />
 
     <AppToast @navigate="(to) => to === 'settings' && openSettings()" />
   </div>

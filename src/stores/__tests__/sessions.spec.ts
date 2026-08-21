@@ -529,3 +529,50 @@ describe('sessions store · 引用来源数据面（iter-14 T3，design-iter-14 
     expect(contentText(m.content)).toBe('回答正文。') // 来源标题/URL/片段与工具文本均不入正文（REQ-013/016 零适配）
   })
 })
+
+describe('sessions store · deep-research mode（REQ-047，iter-18 T3）', () => {
+  it('send(text, "research")：runChatTurn opts 携带 mode=research（REQ-047 验收 1 数据面）', async () => {
+    mockedTurn.mockImplementation(reply('报告'))
+    const sessions = useSessionsStore()
+    await sessions.send('开放问题', 'research')
+    expect(mockedTurn.mock.calls.at(-1)![2]).toMatchObject({ mode: 'research' })
+  })
+
+  it('send(text)（缺省）：runChatTurn opts 零 mode 字段（现状零变化锚点）', async () => {
+    mockedTurn.mockImplementation(reply('回答'))
+    const sessions = useSessionsStore()
+    await sessions.send('普通问题')
+    const opts = mockedTurn.mock.calls.at(-1)![2] as Record<string, unknown>
+    expect(opts).not.toHaveProperty('mode')
+  })
+
+  it('turn.end(time_limit)：消息标 timeLimit（M43 pill 数据源，REQ-047 验收 4）；与 maxSteps 互斥', async () => {
+    mockedTurn.mockImplementation(reply('部分报告', 'time_limit'))
+    const sessions = useSessionsStore()
+    await sessions.send('开放问题', 'research')
+    const m = sessions.active!.messages[1]
+    expect(m.status).toBe('done')
+    expect(m.timeLimit).toBe(true)
+    expect(m.maxSteps).toBeUndefined() // 一回合一 pill，reason 互斥
+  })
+
+  it('research 回合事件序：计划文本 → search 卡 + 引用 → 报告文本，blocks 定型含 text/tool_call/tool_result（REQ-047 验收 2/3）', async () => {
+    const sources = [{ title: '来源A', url: 'https://a.example.com/1', snippet: '片段' }]
+    mockedTurn.mockImplementation((_sid, _msg, _opts, h) => {
+      h.onEvent({ type: 'text.delta', text: '先拆解：1. 门槛 2. 价格' })
+      h.onEvent({ type: 'tool.call', tool_call_id: 'c1', name: 'search', arguments: '{"query":"显存门槛"}' })
+      h.onEvent({ type: 'tool.result', tool_call_id: 'c1', status: 'ok', result: '摘要', duration_ms: 2380, sources })
+      h.onEvent({ type: 'text.delta', text: '综合报告。' })
+      return Promise.resolve('done')
+    })
+    const sessions = useSessionsStore()
+    await sessions.send('研究问题', 'research')
+    const m = sessions.active!.messages[1]
+    expect(m.content).toEqual([
+      { type: 'text', text: '先拆解：1. 门槛 2. 价格' },
+      { type: 'tool_call', tool_call_id: 'c1', name: 'search', arguments: '{"query":"显存门槛"}' },
+      { type: 'tool_result', tool_call_id: 'c1', status: 'ok', result: '摘要', duration_ms: 2380, sources },
+      { type: 'text', text: '综合报告。' },
+    ])
+  })
+})

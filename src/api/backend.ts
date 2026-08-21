@@ -105,12 +105,15 @@ export interface AuthUser {
   is_admin?: boolean
 }
 
-/** REQ-024/014（iter-8）：当前用户配额口径（KeyModeCard 参数化，design-iter-7 走查 2 兑现） */
+/** REQ-024/014（iter-8）：当前用户配额口径（KeyModeCard 参数化，design-iter-7 走查 2 兑现）。
+ *  CHG-012/REQ-047（iter-18 T3）：research_available 加法可选字段（= 三与门判定，
+ *  design-iter-18 §6.1）——旧后端窗口期不携带时前端 `!== true` 保守禁用（不确定即禁用）。 */
 export interface QuotaStatus {
   mode: 'unified' | 'self'
   daily_limit: number
   used_today: number
   reset_at: string
+  research_available?: boolean
 }
 
 /** REQ-025（iter-8 T2）：管理后台——用户列表行（design-iter-8 §1.2 六列） */

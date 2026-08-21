@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { runChatTurn, type Block, type MessageContent, type SourceItem } from '../api/client'
 import { useAuthStore } from './auth'
 import { useSettingsStore } from './settings'
+import { useQuotaStore } from './quota'
 import * as db from '../db/persistence'
 import type { PersistedSession } from '../db/persistence'
 
@@ -20,6 +21,8 @@ export interface Message {
   forkIndex?: 0 | 1
   /** CHG-007 REQ-030：turn.end(max_steps) 定型标注——消息末尾「已到单回合步数上限」pill（design-iter-13 §3.4） */
   maxSteps?: boolean
+  /** CHG-012/REQ-047：turn.end(time_limit) 定型标注——消息末尾「已到研究时长上限」pill（design-iter-18 §4；与 maxSteps 互斥，一回合一 pill） */
+  timeLimit?: boolean
 }
 
 export interface Session extends PersistedSession {
@@ -156,8 +159,10 @@ export const useSessionsStore = defineStore('sessions', {
 
     /** 发送一条消息并流式生成回复。返回 false 表示不可发送：
      *  v3 双模式（REQ-023，iter-7 T2）——全部请求经后端代理（后端按生效档案/统一 key 路由），
-     *  登录即可发送；未登录（实际不可达：路由守卫保证主界面已登录）返回 false */
-    async send(text: string): Promise<boolean> {
+     *  登录即可发送；未登录（实际不可达：路由守卫保证主界面已登录）返回 false。
+     *  CHG-012/REQ-047（iter-18 T3）：mode 加法可选参数（回合级属性）——'research' = 深度研究
+     *  回合（开关开启态发送）；缺省 undefined = 普通回合（现状零变化）。 */
+    async send(text: string, mode?: 'research'): Promise<boolean> {
       if (!useAuthStore().user) return false
 
       let session = this.active
@@ -177,7 +182,7 @@ export const useSessionsStore = defineStore('sessions', {
 
       // 关键：从响应式数组取回代理对象，后续变更才能触发视图更新（Bug#1 根因）
       const aiMsgReactive = session.messages[session.messages.length - 1]
-      await this.generate(session, aiMsgReactive)
+      await this.generate(session, aiMsgReactive, mode)
       return true
     },
 
@@ -249,7 +254,7 @@ export const useSessionsStore = defineStore('sessions', {
       void this.persist(session)
     },
 
-    async generate(session: Session, aiMsg: Message) {
+    async generate(session: Session, aiMsg: Message, mode?: 'research') {
       const settings = useSettingsStore()
       const controller = new AbortController()
       const epoch = (this.generation[session.id] = (this.generation[session.id] ?? 0) + 1)
@@ -275,7 +280,7 @@ export const useSessionsStore = defineStore('sessions', {
         const reason = await runChatTurn(
           session.id,
           userText,
-          { systemPrompt: settings.systemPrompt || undefined },
+          { systemPrompt: settings.systemPrompt || undefined, ...(mode ? { mode } : {}) },
           {
             onEvent: (ev) => {
               // TurnEvent 含宽型未知成员：字面量判别后分支内显式断言字段
@@ -316,14 +321,18 @@ export const useSessionsStore = defineStore('sessions', {
         if (blocks.length === 0) blocks.push({ type: 'text', text: '' })
         aiMsg.status = 'done'
         if (reason === 'max_steps') aiMsg.maxSteps = true
+        else if (reason === 'time_limit') aiMsg.timeLimit = true
       } catch (e) {
         if ((e as Error).name === 'AbortError') {
           // REQ-010 用户主动停止 = stopped；REQ-003/006 系统中断 = interrupted
           aiMsg.status = this.stopRequested[session.id] ? 'stopped' : 'interrupted'
         } else {
-          const err = e as { kind?: string; message?: string }
+          const err = e as { kind?: string; message?: string; status?: number }
           aiMsg.status = 'error'
           aiMsg.error = { kind: err.kind ?? 'unknown', message: err.message ?? '未知错误' }
+          // CHG-012/REQ-047（design-iter-18 §6.2）：research 回合受理即拒（422 research_unavailable）
+          // → 重取 quota 刷新禁用态（开关发送时已复位，此处仅刷新服务端可用性快照）
+          if (mode === 'research' && err.status === 422) void useQuotaStore().refresh()
         }
       } finally {
         session.updatedAt = Date.now()

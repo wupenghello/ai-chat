@@ -230,4 +230,50 @@ describe('runChatTurn（CHG-007 REQ-030/033：回合端点 + SSE v2 九事件）
     expect(err.kind).toBe('network')
     expect(err.message).toContain('无法连接服务器')
   })
+
+  it('mode=research：请求体携带 mode 字段（REQ-047 验收 1 前半）', async () => {
+    const spy = vi.fn().mockResolvedValue(new Response(sseBody([{ type: 'turn.end', reason: 'done' }]), { status: 200 }))
+    vi.stubGlobal('fetch', spy)
+    await runChatTurn('s1', '开放问题', { mode: 'research' }, { onEvent: () => {} })
+    expect(JSON.parse(spy.mock.calls[0][1].body)).toEqual({
+      session_id: 's1',
+      message: '开放问题',
+      mode: 'research',
+    })
+  })
+
+  it('mode 缺省：请求体零变化（无 mode 字段——现状锚点，iter-13#42 复跑）', async () => {
+    const spy = vi.fn().mockResolvedValue(new Response(sseBody([{ type: 'turn.end', reason: 'done' }]), { status: 200 }))
+    vi.stubGlobal('fetch', spy)
+    await runChatTurn('s1', 'hi', {}, { onEvent: () => {} })
+    expect(JSON.parse(spy.mock.calls[0][1].body)).toEqual({ session_id: 's1', message: 'hi' })
+  })
+
+  it('turn.end reason=time_limit：resolve 其 reason（时长护栏终态加法，REQ-047 验收 4 数据面）', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(sseBody([{ type: 'turn.end', reason: 'time_limit' }]), { status: 200 })),
+    )
+    const { reason } = await turn()
+    expect(reason).toBe('time_limit')
+  })
+
+  it('心跳注释帧（: ping）零事件产出（REQ-045 验收 2）：注释帧不进 TurnEvent，事件序不变', async () => {
+    const enc = new TextEncoder()
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(enc.encode(': ping\n\n'))
+        controller.enqueue(enc.encode('data: {"type":"text.delta","text":"你"}\n\n'))
+        controller.enqueue(enc.encode(': ping\n\n'))
+        controller.enqueue(enc.encode('data: {"type":"turn.end","reason":"done"}\n\n'))
+        controller.enqueue(enc.encode('data: [DONE]\n\n'))
+        controller.close()
+      },
+    })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(stream, { status: 200 })))
+    const got: object[] = []
+    const reason = await runChatTurn('s1', 'hi', {}, { onEvent: (ev) => got.push(ev) })
+    expect(got.map((e) => (e as { type: string }).type)).toEqual(['text.delta', 'turn.end'])
+    expect(reason).toBe('done')
+  })
 })

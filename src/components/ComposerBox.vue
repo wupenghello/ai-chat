@@ -1,12 +1,41 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
+import ToggleSwitch from './ToggleSwitch.vue'
 
-const props = defineProps<{ generating?: boolean; hint?: string }>()
-const emit = defineEmits<{ send: [text: string]; stop: [] }>()
+const props = defineProps<{ generating?: boolean; hint?: string; researchAvailable?: boolean }>()
+const emit = defineEmits<{ send: [text: string, mode?: 'research']; stop: [] }>()
+
+// CHG-012/REQ-047（design-iter-18 §8 样件文案 M38~M42，逐字唯一来源）
+const M38 = '深度研究'
+const M39 = '深度研究模式开关'
+const M40 = '已开启深度研究：发送后 AI 将自动拆解问题、多轮联网搜索并给出带引用的报告，耗时较长'
+const M41 = '深度研究暂不可用：需联网搜索可用'
+const M42 = '深度研究依赖联网搜索：需要管理员开启搜索并配置密钥，且当前生效档案开启「支持工具」'
 
 const text = ref('')
 const el = ref<HTMLTextAreaElement | null>(null)
 const canSend = computed(() => !props.generating && text.value.trim().length > 0)
+
+// 深度研究模式开关（§2）：回合级属性，组件本地 ref，不持久化（不写 localStorage / 会话档）
+const research = ref(false)
+// research_available !== true → 禁用态（§6：前端缺省保守，不确定即禁用）
+const researchDisabled = computed(() => props.researchAvailable !== true)
+
+// 可用性翻转前端预防（§2.3 / 走查条 6）：开启态下重取得不可用 → 强制复位 + 禁用
+watch(
+  () => props.researchAvailable,
+  (avail) => {
+    if (!avail) research.value = false
+  },
+)
+
+// 信息行右侧文案状态机（§2.2）：生成中 > 禁用 > 开启 > 关闭
+const hintText = computed(() => {
+  if (props.generating) return props.hint ?? 'AI 回复生成中，发送暂不可用…'
+  if (researchDisabled.value) return M41
+  if (research.value) return M40
+  return 'Enter 发送 · Shift+Enter 换行'
+})
 
 async function autosize() {
   await nextTick()
@@ -18,8 +47,11 @@ async function autosize() {
 
 function submit() {
   if (!canSend.value) return
-  emit('send', text.value)
+  // 开启态发送携带 mode='research'；关闭态零 mode（现状零变化）
+  if (research.value && props.researchAvailable) emit('send', text.value, 'research')
+  else emit('send', text.value)
   text.value = ''
+  research.value = false // 发送即复位（§2.3 定夺③：submit() 内本地动作，HTTP 失败也已复位）
   void autosize()
 }
 
@@ -61,8 +93,17 @@ function onKey(e: KeyboardEvent) {
         </svg>
       </button>
     </div>
-    <div class="composer-hint">
-      {{ generating ? (hint ?? 'AI 回复生成中，发送暂不可用…') : 'Enter 发送 · Shift+Enter 换行' }}
+    <div class="composer-hint" :title="researchDisabled ? M42 : undefined">
+      <div class="hint-left">
+        <ToggleSwitch
+          :model-value="research"
+          :label="M39"
+          :disabled="researchDisabled"
+          @update:model-value="research = $event"
+        />
+        <span class="mlabel" :class="{ on: research && !researchDisabled, dis: researchDisabled }">{{ M38 }}</span>
+      </div>
+      <span class="hint-right">{{ hintText }}</span>
     </div>
   </div>
 </template>
@@ -102,10 +143,39 @@ function onKey(e: KeyboardEvent) {
 .ta::placeholder {
   color: var(--c-text-3);
 }
+/* CHG-012/REQ-047（design-iter-18 §2.1）：信息行由单行文本改左右布局——
+   左端 = 模式开关簇（ToggleSwitch + 旁置标签），右端 = hint 文案（margin-left:auto 右对齐）；
+   输入行（textarea + 发送/停止钮）零改动 */
 .composer-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  min-height: 20px;
+}
+.hint-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* 旁置标签 M38（§2.1）：13px/500，随态变色（关 = text-2 / 开 = primary / 禁 = text-3） */
+.mlabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--c-text-2);
+  transition: color 0.15s ease;
+}
+.mlabel.on {
+  color: var(--c-primary);
+}
+.mlabel.dis {
+  color: var(--c-text-3);
+}
+.hint-right {
+  margin-left: auto;
   font-size: 12px;
   color: var(--c-text-3);
-  margin-top: 6px;
+  text-align: right;
 }
 .send {
   flex: none;

@@ -176,6 +176,8 @@ function onEditKey(e: KeyboardEvent) {
         </span>
         <!-- REQ-030：turn.end(max_steps) 回合级标注（design-iter-13 §3.4，文案逐字） -->
         <span v-if="message.maxSteps && message.status !== 'generating'" class="pill max-steps">已到单回合步数上限</span>
+        <!-- CHG-012/REQ-047：turn.end(time_limit) 时长到顶标注（design-iter-18 §4，M43 逐字，沿 maxSteps pill 体例；与步数 pill 互斥，一回合一 pill） -->
+        <span v-else-if="message.timeLimit && message.status !== 'generating'" class="pill max-steps">已到研究时长上限</span>
       </div>
 
       <!-- CHG-003：消息下方操作栏（icon-only，hover 出 tooltip；复制/修改 hover 才显示） -->

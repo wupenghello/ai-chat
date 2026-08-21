@@ -100,3 +100,37 @@ quota.py / db.py / tools.py / telemetry.py **零改动**（endpoint 参数已存
 
 - test_quota.py::test_统一模式_默认档口径：quota 端点加法字段 → 精确 dict 断言补 research_available: False（1 处）。
 - **REQ-030 验收 1 事件序断言零改写**：该用例本以 `line.startswith("data: ")` 过滤，注释帧天然排除——原预计的「排除注释帧」改写实际为零改写（复跑全绿）。
+
+## T3 前端（2026-08-21，M2，REQ-047 模式入口 + 进度/到顶标注）
+
+### 亲跑核验结论（v1.4.14 B）
+
+主会话亲跑四道门槛全绿并采信：`vue-tsc --noEmit` 零错误 + `vitest run` **378 passed**（机器采集，364→378，+14 例）+ `guard:style` 通过 + 生产构建成功（132 modules）。开发 agent 在最后汇报阶段因 API 402 中断，代码与测试实际完整——核验后采信，非采信其口头回报。
+
+### 改动文件
+
+| 文件 | 要点 |
+|---|---|
+| ComposerBox.vue | 信息行左端 ToggleSwitch 复用 + 「深度研究」标签随态变色（M38~M42 逐字常量）+ hint 随态切换 + 发送即复位（submit 内本地 ref，HTTP 失败也已复位）+ 禁用态（research_available !== true）不隐藏 |
+| stores/quota.ts（新） | research_available 消费 store（`=== true` 保守判定，快照非订阅） |
+| api/client.ts | runChatTurn opts.mode 加法可选参数（缺省不传 = 请求体零变化） |
+| api/backend.ts | quota 响应加读 research_available |
+| stores/sessions.ts | send/generate 传 mode + turn.end reason='time_limit' → aiMsg.timeLimit + 422 research_unavailable 时 refresh quota |
+| MessageBubble.vue | time_limit pill（M43「已到研究时长上限」逐字，沿 maxSteps pill 体例、与步数 pill 互斥） |
+| App.vue | quota store 装配接线 |
+| 4 个 spec 文件 | +14 例纯新增（client/composer/sessions/另 1 处），既有 364 例零改写 |
+
+### 验收条款对照（REQ-047 1~5 + REQ-045 验收 2）
+
+- **REQ-047 ①开关与载荷**：开启发送请求体含 mode='research'、关闭不含、发送后复位（vitest 载荷形状 + 复位断言）✅；②进度渲染：假事件序 → 工具步骤卡序列 + 文本段累积、blocks 定型 ✅；③报告引用：sources → 引用卡 = REQ-035 复用断言、SourceCard 既有零回退 ✅；④time_limit 标注：reason='time_limit' → M43 pill 呈现 ✅；⑤前向兼容：未知 research 加法事件静默跳过零崩 ✅；**⑥走查 31 条**：见下（走查脚本承载）。
+- **REQ-045 验收 2 前端面**：注释帧经 parseSse 零事件产出（vitest，`: ` 前缀帧不进 TurnEvent）✅。
+
+### 实现级决策
+
+1. 开关状态 = 组件本地 ref（不持久化、不进 store）——回合瞬时属性，UI 面对等 REQ-047「mode 不写入会话档」；quota store 只承载 research_available（跨组件只读数据）。
+2. 复位时点 = submit() emit 后同步置 research=false（零服务端交互，HTTP 失败也已复位——定夺③保守回普通模式）。
+3. research_available 消费 = `=== true` 严格判定（不确定即禁用，兜底后端 422 两级防线）；422 research_unavailable 时主动 refresh quota（远端 admin 改动滞后自愈）。
+
+### 既有用例改写映射
+
+零改写（+14 例全为新增；既有 364 例零改动复跑全绿，功能性删除为零）。走查脚本与真实浏览器走查（验收 6 + D1 面收口）随走查步骤补登。
