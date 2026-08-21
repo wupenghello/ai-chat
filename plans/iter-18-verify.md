@@ -62,3 +62,41 @@
 - 心跳 **20s 定档**（§2 实证）；部署配置 300s 发现与价值口径修正在案。
 - 护栏 **16 步 + 900s 维持**（§3，授权内零调整）。
 - 零产品代码改动；零 DEF；实测脚本与结果未沉淀 git（一次性取证，关键数据本节留档）。
+
+## T2 后端核心（2026-08-21，L=4，REQ-045 心跳 + REQ-046 编排）
+
+### 亲跑核验结论（v1.4.14 B）
+
+主会话亲跑 `uv run ruff check .`（All checks passed）+ `uv run pytest -q`（**332 passed**，机器采集 `--collect-only` 计数 332）——与开发 agent 回报一致，采信。基线 312 例全数保留、功能性删除为零，新增 20 例（test_research.py）+ 改写既有 1 处（test_quota.py）。R2 逐字性由 test_research 逐字断言锚定（332 全绿即证），抽查 research.py 常量与 §1 定稿逐字等价（源码物理行拼接、注释声明在案）。
+
+### 改动文件
+
+| 文件 | 要点 |
+|---|---|
+| config.py | +3 参数 max_research_steps=16 / research_total_timeout=900.0 / heartbeat_interval=20.0（T0 定死值注释在案） |
+| research.py（新） | RESEARCH_PROMPT（R2 逐字）+ ResearchProfile dataclass + research_profile() + inject_instruction()（六层注入序） |
+| agent.py | run_turn 增可选 research 参数（steps_limit/total_deadline）+ TurnTimeLimit 异常 + turn.end reason 加法 'time_limit'（步数到顶沿 max_steps）；流式等待取「步超时 vs 总时长余额」较小者、判因区分 |
+| routers/proxy.py | TurnRequest.mode Literal 校验 + `_tool_gates()` 共享判定（三与门一处读两用）+ research_unavailable 422（先于计费）+ research 指令注入（记忆后同位）+ 遥测 endpoint='research' + stream() 心跳 watchdog + GET /api/quota 加法 research_available + 间隔兜底 |
+| .env.example | +3 参数占位（标注 T0 定死值） |
+| tests/test_research.py（新） | 20 例（REQ-045 1~3 + REQ-046 1~8 + mode 校验 + quota 端点 + 逐字锚点 + 间隔兜底） |
+| tests/test_quota.py | 改写 1 处（精确 dict 断言补 research_available） |
+
+quota.py / db.py / tools.py / telemetry.py **零改动**（endpoint 参数已存在，sink 传 'research'；计费沿既有点位——1 发起 = 1 回合）。
+
+### 验收条款逐条对照（REQ-045 1~3 + REQ-046 1~8）
+
+- **REQ-045 ①静默保活**：interval 0.2s 注入压测，≥2 注释帧 + 相邻间隔 ≤ interval+1.0s（缩小映射登记）✅；②前端零感知 pytest 面：data: 行序列 = 完整事件序无 ping 混入 ✅；③普通回合零回退：心跳共存 + 事件序逐帧 = REQ-030 验收 1 等价序，全量回归复跑全绿 ✅；④反代实测 T0 已留档（§2）不重复 ✅。
+- **REQ-046 ①帧级+注入位**：13 事件逐帧 + 首步请求体 research 指令位置（system[1] 后记忆前）/R2 逐字 + system[0] 人设/时间行不回退（含记忆预置六层序）✅；②步数硬上限：max_research_steps=3 → turn.end(max_steps) 内容保留不悬挂 ✅；③时长护栏：工具拖超/上游流中到顶 → turn.end('time_limit') 无孤儿 ✅；④计费：5 次调用 → turns+1、tokens=1500 数值断言 ✅；⑤门控拒绝：三与门三分支各 422 零上游零事件流 + mode 缺省零影响 + 非法 mode 422 ✅；⑥网关复用：非法入参 error 回填回合继续 + tool 行 endpoint='research' 落库 ✅；⑦断连取消（口径见决策 5）✅；⑧卫生：指令/事件流/遥测零 key ✅。
+
+### 实现级决策清单（登记留档）
+
+1. **心跳形态**：单生成器「事件等待超时补帧」（asyncio.wait 竞速 anext 任务 vs 心跳间隔），非独立 watchdog 协程——不引入第二任务、断连取消经 anext 任务注入既有清理、补帧失败面由构造消除（退化为尽力而为 try）。
+2. **参数化（单实现优先）**：采纳参数化而非薄复制——run_turn 仅 +1 可选参数 + 3 处时限检查 + 1 内部异常；research=None 时普通回合逐字节等价（312 例锚点），未走薄复制。
+3. **门控函数**：`_tool_gates()` 提至 proxy.py 模块级，search 下发门与 research 可用性门（含 quota 端点）共用，零复制判定路径。
+4. **时长护栏语义**：步间/工具段边界检查（到顶即终态）；流式段内压进 wait_for 剩余时间、超时按 capped_by_total 判因（time_limit 新 reason vs upstream_timeout 既有）；到顶已产出内容保留、未完成调用不计 calls/tokens。
+5. **断连取消口径**：TestClient stream break 不触发服务端取消（实测回合跑满 16 步），端点层无法确定性断言——改用 asyncio.create_task + task.cancel() 直接驱动 run_turn 断言取消传播与无孤儿契约；真实断连 CancelledError 传播由 REQ-030 既有路径承载。另发现既有 REQ-030 断连用例（handler 单次调用 seen==1）无法区分「已取消」与「自然完成」——未改动（功能性删除为零），仅登记观察。
+
+### 既有用例改写映射
+
+- test_quota.py::test_统一模式_默认档口径：quota 端点加法字段 → 精确 dict 断言补 research_available: False（1 处）。
+- **REQ-030 验收 1 事件序断言零改写**：该用例本以 `line.startswith("data: ")` 过滤，注释帧天然排除——原预计的「排除注释帧」改写实际为零改写（复跑全绿）。

@@ -21,6 +21,7 @@ from typing import Any
 import httpx
 
 from app import tools as toolsgw
+from app.research import ResearchProfile
 from app.tools import ToolDef
 
 logger = logging.getLogger("ai-chat.agent")
@@ -39,6 +40,14 @@ class UpstreamStatusError(Exception):
 
 class StepTimeout(Exception):
     """上游单步超时（护栏②）。"""
+
+
+class TurnTimeLimit(Exception):
+    """回合总时长护栏到顶（护栏之四，research 回合，REQ-046/CHG-012 定夺⑥）。
+
+    流式段内上抛 = 剩余等待时间取步超时与总时长余额的较小者、后者归零；
+    工具段/步间由循环边界检查主动上抛。已产出内容保留，终态 turn.end reason='time_limit'。
+    """
 
 
 def _upstream_error_event(status: int) -> dict[str, str]:
@@ -270,6 +279,7 @@ async def run_turn(
     max_steps: int,
     step_timeout: float,
     tool_result_limit: int,
+    research: ResearchProfile | None = None,
     summary_tokens: int = 0,
     turn_id: str | None = None,
     on_finish: Callable[[int, int], None] | None = None,
@@ -290,6 +300,12 @@ async def run_turn(
     tokens 如实累计」既有口径自然覆盖，quota.py 零改动）；摘要调用不占回合 step 序列
     （calls/step 口径零变化，llm 行连续性不回退）。turn_id 可由调用方预生成传入
     （组装阶段的 compress 行需与回合同 turn_id 关联）；缺省内部生成（既有行为）。
+
+    CHG-012/REQ-046（iter-18 T2）research 参数化（内容 3.1 单实现优先）：research 非
+    None = deep-research 回合——步数上限取 research.max_steps（独立于普通回合 max_steps）、
+    生效回合总时长护栏 research.total_timeout（到顶 turn.end reason='time_limit'，turn.end
+    reason 枚举加法扩展；步数到顶沿 reason='max_steps' 既有体例）。已生成内容保留；
+    单步 120s/工具超时/断连取消沿用；research=None 时本函数行为与普通回合逐字节等价。
     """
     turn_id = turn_id or uuid.uuid4().hex[:12]
     yield {"type": "turn.start", "session_id": session_id, "turn_id": turn_id}
@@ -301,6 +317,12 @@ async def run_turn(
     reason = "done"
     active: UpstreamCall | None = None
     finished = False
+    # research 双护栏生效面：steps_limit 覆盖步数上限；total_deadline 为回合级时钟
+    # （None = 普通回合无总时长护栏，零行为变化）
+    steps_limit = research.max_steps if research is not None else max_steps
+    total_deadline = (
+        time.monotonic() + research.total_timeout if research is not None else None
+    )
 
     def _finish() -> None:
         nonlocal finished
@@ -323,8 +345,11 @@ async def run_turn(
     pending_started = 0.0
 
     try:
-        for step in range(1, max_steps + 1):
-            yield {"type": "turn.step", "step": step, "max_steps": max_steps}
+        for step in range(1, steps_limit + 1):
+            if total_deadline is not None and time.monotonic() >= total_deadline:
+                reason = "time_limit"  # 总时长护栏：步间到顶（无新上游调用）
+                break
+            yield {"type": "turn.step", "step": step, "max_steps": steps_limit}
             payload: dict[str, Any] = {
                 "model": model,
                 "messages": context,
@@ -339,18 +364,33 @@ async def run_turn(
             deadline = time.monotonic() + step_timeout
             started = time.monotonic()
             call_status, call_code, call_event = "ok", None, None
+            time_limit_hit = False
             pending_call, pending_step, pending_started = call, step, started
             try:
                 it = call.stream(payload)
                 try:
                     while True:
                         remaining = deadline - time.monotonic()
+                        capped_by_total = False
+                        if total_deadline is not None:
+                            # 总时长护栏压进步内：剩余等待取步超时与总时长余额较小者
+                            total_remaining = total_deadline - time.monotonic()
+                            if total_remaining <= 0:
+                                raise TurnTimeLimit()
+                            if total_remaining < remaining:
+                                remaining = total_remaining
+                                capped_by_total = True
                         if remaining <= 0:
                             raise StepTimeout()
                         try:
                             delta = await asyncio.wait_for(anext(it), timeout=remaining)
                         except StopAsyncIteration:
                             break
+                        except TimeoutError:
+                            # wait_for 到期：区分是哪条 deadline（步超时 vs 总时长护栏）
+                            if capped_by_total:
+                                raise TurnTimeLimit() from None
+                            raise StepTimeout() from None
                         yield {"type": "text.delta", "text": delta}
                 finally:
                     await it.aclose()
@@ -364,6 +404,10 @@ async def run_turn(
             except (StepTimeout, TimeoutError):
                 call_event = _UPSTREAM_TIMEOUT_EVENT  # 护栏②：上游单步超时（wait_for 到期）
                 call_status, call_code = "timeout", "upstream_timeout"
+            except TurnTimeLimit:
+                # 护栏之四：回合总时长到顶（流式中）——已产出 delta 保留，终态 time_limit
+                call_status, call_code = "timeout", "time_limit"
+                time_limit_hit = True
             except httpx.HTTPError:
                 call_event = _UPSTREAM_UNREACHABLE_EVENT
                 call_status, call_code = "error", "upstream_unreachable"
@@ -377,6 +421,10 @@ async def run_turn(
                    "latency_ms": int((time.monotonic() - started) * 1000),
                    "status": call_status, "usage": call.usage_detail,
                    "error_code": call_code})
+            if time_limit_hit:
+                # 流式中总时长到顶：该调用不计入 calls/tokens（沿步超时既有体例）
+                reason = "time_limit"
+                break
             if call_event is not None:
                 yield call_event
                 reason = "error"
@@ -387,7 +435,7 @@ async def run_turn(
             requested = call.tool_calls if tool_defs else []
             if not requested:
                 break  # 模型给出最终回答
-            if step >= max_steps:
+            if step >= steps_limit:
                 reason = "max_steps"  # 模型仍要调工具但步数用尽（验收 2：第 2 步后截停）
                 break
 
@@ -401,7 +449,12 @@ async def run_turn(
                 ],
             }
             context.append(assistant_msg)
+            time_limit_cut = False
             for tc in requested:
+                if total_deadline is not None and time.monotonic() >= total_deadline:
+                    # 工具段总时长到顶：截停后续工具（已执行工具结果已在事件流/上下文）
+                    time_limit_cut = True
+                    break
                 yield {"type": "tool.call", "tool_call_id": tc["id"],
                        "name": tc["name"], "arguments": tc["arguments"]}
                 defn = registry.get(tc["name"])
@@ -433,6 +486,9 @@ async def run_turn(
                     "tool_call_id": tc["id"],
                     "content": toolsgw.wrap_for_context(execution.result),
                 })
+            if time_limit_cut:
+                reason = "time_limit"
+                break
         yield {"type": "usage", "requests": calls, "tokens": tokens}
         yield {"type": "turn.end", "reason": reason}
     except (asyncio.CancelledError, GeneratorExit):

@@ -14,14 +14,15 @@ import json
 import logging
 import uuid
 from collections.abc import AsyncIterator
-from typing import Annotated, Any
+from contextlib import suppress
+from typing import Annotated, Any, Literal
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from app import agent, compress, memory, quota, telemetry
+from app import agent, compress, memory, quota, research, telemetry
 from app.config import Settings, get_settings
 from app.db import DatabaseDep, is_search_enabled
 from app.routers.auth import CurrentUser
@@ -31,16 +32,44 @@ router = APIRouter(prefix="/api", tags=["chat"])
 
 logger = logging.getLogger("ai-chat.quota")
 
+# REQ-045 心跳兜底默认（与 config.heartbeat_interval 默认值同源：T0 实测定档 20s）
+HEARTBEAT_FALLBACK = 20.0
+# SSE 注释帧（REQ-045 定夺④）：非事件——不进事件序/遥测/前端解析面（parseSse 只认 data: 行）
+HEARTBEAT_FRAME = b": ping\n\n"
+
+
+def _heartbeat_interval(settings: Settings) -> float:
+    """心跳间隔（REQ-045）：非法值 ≤0 兜底默认 20s（保守方向，不拒启动）。"""
+    return settings.heartbeat_interval if settings.heartbeat_interval > 0 else HEARTBEAT_FALLBACK
+
 
 class TurnRequest(BaseModel):
     """回合端点请求体（CHG-007 REQ-033 / design-iter-13 §4.2）：无历史数组。
 
     system_prompt 为可选第三字段（REQ-008 的全局系统提示词存前端 localStorage，
     服务端组装需随回合上传——design-iter-13 基线后补注，随 verify 文档登记）。
+    CHG-012/REQ-046（iter-18 T2）：mode 加法可选字段——缺省 'chat' 行为零变化；
+    'research' = deep-research 回合（受理即过三与门）；非法值 Literal 校验 422。
     """
     session_id: str = Field(min_length=1, max_length=64)
     message: str = Field(min_length=1, max_length=32768)
     system_prompt: str | None = Field(default=None, max_length=8000)
+    mode: Literal["chat", "research"] = "chat"
+
+
+def _tool_gates(
+    conn, profile, settings: Settings
+) -> tuple[bool, bool]:
+    """工具可用性判定源（一处读两用，CHG-012 内容 3.6/定夺⑧）。
+
+    返回 (tools_allowed, search_gate)：tools_allowed = 当前生效档案 tools_enabled
+    或统一 key（无档案恒真）；search_gate = admin 搜索开关 ∧ search_key 已配置。
+    research_available = 两者相与（三与门）——search 下发门与 research 可用性门
+    共用本函数同一读取，不复制判定路径（proxy 既有 L218-222 口径重构提取，零分叉）。
+    """
+    tools_allowed = profile is None or bool(profile["tools_enabled"])
+    search_gate = is_search_enabled(conn) and bool(settings.search_key)
+    return tools_allowed, search_gate
 
 
 def _resolve_upstream(
@@ -173,6 +202,15 @@ async def chat_turn(
         return _error(503, "unified_key_missing", "服务端未配置统一密钥，请联系管理员")
     profile, base_url, api_key, model = resolved
 
+    # CHG-012/REQ-046（iter-18 T2）可用性三与门（与 search 下发门同源一处读两用，
+    # 定夺⑧不新增独立开关）：mode='research' 且不满足 → 受理即拒——先于配额计费
+    # （零上游调用、零事件流、零配额计数）；mode 缺省普通回合不经本判定（零变化）。
+    tools_allowed, search_gate = _tool_gates(conn, profile, settings)
+    if body.mode == "research" and not (tools_allowed and search_gate):
+        return _error(
+            422, "research_unavailable",
+            "research 模式不可用：需要管理员开启搜索并配置搜索 key，且当前档案允许工具")
+
     mode = quota.MODE_SELF if profile is not None else quota.MODE_UNIFIED
     day, blocked = quota.check_and_consume(conn, user.id, mode, settings)
     if blocked is not None:
@@ -211,14 +249,23 @@ async def chat_turn(
         messages = memory.inject_into_messages(
             messages, memory_text, has_persona=bool(settings.product_persona))
 
+    # CHG-012/REQ-046（iter-18 T2）research 指令注入（六层注入序，REQ-036 改写承载）：
+    # system[1] 动态尾区之后、记忆消息之前——后于记忆注入执行同位插入即落序
+    # （人设 → 动态尾区 → research 指令 → 记忆 → 摘要 → 历史）；普通回合不含（零变化）。
+    research_profile = None
+    if body.mode == "research":
+        research_profile = research.research_profile(settings)
+        messages = research.inject_instruction(
+            messages, has_persona=bool(settings.product_persona))
+
     # 工具可用性（design-iter-14 §6.2/§6.3）：自填档案「支持工具」开关（定夺①，默认开；
     # 统一 key 恒开）× admin 联网搜索总开关（KV 落库，回合受理时实时读——PUT 后下一回合
     # 生效）× key 已配置（缺失时开关状态可存但 search 不注册，§6.1）。
     # admin 关闭或 key 缺失 → search 不进下发 → 上游 tools 定义不含 search（模型不知其存在）。
-    tools_allowed = profile is None or bool(profile["tools_enabled"])
+    # CHG-012：tools_allowed/search_gate 判定已上移至三与门（_tool_gates 一处读两用）。
     tool_defs = tools_for_user(
         is_admin=user.is_admin,
-        gates={"search": is_search_enabled(conn) and bool(settings.search_key)},
+        gates={"search": search_gate},
     ) if tools_allowed else []
 
     def record_usage(calls: int, tokens: int) -> None:
@@ -230,8 +277,11 @@ async def chat_turn(
         # 写入面自身吞 sqlite 异常（主路径隔离），此处仅补公共维度字段。
         # CHG-010（iter-16 T2）：session_id 会话关联列（迁移 v9 加法列）——llm 行携带，
         # 供三级阈值判定读「该会话上一回合 step=1 tokens_prompt」（REQ-039）
+        # CHG-012/REQ-046（iter-18 T2）：research 回合 llm/tool 行 endpoint='research'
+        # 加法值（kind 枚举与行形状零变化；compress 行 endpoint 仍恒 'turn'，3.7 口径）
         common = {"day": day, "user_id": user.id, "mode": mode,
-                  "turn_id": row.get("turn_id"), "endpoint": "turn",
+                  "turn_id": row.get("turn_id"),
+                  "endpoint": "research" if research_profile is not None else "turn",
                   "session_id": body.session_id}
         if row["kind"] == "llm":
             telemetry.record_llm(
@@ -267,26 +317,60 @@ async def chat_turn(
     generating.add(gen_key)
 
     async def stream() -> AsyncIterator[bytes]:
+        # CHG-012/REQ-045（iter-18 T2）心跳 watchdog：单生成器「事件等待超时补帧」形态——
+        # run_turn 的下一事件以任务承载，与心跳间隔竞速；空闲 ≥ interval 补发 SSE 注释帧。
+        # 注释帧非事件（前端 parseSse 只认 data: 行，零改动）；不进事件序、不落遥测；
+        # 对全部回合生效（连接层，mode 无关）。断连取消口径零变化：取消传播 =
+        # 取消事件任务（CancelledError 经 anext 注入 run_turn 既有清理路径）+ 收尾
+        # aclose（生成器悬停在 yield 点时驱动其 finally 关闭在途上游连接，无孤儿任务）。
+        interval = _heartbeat_interval(settings)
+        agen = agent.run_turn(
+            client=upstream,
+            base_url=base_url,
+            api_key=api_key,
+            model=model,
+            session_id=body.session_id,
+            messages=messages,
+            tool_defs=tool_defs,
+            max_steps=settings.agent_max_steps,
+            step_timeout=settings.agent_step_timeout,
+            tool_result_limit=settings.tool_result_limit,
+            research=research_profile,
+            summary_tokens=summary_tokens,
+            turn_id=turn_id,
+            on_finish=record_usage,
+            telemetry_sink=telemetry_sink,
+        )
+        next_ev: asyncio.Task[dict[str, Any]] | None = None
         try:
-            async for ev in agent.run_turn(
-                client=upstream,
-                base_url=base_url,
-                api_key=api_key,
-                model=model,
-                session_id=body.session_id,
-                messages=messages,
-                tool_defs=tool_defs,
-                max_steps=settings.agent_max_steps,
-                step_timeout=settings.agent_step_timeout,
-                tool_result_limit=settings.tool_result_limit,
-                summary_tokens=summary_tokens,
-                turn_id=turn_id,
-                on_finish=record_usage,
-                telemetry_sink=telemetry_sink,
-            ):
+            while True:
+                if next_ev is None:
+                    next_ev = asyncio.ensure_future(anext(agen))
+                try:
+                    done, _ = await asyncio.wait({next_ev}, timeout=interval)
+                except asyncio.CancelledError:
+                    raise  # 断连取消照常传播（REQ-030 既有语义）
+                if not done:
+                    # watchdog 到点补注释帧（尽力而为：补帧路径自身异常不杀流）
+                    try:
+                        yield HEARTBEAT_FRAME
+                    except asyncio.CancelledError:
+                        raise
+                    continue
+                try:
+                    ev = next_ev.result()
+                except StopAsyncIteration:
+                    break
+                next_ev = None
                 yield ("data: " + json.dumps(ev, ensure_ascii=False) + "\n\n").encode()
         finally:
             generating.discard(gen_key)
+            if next_ev is not None:
+                next_ev.cancel()
+                with suppress(asyncio.CancelledError, StopAsyncIteration, Exception):
+                    await next_ev
+            with suppress(asyncio.CancelledError, StopAsyncIteration, Exception):
+                await agen.aclose()
 
     return StreamingResponse(stream(), media_type="text/event-stream")
 
@@ -390,16 +474,24 @@ def read_quota(
     conn: DatabaseDep,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> dict[str, object]:
-    """当前用户配额口径（REQ-024/014 联动：KeyModeCard「每日 — 次」占位参数化，前端 T2 接入）。"""
+    """当前用户配额口径（REQ-024/014 联动：KeyModeCard「每日 — 次」占位参数化，前端 T2 接入）。
+
+    CHG-012/REQ-047（iter-18 T2）：加法字段 research_available（= 三与门判定，
+    design-iter-18 §6.1 开关禁用态数据面）——与 mode 门控同一判定函数（_tool_gates），
+    快照非订阅（滞后口径兜底 = 发送时后端受理即拒，设计 §6.3）。
+    """
     profile = conn.execute(
-        "SELECT 1 FROM profiles WHERE user_id = ? AND is_active = 1", (user.id,)
+        "SELECT tools_enabled FROM profiles WHERE user_id = ? AND is_active = 1",
+        (user.id,),
     ).fetchone()
     mode = quota.MODE_SELF if profile is not None else quota.MODE_UNIFIED
+    tools_allowed, search_gate = _tool_gates(conn, profile, settings)
     return {
         "mode": mode,
         "daily_limit": quota.limit_for(conn, user.id, mode, settings),
         "used_today": quota.user_used(conn, user.id),
         "reset_at": "明日 00:00",
+        "research_available": tools_allowed and search_gate,
     }
 
 

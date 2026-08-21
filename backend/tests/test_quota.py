@@ -301,6 +301,9 @@ class TestQuotaEndpoint:
                 "daily_limit": 30,  # iter-8 计划定案默认值（CEO 拍板 2026-08-16）
                 "used_today": 1,
                 "reset_at": "明日 00:00",
+                # REQ-047 加法字段（CHG-012/iter-18 T2）：统一 key 模式且 search_key
+                # 未配置 → 三与门第一项真、key 项假 → research_available=False
+                "research_available": False,
             }
 
     def test_自填模式_档位切换口径(self, tmp_path: Path):

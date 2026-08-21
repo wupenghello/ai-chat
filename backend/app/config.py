@@ -58,6 +58,15 @@ class Settings(BaseSettings):
     memory_max_entries: int = 30  # 记忆条目上限（T0 体量复核定案，原拟稿 50）
     memory_entry_max_chars: int = 150  # 单条记忆字符上限（T0 体量复核定案，原拟稿 200）
     memory_extract_timeout: float = 30.0  # 抽取调用独立超时护栏（沿 summary_timeout 同值定案）
+    # CHG-012/REQ-046（iter-18 T2）deep-research 双护栏——默认值即 T0 取证定死值
+    # （plans/iter-18-verify.md §3：真实研究回合实测 3~5 步 / 22~27s，16 步 + 900s
+    # 维持，定夺⑥授权内零调整）；.env 可覆盖，验收用例以小值注入压测
+    max_research_steps: int = 16  # research 步数硬上限（独立于普通回合 10）
+    research_total_timeout: float = 900.0  # research 回合总时长护栏（秒；到顶 reason='time_limit'）
+    # CHG-012/REQ-045（iter-18 T2）SSE 心跳间隔——T0 本地 nginx 反代实测定档 20s
+    # （plans/iter-18-verify.md §2：默认 60s 配置静默流 60.0s 断连、20s 心跳 100s 完整
+    # 存活）；非法值 ≤0 由使用方兜底默认 20.0（保守方向，不拒启动）
+    heartbeat_interval: float = 20.0
 
 
 @lru_cache
