@@ -153,4 +153,6 @@ quota.py / db.py / tools.py / telemetry.py **零改动**（endpoint 参数已存
 
 **脚本与 17 骨架差异**：三后端两前端（禁用态/time_limit 用独立后端实例或 env 覆盖真实走查，非 mock）；key 读取扩展（backendEnvFromDotenv 加读 AI_CHAT_SEARCH_KEY，仅进程环境注入）；载荷捕获改页面级 fetch 包裹（规避 puppeteer postData 首回合不可靠）；网络层到顶断言（真触达 turn.end(time_limit) 非纯 UI）。
 
-**D1 面全局回归收口**：后端 pytest 332 + 前端 vitest 378 + 走查 41 PASS/1 FAIL（缺陷 DEF-038 待定夺，非功能性失败），存量全绿、功能性删除为零、度量机器采集（铁律 5）。
+**D1 面全局回归收口**：后端 pytest 332 + 前端 vitest 378 + 走查 41 PASS/0 FAIL（缺陷 DEF-038 改规格处置后），存量全绿、功能性删除为零、度量机器采集（铁律 5）。
+
+**OBS-1 登记（QA 审计 iter-18，2026-08-21）**：本期曾发生「backend/.env 写入真实 search key 击穿 test_search/test_research『key 缺失』分支 → 测试 7 例红 → 提交被 pre-commit hook 拒绝（铁律 2 正确行为）→ 回退 .env 并给走查脚本加进程环境优先覆盖」事件。处置：search key 不进 .env（进程环境注入，跑后移除），git log -S key 全历史零泄露实证。本事件留痕本段 + 走查脚本 L84-87 注释，非缺陷（提交被拒是护栏正常工作），登记以闭合审计闭环。
