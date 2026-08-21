@@ -2,6 +2,91 @@
 
 每条变更一节，按时间倒序追加。没有记录的需求改动视为未发生（铁律 1）。
 
+## CHG-013 架构升级第七期 D2：生命周期事件 hooks（进程内旁路回调）
+
+- 日期：2026-08-22
+- 类型：新增（含波及注记；无存量正式改写）
+- 状态：**已批准（2026-08-22 CEO「全部按推荐」= 整体批准 + 八定夺全按推荐定案，基线 req-baseline-v10）**
+- 原因/依据：iter-18（D1）已于 2026-08-21 交付并关闭（rtm.md 全局回归基线 D1 面收口：后端 pytest 332 + 前端 vitest 378 + 走查 41 PASS/0 FAIL；QA 审计整改闭环 + 复盘落制度 v1.4.17，registry 已登记关闭），七期路线 A1→A2→B1→B2→C→D1 ✅→**D2（最后一期，收官）**下一候选 = D2；spec §4 暂缓池「D2：hooks（生命周期事件进程内旁路回调先行，HTTP webhook 后置；可与移动端搭班）——agent 路线第 7 期」条目拉项（审核稿 §六.2「每期排期时走一条 CHG」模式，沿 CHG-007/009/010/011/012 先例；CHG 编号顺延 = **CHG-013**，批准后出基线 req-baseline-v10）。上游依据：已批准审核稿 `docs/architecture-upgrade-plan-2026-08-17.md`——§三要素 10「hooks 系统：**生命周期事件回调先行（消息到达/工具前后/回合结束，进程内旁路 function），HTTP webhook 后置**」；§四 D2 行「Σ4~6（小迭代，可与移动端搭班）：生命周期事件枚举 + 进程内旁路回调 + 后置 HTTP webhook + 配置面；验收口径示例：**先旁路不阻塞，防做成第二套循环**」；§九 D1/D2 行「hooks 留口子接通知/自动化」；§四顺序依赖「D 依赖 A 的工具网关」。前置依赖已就绪：A1/A2（iter-13/14）工具网关六项校验、ReAct 循环 run_turn、B1~D1 全部交付关闭，基线现为 req-baseline-v9（REQ-001~043 + REQ-045~047；REQ-044 永久留予 CHG-011 拟稿）。**现状代码取证（2026-08-22 逐项核实，非推测）**：
+  - **回合受理管线（「消息到达」点位，proxy.py `chat_turn()` L180-375）**：会话归属 404（L193-198）→ 上游解析 503（L200-202）→ research 三与门 422（L208-212）→ 配额先查后计（L214-221，blocked 即返零上游调用）→ **turn_id 生成（L232）** → 组装链 snip→compact→记忆→research 注入（L233-259）→ 工具三与门下发（L266-269）→ logger.info「turn accepted」（L310-311）→ generating_sessions 登记（L315-317）→ SSE stream（L319）。**turn.accepted 埋点候选 = L232 之后（turn_id 可关联、组装开始前、配额已计——受理成立点）**；被拒回合（404/503/422/429）零 hook 事件——拒绝面已有日志（L220「chat blocked」等）与遥测承载。
+  - **ReAct 循环（agent.py `run_turn()` L270-507，工具前后与终态点位）**：turn.start（L311）/ turn.step（L352）/ llm 遥测行先于后续 yield 落库（L420-423）/ 工具段 L452-491——**tool.call 事件 yield（L458-459）→ 未注册工具即 error result（L460-462）/ execute_tool 网关执行（L463-466）→ tool 遥测行（L468-470）→ tool.result 事件 yield（L474-481）→ 包裹回填（L484-488）**；终态 usage（L492）+ turn.end（L493，reason=done/max_steps/time_limit/error）；**断连取消 except (CancelledError, GeneratorExit)（L494-503）：补 cancelled llm 行后原样重抛、不产 turn.end 事件**——turn.cancelled 独立事件的代码依据；finally（L504-507）收尾 on_finish=record_usage→quota.record_tokens（L271-273）。**埋点定位：tool.before = L458 后 L463 前（覆盖未注册→error 路径，与 tool.call 事件同点位）；tool.after = L468-470 遥测行同点位（execution 三终态已知）；turn.end = L493 后（reason 与累计值已知）；turn.cancelled = L494 handler 内（fire-and-forget 后重抛，不引入新 await 点）**。
+  - **心跳与 SSE 层零交互（proxy.py `stream()` L319-373）**：watchdog 事件任务竞速（ensure_future L348 / asyncio.wait timeout L350 / 空闲补注释帧 L356）+ finally 收尾（L366-373：next_ev.cancel + suppress await + agen.aclose）——hook 埋点全部位于 run_turn 生成器内（agent 侧单点，受理事件在 proxy 侧），与心跳层零交互；**该处的 fire-and-forget 任务管理与取消收尾 suppress 体例可直接复用于 hook 分发任务**。
+  - **旁路写入与异常隔离先例（故障隔离的同型代码）**：telemetry.py `_write` 独立短连接 + 吞 sqlite 异常仅 warning（L57-81，REQ-037 验收 4 主路径隔离先例）；agent.py `_emit` sink 异常吞 + warning（L334-340）——hook 分发的故障隔离与此同型；run_turn 已有回调注入先例（telemetry_sink/on_finish 形参，L285-286）——hook dispatcher 注入方式（直接 import vs 回调参数注入）为实现级决策，T0 定案登记 verify。
+  - **静态注册先例（tools.py / main.py）**：_REGISTRY + register_tool（tools.py L81-85）；main.py import 即静态注册（search，L16-17）——register_hook 同型；ToolDef.gate 运行时能力门（tools.py L59-61）+ app_settings KV 运行时开关（db.py kv_get/kv_set L238-249 + is_search_enabled L255-260）为未来 webhook 消费者开关预留形态参照（本 CHG 不启用，定夺④）。
+  - **配置先例（config.py L8-69）**：Settings env_prefix `AI_CHAT_` 全参数 .env 可覆盖 + 「T0 定死值」注释体例；独立超时护栏先例 = summary_timeout 30s（L51）/ memory_extract_timeout 30s（L60）/ heartbeat_interval 20s（L69）——hook_timeout 同形态新增。
+  - **「任务持久化」先例与「事件分发」的哲学分界（memory.py / main.py）**：lifespan 常驻扫描任务（main.py L52-59）+ scan_loop 异常自吞不杀循环（memory.py L392-404）+ memory_jobs 持久化重启恢复（scan_once L325-387）——这是**后台任务持久化**先例；hook 分发**不排队、不落库、不重试**（防第二套循环），与 memory_jobs 哲学分界明确（若未来 webhook 需要出站队列执行器，可循此先例走独立 CHG）。
+  - **非回合子系统事件点位（评估后不入首版枚举，定夺②）**：记忆抽取触发（memory.py scan_once pending 落库 L375-385 / execute_job L196-299，已有 memory_extract 遥测行 L255-259）；压缩触发（proxy.py `_assemble_pipeline` 自动 L159-177 / `chat_compact` 手动 L446-455，已有 compress 行）——子系统事件已有遥测承载，hook 化无当前消费者，留池。
+  - **迁移与测试基线**：db.py `SCHEMA_VERSION = 10`（L15），v1~v10 已占用——**D2 零新表零迁移（注册表为进程内代码态）**；pytest 332 + vitest 378 + 走查 41/0（iter-18 终态）。注：基线号 req-baseline-v10 与迁移 v10（user_memories）数字巧合、互不相干。
+- 内容（对 spec 的拟改，spec 级详细度——沿 CHG-007/009/010/011/012 呈批详度口径，批准后按拟文落 spec/RTM。除内容 4 汇总的定夺项外，其余口径本 CHG 定死）：
+  1. **新增 REQ 一条（spec 级拟稿全文，结构与 spec §2 既有 REQ 一致，批准后原样落 spec §2。编号自 REQ-048 顺延——048 紧接 047；REQ-044 永久留予 CHG-011 记忆度量拟稿（CHG-012 定夺②），无交叉。拆分理由：D2 新增实体唯一 = hook 机制本身（枚举/注册/分发/埋点/配置为其组成面，B2「管道/入口/度量」式拆分不适用）；HTTP webhook 为后置项不入 REQ（定夺⑥）；遥测零新增不设度量条（沿 CHG-011 定夺⑩ REQ-044 不立项先例）——故单条 REQ-048 承载）**：即 spec §2「REQ-048 生命周期事件 hooks（进程内旁路回调）〔CHG-013〕」全文（用户故事/描述/主流程/异常分支/验收标准 8 条/优先级 P0/涉及页面=不涉及）——正文以 spec §2 落盘稿为准，此处不重复。
+  2. **存量需求处理（本 CHG 无正式改写——D2 不改变任何存量 REQ 的验收语义，全部为加法埋点与注记；正式改写 0 条 + 非功能 2 行 + 波及登记 1 项 + 零波及明示 8 项）**：
+    - **正式改写：0 条**（明示）。D1 的 REQ-030/036 正式改写源于其描述句承载的行为变化（心跳帧/reason 枚举/注入序）；D2 埋点不改变 REQ-030~047 任何一条的验收断言面，故全部为波及注记级。
+    - **波及登记 1 项（简版对照，口径不变、spec 描述随注记同步）**：
+      - REQ-030：描述 CHG-012 注记段之后补：「**CHG-013/D2 起回合管线与受理点埋生命周期 hook 分发点（旁路 fire-and-forget，REQ-048）——SSE 事件流、三护栏、遥测与计费口径零变化；埋点失败不影响回合（旁路彻底性）。**」既有六条验收零回退（验收 1/4 随 REQ-048 验收 2/4 复跑背书）。
+    - **非功能条款 2 行（正式改写）**：
+      - 架构行补：「〔CHG-013〕agent 运行时增生命周期事件 hooks 旁路分发机制（进程内回调静态注册、闭合 5 事件枚举、fire-and-forget + 独立超时护栏、只观察不决策——技术口径见 changes.md CHG-013）。」
+      - 可观测行补：「〔CHG-013〕hook 分发失败/超时记服务端 warning 日志（hook 名/事件名，不含消息内容与 key，机器可查）；hooks 不落遥测行（遥测 kind 枚举零变化）。」
+      - 数据行**零变化明示**（不改动）：零新表零迁移（SCHEMA_VERSION 维持 10；注册表为进程内代码态，重启即随代码重建）。
+    - **零波及明示 8 项（判断结论如实登记，不凑数）**：
+      - REQ-031 工具网关：tool.before/tool.after 埋点位于 agent.py 调用侧（tool.call 事件点与 execute_tool 返回点），tools.py 网关零改动——六项校验与网关日志四字段口径零变化。
+      - REQ-032 / REQ-047 前端：零前端改动、零新增 SSE 帧类型、零新增 block 类型——hook 事件不下发前端（前端零感知）。
+      - REQ-033 / REQ-036 组装链：turn.accepted 在组装开始前受理点触发，不触碰组装管道与注入序——组装器输入输出单点收敛不破。
+      - REQ-037 遥测：hooks 不落遥测行、kind/endpoint 枚举零变化、llm/tool 行形状零变化（hook 分发与遥测写入为两个独立旁路）。
+      - REQ-039 / REQ-042 压缩与记忆子系统：子系统事件不入首版枚举（定夺②留池）——管道、抽取、注入零交互。
+      - REQ-045 心跳：埋点全部位于 run_turn 生成器内与 proxy 受理点，与 stream() watchdog 零交互——心跳帧与事件序断言零变化。
+      - REQ-046 deep-research：hooks 对 research 回合同管线天然生效（REQ-048 验收 6 承载）——编排、双护栏、注入、计费零变化，无特例分支。
+      - REQ-024 / REQ-034 配额计费：turn.accepted 在配额通过后触发（被拒回合零事件，REQ-048 验收 7）——quota.py 零改动、usage_daily 落账零变化。
+    - 其余需求（REQ-001~023/025~029/038/040/041/043/045）不受影响。
+  3. **关键技术机制写实（本 CHG 定死的技术口径；属定夺的参数汇总于内容 4）**：
+    - **3.1 事件点位表（T0 核对回填，实现以此为准）**：
+      | 事件 | 落点（2026-08-22 取证） | 触发时点语义 |
+      |---|---|---|
+      | turn.accepted | proxy.py chat_turn：配额通过后、turn_id 生成后（L232 之后）、组装开始前 | 受理成立 = 消息确定进入处理（被拒回合零事件） |
+      | tool.before | agent.py run_turn：tool.call 事件 yield 后（L458-459 后）、execute_tool 前（L463 前） | 模型发起工具调用（含未注册→error result 路径） |
+      | tool.after | agent.py run_turn：tool 遥测行同点位（L468-470） | 工具执行终态已知（ok/error/timeout + duration_ms） |
+      | turn.end | agent.py run_turn：turn.end 事件后（L493 后） | 回合终态（reason 四值 + 累计 requests/tokens） |
+      | turn.cancelled | agent.py run_turn：取消处理器内（L494-503，补 cancelled 遥测行后、重抛前） | 断连/中止终态（现行口径不产 turn.end） |
+    - **3.2 载荷 schema（元数据-only，frozen dataclass）**：公共字段 = event / turn_id / session_id / user_id / mode / timestamp；工具事件加 step / tool_name；tool.after 加 status / duration_ms；turn.end 加 reason / requests / tokens。**排除项（卫生口径）**：消息正文、工具入参全文与结果全文、任何 key、上游 base_url——一律不进载荷与 hook 日志。
+    - **3.3 分发语义与任务生命周期（定死框架）**：dispatch(event) → hooks_enabled 为假或注册表空 → 短路返回（零任务创建）；否则逐命中 hook 创建独立任务（create_task + 强引用集合，任务终态自移除），任务内 wait_for(hook(event), hook_timeout)，异常/超时吞掉 + warning（hook 名/事件名）。**不排队、不落库、不重试、无序**——与 memory_jobs「任务持久化」哲学的分界（取证第 7 条）；若未来 webhook 需要出站队列，走独立 CHG 循常驻任务先例。hook dispatcher 注入 agent/proxy 的方式（模块级单例直接调用 vs 沿 telemetry_sink 回调形参注入）为 T0 定案的实现级决策，登记 verify 不走变更。
+    - **3.4 配置与注册形态（定夺④定死）**：`AI_CHAT_HOOKS_ENABLED`（默认 true）/ `AI_CHAT_HOOK_TIMEOUT`（默认 5.0s，T0 定档授权 1~30s）经 config.py Settings 同形态新增；注册面 `hooks.register_hook(name, callback, events=None)` 部署侧代码调用（main.py 或部署自建模块 import 即注册，沿 search 先例）；**不启用 app_settings KV、不加 admin 端点与字段**——依据 spec §4「护栏属部署配置（低频、误配即失守）vs 开关属运行时配置（高频、binary）」口径：hook 注册本身是代码级部署配置，函数无法经运行时注册，运行时开关在消费者为零时无操作对象；待 webhook 等真实运行时消费者出现，其启停开关再按「开关属运行时配置」口径评估 app_settings KV（届时随该 CHG）。
+    - **3.5 与既有面的关系（零交互逐条）**：SSE v2 事件协议零新增帧类型；遥测 kind/endpoint 枚举与行形状零变化；usage_daily/quota 零改动；心跳层零交互；research 编排零分叉（同管线天然覆盖）；blocks/schema:2/LWW 零交互（hook 不读写会话档）；前端零改动。
+  4. **定夺项清单（2026-08-22 呈报；CEO 批准「全部按推荐」= ①~⑧ 全部按推荐定案）**：
+    | # | 定夺项 | 定案（= 推荐，CEO「全部按推荐」） | 理由摘要 |
+    |---|---|---|---|
+    | ① | CHG-013 整体批准 | **批准**（REQ-048 新增与优先级 P0、波及 1 项 + 非功能 2 行 + 零波及明示 8 项、暂缓池联动；基线 req-baseline-v10） | 审核稿 D2 期既定路线收官项，A 工具网关与回合管线前置全就绪 |
+    | ② | 事件枚举范围 | **闭合 5 事件**（turn.accepted / tool.before / tool.after / turn.end / turn.cancelled） | 审核稿点名「消息到达/工具前后/回合结束」= 4 项；**多纳入 turn.cancelled**：断连是真实生命周期终态且现行口径不产 turn.end（agent.py L494-503 取证），通知类消费者必须能区分「完成」与「中断」，缺失即枚举开洞、后续加法反要走变更。**不纳入**：步进 turn.step（SSE 已有事件、hook 化无消费者）、上游调用级（llm 遥测行已承载）、记忆抽取/压缩触发等子系统事件（已有遥测行承载，无当前消费者——留池，浮现走 CHG） |
+    | ③ | hook 形态与分发语义 | **async callable + fire-and-forget 独立任务 + 独立超时 5s + 无序不重试 + 只观察不决策（无拦截/否决/改写语义）** | 同步内联调用会把 hook 耗时计入回合主路径，直接违背「旁路不阻塞」；队列/持久化/重试是 memory_jobs 式任务系统的面，事件分发做成第二套循环正是审核稿点名要防的形态；hook 无返回值消费 = 「只观察不决策」的机制化落实（拦截类需求浮现须先论证范围再走 CHG） |
+    | ④ | 注册与配置归属（hooks 面向谁） | **部署者级：代码静态注册 + .env 两参数（hooks_enabled 默认开 / hook_timeout 默认 5s）；admin 运行时零新增配置面、普通用户不可见** | 函数只能随代码注册，admin 运行时注册无意义；沿 spec §4「护栏 vs 开关」口径，hooks 整体属部署配置域（注册即代码、启停低频）；默认开的依据 = 注册表空即无操作（机制惰性），开关仅为部署者免改码停用保留；webhook 等运行时消费者出现时其开关再评估 app_settings KV（沿搜索开关先例）。admin 只读显示不推荐：注册表内容是代码事实非运行配置，无运营属性 |
+    | ⑤ | 载荷卫生 | **元数据-only：不含消息正文、工具结果全文、任何 key**（内容扩展留池） | 沿 REQ-037 验收 5 / REQ-042 验收 7 卫生先例——载荷进任意 hook 的日志/通知面，含内容即扩大泄漏面；元数据已满足通知/审计/自动化消费者的当前可预见需求 |
+    | ⑥ | HTTP webhook | **本 CHG 零出网零外发，webhook 后置留暂缓池（独立 CHG）** | 审核稿要素 10 定案「HTTP webhook 后置」；webhook 面大（出网白名单/重试/签名/脱敏/队列），与首版机制无依赖关系，混入即超 Σ4~6 定级 |
+    | ⑦ | **移动端主界面适配是否搭班 D2** | **不搭班：D2 单独 iter-19（Σ4~5 收官小迭代），移动端独立 CHG-014 + iter-20（设计基线前置）** | ① 审核稿同文原则「一个迭代不同时塞两条主线」（§四移动端注），「可与搭班」是许可以非指令；② 容量算术：D2 Σ4~5 + 移动端预估 Σ5~7（主对话/设置/管理后台三面响应式 + 设计 + 断点走查）= Σ9~12，贴顶或超 Σ≤10 硬约束，超 30% 砍范围纪律易触发；③ 回归面叠加：D2 触回合主路径（pytest 332 回归）+ 移动端触全前端布局（vitest 378 + 走查回归），QA/走查面翻倍；④ v1.4.15 串行纪律下「设计基线为全部开发任务前置」——搭班则 D2 纯后端开发须等移动端设计基线（长极拖快极），或另登 tailoring 偏离；⑤ D2 是路线收官，单独小迭代快速闭环后，移动端获得整迭代容量与专属设计 |
+    | ⑧ | 工作量与串行口径 | **Σ4~5 不顶格；T0 技术基线（机制写实 = 事件点位表/载荷 schema/分发语义/T0 实测）为 T2 开发前置——零 UI 迭代的串行纪律适配：无设计稿任务（零 UI），T0 技术基线承担「基线先行」职能，T0→T2 严格串行，无未登记并行** | 沿「默认不顶格、顶格需三条理由」口径（retros/iter-17 §4）；v1.4.15 严戒的是「未登记的开发偷跑先于基线」（tailoring 2026-08-20），D2 以 T0 机制写实为基线载体满足串行目的，不构成偏离（QA 审计对照本条核对） |
+  5. **影响评估**：
+    - **存量需求逐条**：见内容 2——正式改写 0 条（明示）；非功能 2 行（架构/可观测；数据行零变化明示）；波及登记 1 项（REQ-030）；零波及明示 8 项。其余需求不受影响。
+    - **设计资产承载（v1.4.1 逐项核对，「原型即需求」）**：`design/proto` 不同步——对 iter-1 核心闭环原型不可见（hooks 零 UI 零前端改动）；`design/iter-1` ~ `design/iter-18` 全部不同步——无任何 REQ 界面口径变化（D2 零新增界面、零交互变化）；**无新增 design-iter-19 设计任务**——D2 为纯后端零 UI 迭代（定夺⑧：T0 技术基线承担基线先行职能；若移动端搭班〔定夺⑦已定案不搭班〕则 design-iter-19 为移动端设计稿、随 CHG-014 立项）。
+    - **架构变更说明**：后端新增 `backend/app/hooks.py` 薄模块（事件枚举 + HookEvent 载荷 + 注册表 + dispatch，预估 100~150 行，沿 research.py 薄模块先例）；agent.py run_turn 埋点 4 处 + proxy.py chat_turn 埋点 1 处（dispatcher 注入方式 T0 定案）；config.py +2 参数（hooks_enabled / hook_timeout）；main.py 留注册挂载点注释示例（部署者参照）；tests/test_hooks.py 新增（预估 15~20 用例）。**db.py / telemetry.py / quota.py / 前端全部零改动；零新表零迁移。**
+    - **工作量与排期**：审核稿 D2 定级 **Σ4~6**；拆解预估 = T0 取证与技术基线 S（1：分发语义实测〔create_task 取消路径行为/任务强引用与 GC/wait_for 取消钩子〕+ 事件点位核对表 + hook_timeout 定档 + 机制写实文档）+ T1 无（零 UI 无设计任务）+ T2 后端 M~L（2~3：hooks.py + 5 埋点 + config + pytest 新增 + 存量 332 复跑〔REQ-030/045/046 回归面〕+ D2 面收口）——**Σ4~5，推荐 Σ4 不顶格**（T2 取 M 下沿 2：机制面小、复用面全在——注册/超时护栏/异常吞三先例现成）。**备砍序（容量紧张时）**：① turn.cancelled 事件收窄（枚举回 4 项，断连终态由 cancelled llm 遥测行承载，Σ−0.5）② hook_timeout 可配置性降为常量（Σ−0.5）③ turn.accepted 收窄（不推荐——「消息到达」是审核稿点名项）。**底线 = tool.before/tool.after/turn.end 三事件 + 旁路分发 + 故障隔离**（审核稿点名最小集）。排期由 PM 走 `/mm-iteration-plan`（iter-19 候选）；T0 为 T2 前置（定夺⑧）。
+    - **测试基线**：pytest 332 / vitest 378 / 走查 41（iter-18 终态）；D2 面沿全局回归基线口径——存量全绿（预计零既有用例改写：埋点为纯加法旁路，事件序断言不含 hook 副作用——「改写映射为零」断言登记 verify）、功能性删除为零、度量数据全部机器采集（铁律 5）；无 UI 走查面（零 UI）。
+    - **发布影响**：v0.5.0 仍独立卡服务器，不受本变更影响。
+  6. **暂缓池联动（随 spec §4 同步落盘）**：
+    - D2 条目：划线移出 + 注记「CHG-013 移出，2026-08-22：落地为 REQ-048（八定夺全按推荐定案；基线 req-baseline-v10）——七期路线收官」。
+    - 新增条目：「HTTP webhook hook（事件外发消费者）：出网白名单/重试/签名/脱敏/队列面随其 CHG；其启停开关届时按『开关属运行时配置』口径评估 app_settings KV（CHG-013 定夺④⑥）」。
+    - 新增条目：「hooks 拦截/改写能力（hook 否决/改写工具调用或回合行为）与载荷内容扩展（消息正文/工具结果进载荷）：首版只观察 + 元数据-only（设计原则『不做第二套循环』与卫生口径）；需求浮现须先论证范围再走 CHG（CHG-013 定夺③⑤）」。
+    - 新增条目：「非回合子系统生命周期事件（记忆抽取触发/压缩触发/步进等）：首版枚举闭合于回合生命周期 5 事件，子系统事件已有遥测行承载；需求浮现走 CHG（CHG-013 定夺②）」。
+    - 移动端条目按定夺⑦定案补注记：「D2 已单独收官排期（iter-19 候选），移动端主界面适配为下一候选（独立 CHG-014 + iter-20，设计基线前置）」。
+    - 其余条目（RAG/天气/供应商对比/体验深化主题包①②③/同步精细合并/用量面板/裁决口径观察项/记忆抽取度量可见性/deep-research 独立开关/异步研究任务/护栏 admin 配置面）零变化。
+- 落地核对清单（v1.4.10 制度 A；CEO 批准后逐项落地勾验，首个任务提交内落盘）：
+  | # | 承诺项 | 状态 | 落地证据 |
+  |---|--------|------|---------|
+  | 1 | spec §2 新增 REQ-048 全文（按内容 1 拟稿；编号 048 顺延、044 留档口径注记） | ✅ | 随 CHG-013 批准同批落盘（2026-08-22，本提交） |
+  | 2 | REQ-030 波及注记 + 非功能两行（架构/可观测）+ 数据行零变化明示（内容 2 拟文） | ✅ | 同上（spec REQ-030 描述段 + §3 两行） |
+  | 3 | spec §4 暂缓池联动（D2 移出 + 三条新增 + 移动端条目按定夺⑦定案，内容 6 拟文） | ✅ | 同上（spec §4） |
+  | 4 | RTM 新增 REQ-048 行 + REQ-030 波及注记 + 变更备注表 CHG-013 行 + 全局回归基线 D2 面说明（v1.4.11 C 行级收口 + v1.4.16 独立行同批收口） | ✅ | 同上（rtm.md，本提交） |
+  | 5 | 定夺项①~⑧结论回填本条（含 hook_timeout 若 T0 定档非 5s 的回填） | ✅ | 本条内容 4（八定夺全按推荐定案；hook_timeout 维持 5s 拟值，T0 定档授权在案） |
+  | 6 | registry.md 同步（主会话执行） | ✅ | 2026-08-22 随 CHG-013 批准登记（company-os 提交） |
+  | 7 | T0 机制写实留档（事件点位表/载荷 schema/分发语义/T0 实测值，plans/iter-19-verify.md）为 T2 开发前置（定夺⑧串行口径） | 待交付（iter-19 T0） | — |
+- CEO 批准：批准（2026-08-22，CEO 原话「全部按推荐」——CHG-013 整体批准 + 八定夺全按推荐定案：①整体批准出基线 req-baseline-v10 ②闭合 5 事件③fire-and-forget 旁路语义只观察不决策④部署者级注册与 .env 配置⑤元数据-only 载荷⑥webhook 后置留池⑦**移动端不搭班**（D2 单独 iter-19 收官，移动端独立 CHG-014 + iter-20）⑧Σ4~5 推荐 Σ4 + T0 技术基线承担串行基线职能；spec/RTM 同日同批落盘，tag req-baseline-v10 由主会话执行）
+
 ## CHG-012 架构升级第六期 D1：deep-research 子代理（含 SSE 心跳）
 
 - 日期：2026-08-21
