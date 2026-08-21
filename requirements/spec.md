@@ -1006,6 +1006,7 @@ ai-chat 为多个用户提供 AI 对话服务：任何人可注册账号使用�
 - ~~D1：deep-research 子代理（单子代理 in-process async 编排 + 进度事件；长回合连接保持「心跳 vs 轮询」T0 必须定夺）~~（CHG-012 移出，2026-08-21：落地为 REQ-045~047，批准结论 = 整体批准 + 十定夺全按推荐〔含定夺④心跳注释帧定案〕，基线 req-baseline-v9；agent 路线第 6 期排期走 /mm-iteration-plan（iter-18 候选））
 - deep-research 独立 admin 开关与用量可见性：可用性现由 search 三与门承载、遥测 endpoint='research' 已区分、admin 聚合天然涵盖；独立开关/专属面板纳入时走 CHG（CHG-012 定夺⑧/3.7）
 - 异步研究任务（断连续跑/后台执行/完成通知）：轮询方案连同 research_jobs 任务表拟稿存档 changes.md CHG-012 内容 3.3，需求浮现时走 CHG（CHG-012 定夺④⑩：心跳方案定案，后台续跑路径留池）
+- deep-research 护栏参数 admin 配置面（可写）：max_research_steps / research_total_timeout / 报告字数等护栏现由 .env 部署级覆盖（AI_CHAT_* 变量，重启生效）；admin 可写配置面待触发条件满足时走 CHG——①真实使用数据显示调参为高频动作 ②出现多部署者/多管理员场景 ③某护栏参数表现出运营属性（CEO 2026-08-22「先用起来，让数据说话」定案登记）；**admin 只读显示护栏生效值为可选顺手项**（沿 REQ-038 单价三变量只读与「搜索 key 已配置/未配置」先例，S 级，零误配风险）——护栏参数与运营参数的配置位置区分口径：护栏属部署配置（低频、误配即失守），开关类属运行时配置（高频、binary 决策，先例 = 搜索开关 app_settings KV）
 - D2：hooks（生命周期事件进程内旁路回调先行，HTTP webhook 后置；可与移动端搭班）——agent 路线第 7 期（同上）
 - CHG 技术写实与 REQ 验收语义冲突的裁决口径（观察项，iter-16 复盘 C 入池，CEO 2026-08-20 定夺「仅入池观察」）：先例 = telemetry session_id 加法列（CHG-010 schema 拟稿外实现级加法，为满足 REQ-039「该会话上一回合」验收语义由主会话拍板 + verify T2 §6 登记 + QA OBS-3）——复发再议是否将「拟稿与验收冲突时主会话可裁决的实现级加法边界」明文入 requirements.md §3
 
