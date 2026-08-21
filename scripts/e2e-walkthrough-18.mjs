@@ -349,8 +349,8 @@ try {
     ta.dispatchEvent(new Event('input', { bubbles: true }))
   })
   await sleep(200)
-  const tabOrderOk = tabSeq[0] === 'tsw' && tabSeq[1] === 'send'
-  log('条11 [几] 焦点环（switch :focus-visible 3px ring）+ Tab 序（design 期望 ta→开关→发送钮）',
+  const tabOrderOk = tabSeq[0] === 'send' && tabSeq[1] === 'tsw'
+  log('条11 [几] 焦点环（switch :focus-visible 3px ring）+ Tab 序（design 定案 ta→发送钮→开关，R1 对齐 DOM）',
     tabOrderOk && switchFocus?.matches && switchFocus.shadow !== 'none',
     `实际 Tab 序=ta→${tabSeq.join('→')}；switch focus-visible=${switchFocus?.matches} shadow=${switchFocus?.shadow}`)
   await page.click(TA) // 复位焦点
