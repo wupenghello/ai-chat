@@ -15,6 +15,7 @@ import logging
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import suppress
+from datetime import datetime, timedelta
 from typing import Annotated, Any, Literal
 
 import httpx
@@ -498,6 +499,129 @@ def read_quota(
         "used_today": quota.user_used(conn, user.id),
         "reset_at": "明日 00:00",
         "research_available": tools_allowed and search_gate,
+    }
+
+
+@router.get("/usage/summary")
+def usage_summary(
+    user: CurrentUser,
+    conn: DatabaseDep,
+    settings: Annotated[Settings, Depends(get_settings)],
+    days: int = Query(default=7),
+) -> dict[str, object]:
+    """当前用户个人用量与费用面板（CHG-015/REQ-052，iter-21 T2；design-iter-21 §5 定案形状）。
+
+    - user_id 仅从会话凭证解析（CurrentUser）——query/body 不接受 user_id 参数，
+      跨用户泄露面结构性消除（REQ-052 验收 3）；未登录 401
+    - days 枚举 {7, 30}（缺省 7，越界 422——个人面档位固定，与 admin ge/le 区间口径
+      不同为有意口径，design-iter-21 §5）
+    - 数据源 = telemetry 按 user_id × day 聚合（REQ-037 复用注记：表与写入点零改动）；
+      turns = COUNT(DISTINCT turn_id)（kind='llm' 且 turn_id 非空——回合计口径，手动压缩
+      turn_id=NULL 不计回合）；tokens 含两模式 llm 行 + compress 行 tokens_prompt（合计口径）
+    - 成本 = telemetry.unified_cost（admin `_cost6` 同构体例）：仅 unified llm 行 +
+      unified compress 行 tokens_prompt；单价未配置 → cost_total=null、tokens 照常（铁律 5）
+    - cache_hit_tokens = llm 行求和，全天无带字段行 → null（缺失不显 0，admin 同口径）
+    - today 快照与 /api/quota 同源（mode/daily_limit/used_today；定夺④：该端点与
+      KeyModeCard 零改动，today 行由本端点并呈）；无数据 = daily 空数组非 404
+    """
+    if days not in (7, 30):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="days 仅支持 7 或 30",
+        )
+    date_to = quota.today()
+    date_from = (datetime.now() - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+
+    rows = conn.execute(
+        "SELECT day, kind, mode, turn_id, tokens_prompt, tokens_completion, "
+        "tokens_total, cache_hit_tokens FROM telemetry "
+        "WHERE user_id = ? AND day >= ? AND day <= ?",
+        (user.id, date_from, date_to),
+    ).fetchall()
+
+    # 按日聚合（admin 遥测端点同构体例；tokens 为两模式合计，成本口径仅 unified）
+    acc: dict[str, dict] = {}
+
+    def _day(day: str) -> dict:
+        return acc.setdefault(day, {
+            "turns": set(), "prompt": 0, "completion": 0,
+            "hit": 0, "has_cache": False,
+            "cost_prompt": 0, "cost_completion": 0, "cost_hit": 0, "comp_prompt": 0,
+        })
+
+    for r in rows:
+        d = _day(r["day"])
+        if r["kind"] == "llm":
+            if r["turn_id"] is not None:
+                d["turns"].add(r["turn_id"])
+            d["prompt"] += r["tokens_prompt"] or 0
+            d["completion"] += r["tokens_completion"] or 0
+            if r["mode"] == quota.MODE_UNIFIED:
+                d["cost_prompt"] += r["tokens_prompt"] or 0
+                d["cost_completion"] += r["tokens_completion"] or 0
+                if r["cache_hit_tokens"] is not None:
+                    d["cost_hit"] += r["cache_hit_tokens"]
+            if r["cache_hit_tokens"] is not None:
+                d["hit"] += r["cache_hit_tokens"]
+                d["has_cache"] = True
+        elif r["kind"] == "compress":
+            d["prompt"] += r["tokens_prompt"] or 0  # 摘要调用 tokens 如实入列
+            if r["mode"] == quota.MODE_UNIFIED:
+                d["comp_prompt"] += r["tokens_prompt"] or 0
+        # tool/memory_extract 行不贡献个人面数值（回合数经 llm 行 turn_id 承载）
+
+    def _cost(day: str) -> float | None:
+        d = acc[day]
+        c = telemetry.unified_cost(
+            d["cost_prompt"], d["cost_completion"], d["cost_hit"], d["comp_prompt"],
+            settings.price_input, settings.price_output, settings.price_cache_hit,
+        )
+        return c["total"] if c else None
+
+    daily = [
+        {
+            "day": day,
+            "turns": len(acc[day]["turns"]),
+            "tokens_prompt": acc[day]["prompt"],
+            "tokens_completion": acc[day]["completion"],
+            "cache_hit_tokens": acc[day]["hit"] if acc[day]["has_cache"] else None,
+            "cost_total": _cost(day),
+        }
+        for day in sorted(acc, reverse=True)
+    ]
+
+    # 今日快照：/api/quota 同源三数字 + 今日费用（今日无遥测行 → cost_total=0 造价？
+    # 否——今日行若无 unified 计费行则 tokens 为 0，成本真值 0（无调用即无成本，非造数））
+    t = acc.get(date_to)
+    today_cost = _cost(date_to) if t is not None else (
+        telemetry.unified_cost(0, 0, 0, 0, settings.price_input,
+                               settings.price_output, settings.price_cache_hit)["total"]
+        if settings.price_input is not None and settings.price_output is not None
+        and settings.price_cache_hit is not None else None
+    )
+    profile = conn.execute(
+        "SELECT tools_enabled FROM profiles WHERE user_id = ? AND is_active = 1",
+        (user.id,),
+    ).fetchone()
+    mode = quota.MODE_SELF if profile is not None else quota.MODE_UNIFIED
+    return {
+        "window": {"days": days, "date_from": date_from, "date_to": date_to},
+        "price": {
+            "configured": settings.price_input is not None
+            and settings.price_output is not None
+            and settings.price_cache_hit is not None,
+            "input_per_mtok": settings.price_input,
+            "output_per_mtok": settings.price_output,
+            "cache_hit_per_mtok": settings.price_cache_hit,
+        },
+        "today": {
+            "mode": mode,
+            "daily_limit": quota.limit_for(conn, user.id, mode, settings),
+            "used_today": quota.user_used(conn, user.id),
+            "cost_total": today_cost,
+        },
+        "daily": daily,
+        "retention_days": telemetry.RETENTION_DAYS,
     }
 
 

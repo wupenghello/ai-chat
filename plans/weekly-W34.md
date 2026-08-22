@@ -255,3 +255,10 @@
 **非阻塞取舍 6 项（留档接受）**：①抽屉遮罩开时 body 背后滚动未锁（全仓弹窗同一现状口径，后续统一收口）②Esc 双消费窗口（抽屉开+弹窗开时一次 Esc 同关，方向皆「关」无数据风险；下轮 Esc 链插入点补「上层弹窗 open 时抽屉让位」）③::after 热区相邻重叠约 16px（WCAG 2.5.5 满足为主的典型触屏取舍）④useMediaQuery 老 Safari 冻结初值渐进降级桌面口径⑤走查条 26 全局 CSSOM 计数偏弱有契约 spec 补面⑥触屏闲置 hint 以 v-if 移除 DOM（JS 消费面口径已登记、桌面断言逐字零变化）。
 
 **总评**：工程交付质量沿 iter-18/19 高位，唯一 NCR 为门禁自身逻辑洞已当轮整改。
+
+## iter-21（普通用户用量与费用面板，2026-08-22 CHG-015 批准 + 计划批准 + T1/T2 交付；Σ6 = M×3 不顶格）
+
+- **CHG-015 批准落基线 req-baseline-v12**（2026-08-22，CEO「全部按推荐」六定夺定案）：暂缓池「用量与费用统计面板（面向普通用户）」移出，REQ-052 新增（个人用量端点 GET /api/usage/summary + 设置弹窗第七分区「用量与费用」）；REQ-028/024/037/038 波及/复用注记 + RTM 行 + 全局回归基线「用量面」注记同批；tag req-baseline-v12（a0eddde）。
+- **iter-21 计划批准**（2026-08-22，CEO「批准」，d612956）：T1 design-iter-21 设计基线 + T2 后端个人用量端点 + T3 前端分区与全局回归收口；T1 → T2/T3 严格串行（v1.4.15）；备砍序三项 + 底线在案。
+- **T1 design-iter-21 已基线**（2026-08-22，CEO「批准」六定夺全按推荐，tag design-iter-21，25af07d）：第七分区全规格（今日摘要行 + 近 7/30 天二档 + 每日表格六列 + 合计行 + 模式脚注）+ 四分支态（加载/空/未配置单价/失败重试）+ API 形状定案（days 枚举 {7,30}、user_id 仅凭证解析、turns = DISTINCT turn_id）+ 走查清单 28 条 + 样件文案 U1~U16 逐字 + 零令牌自查 + v1.4.19 C hit-test 豁免登记（无几何类新口径）；spec REQ-052「涉及页面」指针零滞后回填；design/proto 占位示意同步（CHG-015 落地核对清单第 5 项 ✅，第 6 项 ✅ 计划已批）。
+- **T2 后端个人用量端点已交付**（2026-08-22）：GET /api/usage/summary（本人 user_id 凭证解析零 query 面、days 枚举 422、telemetry 按 user_id × day 聚合、turns = kind='llm' DISTINCT turn_id〔手动压缩 turn_id=NULL 不计回合〕、tokens 两模式合计 + compress 摘要 tokens 如实入列、cache 全缺失 null）+ telemetry.unified_cost 成本同构提取（admin `_cost6` 同体例：仅 unified 计费〔llm 行 + compress 行 tokens_prompt 输入计价〕、round 6 位、未配置全 null——admin.py 零回写，同构性由专项用例比对承载）+ today 快照与 /api/quota 同源并呈（定夺④该端点零改动）。测试：pytest 347→**360**（+13 test_usage_api 纯新增：聚合精确断言/回合口径/跨用户隔离双向/未配置 null/空窗口/401/422 边界/admin 同构/today 同源），ruff clean。零改动面：telemetry 写入点/db.py schema（SCHEMA_VERSION 维持 10）/quota.py/既有端点形状/admin.py 全零触达；test_quota 17 例逐字节零改动（REQ-052 验收 5 红线）。实现级决策 5 项登记 plans/iter-21-verify.md T2 段。下一步 T3 前端第七分区 + 走查 walkthrough-21 + 全局回归收口。

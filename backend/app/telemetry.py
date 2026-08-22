@@ -29,6 +29,28 @@ logger = logging.getLogger("ai-chat.telemetry")
 RETENTION_DAYS = 90  # 明细保留期（CHG-009 定夺⑤定案）
 _PURGED_DAY_KEY = "telemetry_purged_day"  # 上次清理覆盖到的自然日（惰性清理水位）
 
+
+def unified_cost(
+    prompt: int, completion: int, cost_hit: int, comp_prompt: int,
+    price_input: float | None, price_output: float | None,
+    price_cache_hit: float | None,
+) -> dict[str, float] | None:
+    """CHG-015/REQ-052（iter-21 T2）：统一 key 成本三分项 + 合计（同构提取）。
+
+    体例与 admin 遥测端点 `_cost6`（admin.py，REQ-038 定夺⑥）逐字同源：
+    (tokens×单价)÷1e6、compress 行 tokens_prompt 并入输入分项（CHG-010 3.3 按输入计价）、
+    后端保留 6 位小数；单价任一未配置 → None（未配置不估算，铁律 5）。
+    个人面（GET /api/usage/summary）与 admin 面数字可互证（REQ-038 同源注记）。
+    admin 端点本体零改动（实现级决策：不回写 admin.py，行为等价由测试比对承载——见
+    test_usage_api 同体例断言）。
+    """
+    if price_input is None or price_output is None or price_cache_hit is None:
+        return None
+    ci = round((prompt + comp_prompt) * price_input / 1_000_000, 6)
+    co = round(completion * price_output / 1_000_000, 6)
+    cc = round(cost_hit * price_cache_hit / 1_000_000, 6)
+    return {"input": ci, "output": co, "cache_hit": cc, "total": round(ci + co + cc, 6)}
+
 # 允许落库的列白名单：组装器只能给出 schema 内字段（防御面；卫生自查锚点）
 _COLUMNS = (
     "day", "user_id", "mode", "turn_id", "endpoint", "kind", "step", "model",
