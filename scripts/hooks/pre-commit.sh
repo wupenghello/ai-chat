@@ -44,4 +44,15 @@ if printf '%s' "$staged" | grep -qE '^scripts/e2e-walkthrough-'; then
     exit 1
   fi
 fi
+
+# —— 台账门禁 C（v1.4.19，iter-20 复盘 A）：CHG 落地核对清单回填机检 ——
+# staged 含 changes.md 且其内容存在「⬜ 待」清单状态行 → 拒（拟稿呈批阶段不提交
+# changes.md；批准落盘与清单全量回填必须同批）。治 NCR-iter20-001 台账滞后第 7 代。
+if printf '%s' "$staged" | grep -qE '^requirements/changes\.md$'; then
+  if grep -n '⬜' requirements/changes.md >/dev/null 2>&1; then
+    echo "提交被拒绝：requirements/changes.md 存在「⬜ 待」清单状态行——CHG 落地核对清单须与批准落盘同批全量回填（台账门禁 C，制度 v1.4.19 A）。" >&2
+    grep -n '⬜' requirements/changes.md >&2 || true
+    exit 1
+  fi
+fi
 exit 0
