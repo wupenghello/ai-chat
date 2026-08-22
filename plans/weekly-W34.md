@@ -235,3 +235,12 @@
 **总评**：无 NCR 级缺陷。三问全过（范围逐条对得上、asyncio 两疑点探针实证、测试断言实质）；实现忠实于 T0 技术基线（强引用集合、done_callback 消费、坏公民护栏有界三设计决策在代码与测试均可指认）。放行。
 
 **iter-19 G4 关闭（2026-08-22）**：QA 审计有条件通过（1 NCR = CHG-013 落地核对清单第 7 项漏勾，CEO 定夺当轮整改 39eea7f；3 OBS 按建议处置）+ 主会话补证 7 项全过 + Code Review 无 NCR 级缺陷 CEO 认可落痕（51a6245）+ 复盘四问认可（改进 A/B 落制度 **v1.4.18**：A 提交防漏核对扩「CHG 落地核对清单回填」——治 NCR-iter19-001 台账滞后第 6 代、CHG 清单本体为最后盲区收口；B planning 计划头部自检「当周 ISO 周核实」——治 OBS-3 周次错，iter-19.md 周次行同批更正）；容量 Σ4 vs Σ4 连续十四轮零偏差（不顶格第三例正面证据）；基线 v10 全量达成（REQ-048）；**七期路线 A1→A2→B1→B2→C→D1→D2 全部收官**；下一候选移动端主界面适配（独立 CHG-014 + iter-20，设计基线前置）；见 retros/iter-19.md。（本段为 iter-19 节末「待 QA 审计 → Code Review → G4 复盘」的收口更新，NCR-iter17-002 同型防复发口径）
+
+## iter-20（移动端主界面适配，2026-08-22 CHG-014 批准 + T1~T3 全交付；Σ6 = M×3 不顶格）
+
+- **变更与基线**：CHG-014 批准出基线 req-baseline-v11（CEO「全部按照推荐」= 整体批准 + 八定夺全按推荐）——REQ-049 主对话面适配 / REQ-050 设置弹窗全屏化 / REQ-051 触摸交互；纯前端迭代（后端零改动零迁移零新 API）；管理后台不纳入（定夺⑤桌面优先）。
+- **T1 design-iter-20 已基线**（2026-08-22，CEO「批准，全部按推荐」六定夺：①≤768px 移动顶条 48px + 44×44 汉堡钮 M44 ②抽屉 264px 原样平移（<330px min(80vw,264px)）③动画 .15s ease ④触屏闲置 Enter hint 不渲染 ⑤弹窗导航横向滚动条 ⑥发送钮 ≤480px 视觉 44、icon 钮热区扩 44 视觉不变）；走查清单 31 条 + 样件 M44~M45 逐字；零新增令牌；spec REQ-049/050/051「涉及页面」指针随基线回填。
+- **T2 主对话面 + 触摸交互完成**（2026-08-22，34636f0 已推送）：首步 spike 定案（useMediaQuery composable——CSS 同源带界判定 + jsdom 兜底桌面口径；焦点细则留走查定夺）+ App.vue 抽屉/遮罩/移动顶条（M44）+ TheSidebar fixed overlay 平移与 rail 抑制 + MessageBubble/SessionListItem hover:none 常显与热区 + ComposerBox 44px 发送钮与 hint/placeholder 触控口径（M45）；vitest 378→399（+21，既有零改动）；verify T2 段登记五项 spike 决策。
+- **T3 设置弹窗全屏化 + 断点走查 + 全局回归收口完成**（2026-08-22，本批提交）：首步冒烟既有 settings 43 用例全绿零改写（容器耦合风险证伪）；SettingsForm ≤480px 全屏态（inset 0 = 100vw×100vh + 导航横向滚动条〔定夺⑤〕+ 单滚动 + 二级弹窗〔档案编辑/ConfirmModal/DeleteAccountModal〕同口径全屏；弹窗逻辑零改动、桌面 720px 分栏零触碰）+ locateAdv 挂载路径 flash 丢失顺带修正（watch 注册序）+ showPane scrollIntoView（验收 6）；vitest 399→411（+12 SettingsMobileCssContract）；走查 scripts/e2e-walkthrough-20.mjs 真实 Chrome + 真实后端 **38 PASS / 0 FAIL**（design §7.2 全 31 条：768/480 双断点 × 亮暗四象限 + 桌面零回退 E 组 + 像素级几何〔抽屉 264/256、inset 0、热区 hit-test〕+ M44/M45 逐字；触屏态 = isMobile+hasTouch 设备仿真——CDP hover 特性本机 Chrome 已不生效，登记 verify）；截图 10 帧 /tmp/e2e20/shots。
+- **DEF-039 当轮发现当轮修复**：T2 触屏热区 `::after` inset 方向写反（calc((44px-100%)/2) 向内收缩为 12×12 而非扩 44）——真实 Chrome hit-test 捕获，三处改 calc((100%-44px)/2) + 契约 spec 同步 + 走查条 25 复验 PASS（桌面零影响）。
+- **全局回归收口**：后端 pytest 347/347 复跑背书（零后端改动）+ 前端 vitest 411/411 + guard:style + 生产构建全绿；既有用例改写映射为零；RTM REQ-049/050/051 三行 + 全局回归基线移动端面行同批收口。**iter-20 T1~T3 全交付，待 QA 审计 → Code Review → G4 复盘。**

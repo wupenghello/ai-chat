@@ -55,12 +55,13 @@ function flashAdv() {
 
 function showPane(key: PaneKey, focusNav = false) {
   pane.value = key
-  if (focusNav) {
-    void nextTick(() => {
-      const btn = document.querySelector(`.sm-nav [data-pane="${key}"]`) as HTMLButtonElement | null
-      btn?.focus()
-    })
-  }
+  void nextTick(() => {
+    const btn = document.querySelector(`.sm-nav [data-pane="${key}"]`) as HTMLButtonElement | null
+    // iter-20 T3（REQ-050 验收 6）：横向导航下顺带滚动导航条使目标分区钮可见
+    // （nearest = 纵列导航零滚动，桌面行为零变化；jsdom 无实现可选链兜底）
+    btn?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+    if (focusNav) btn?.focus({ preventScroll: true })
+  })
 }
 
 function onNavKey(e: KeyboardEvent, idx: number) {
@@ -71,6 +72,13 @@ function onNavKey(e: KeyboardEvent, idx: number) {
   e.preventDefault()
   showPane(TABS[j].key, true)
 }
+
+// 分区切换高亮：locateAdv 直达（含挂载即开路径）触发标题 flash——iter-20 T3 登记的实现级
+// 修正：watch(pane) 须注册在 watch(open, immediate) 之前，否则 setup 期 showPane('adv') 的
+// pane 变更先于 watcher 注册、flash 丢失（REQ-050 验收 6「定位 + 高亮」全屏态复验暴露）
+watch(pane, (k) => {
+  if (k === 'adv' && props.locateAdv) flashAdv()
+})
 
 watch(
   () => props.open,
@@ -94,9 +102,6 @@ watch(
     if (v && props.open) showPane('adv')
   },
 )
-watch(pane, (k) => {
-  if (k === 'adv' && props.locateAdv) flashAdv()
-})
 
 /** 未保存判定（定夺⑥）：显式保存字段——提示词 textarea 值 ≠ 已保存值，或改密三字段任一非空 */
 function isDirty() {
@@ -1308,5 +1313,67 @@ async function confirmDeleteAccount(password: string) {
 .btn-danger:hover {
   background: var(--c-danger-solid-h);
   border-color: var(--c-danger-solid-h);
+}
+
+/* ---- iter-20 T3（REQ-050，design-iter-20 §4）：≤480px 设置弹窗全屏态 ----
+ * 仅容器与导航轴向切换（CSS 带界媒体查询，>480px 桌面 720px 分栏规则面零触碰）；
+ * 弹窗逻辑（登出/改密/校验/Esc 链）零改动；零新增设计令牌（复用 --c-border/--c-scrollbar 既有值）。
+ * 全屏态：inset 0 = 100vw × 100vh（验收 1）、圆角 0 无浮层投影；导航转横向滚动条（定夺⑤）；
+ * 表单列为唯一纵向滚动容器（验收 2）；内嵌二级弹窗（档案编辑/删除确认/未保存确认）同口径全屏。 */
+@media (max-width: 480px) {
+  .settings-modal {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    max-width: none;
+    max-height: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    animation: none; /* 全屏无浮层 scale 入场 */
+  }
+  .sm-head {
+    padding: 10px 8px 10px 16px;
+  }
+  /* 左导航 168px 纵列 → 横向滚动条（定夺⑤推荐）：分区钮形态零变化（样式原样平移）、
+     role=tablist 语义与方向键切换沿现状；滚动条 --c-scrollbar 既有令牌 */
+  .sm-body {
+    flex-direction: column;
+  }
+  .sm-nav {
+    width: auto;
+    flex-direction: row;
+    gap: 4px;
+    padding: 8px 12px;
+    border-right: none;
+    border-bottom: 1px solid var(--c-border);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: var(--c-scrollbar) transparent;
+  }
+  .sm-nav button {
+    flex: none;
+    white-space: nowrap;
+  }
+  /* 表单列 = 唯一纵向滚动容器（验收 2：弹窗根 overflow:hidden，导航横滚为正交轴向） */
+  .sm-pane {
+    padding: 16px 16px 24px;
+  }
+  /* 内嵌二级弹窗（档案编辑/未保存确认）同口径全屏（inset 0）；>480px 形态零变化 */
+  .modal-mask {
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+  .modal {
+    width: 100vw;
+    max-width: none;
+    height: 100vh;
+    max-height: none;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 16px;
+  }
 }
 </style>

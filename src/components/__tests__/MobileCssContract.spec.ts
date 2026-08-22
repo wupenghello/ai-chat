@@ -26,7 +26,7 @@ describe('REQ-051 触屏常显与 44px 命中区（CSS 契约）', () => {
     expect(block).toContain('.action-btn')
     expect(block).toContain('opacity: 1')
     expect(block).toContain('::after')
-    expect(block).toContain('calc((44px - 100%) / 2)')
+    expect(block).toContain('calc((100% - 44px) / 2)')
     // 桌面 hover 浮现规则在媒体查询外原样保留（零触碰）
     expect(read('../MessageBubble.vue')).toContain('.msg-col:hover .action-btn')
   })
@@ -36,7 +36,7 @@ describe('REQ-051 触屏常显与 44px 命中区（CSS 契约）', () => {
     expect(block).toContain('.dd-trigger')
     expect(block).toContain('opacity: 1')
     expect(block).toContain('::after')
-    expect(block).toContain('calc((44px - 100%) / 2)')
+    expect(block).toContain('calc((100% - 44px) / 2)')
     expect(read('../SessionListItem.vue')).toContain('.item:hover :deep(.dd-trigger)')
   })
 
@@ -47,7 +47,7 @@ describe('REQ-051 触屏常显与 44px 命中区（CSS 契约）', () => {
     expect(b480).toContain('height: 44px')
     const b768 = mediaBlock(src, 'max-width: 768px')
     expect(b768).toContain('::after')
-    expect(b768).toContain('calc((44px - 100%) / 2)')
+    expect(b768).toContain('calc((100% - 44px) / 2)')
   })
 })
 

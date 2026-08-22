@@ -355,7 +355,7 @@ function onEditKey(e: KeyboardEvent) {
   .action-btn::after {
     content: '';
     position: absolute;
-    inset: calc((44px - 100%) / 2);
+    inset: calc((100% - 44px) / 2);
   }
 }
 /* iter-20 T2（REQ-049，design-iter-20 §3）：≤480px 用户气泡 max-width 80% → 92%

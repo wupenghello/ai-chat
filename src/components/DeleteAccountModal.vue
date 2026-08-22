@@ -270,6 +270,22 @@ function submit() {
   border-color: var(--c-disabled-bg);
   opacity: 1;
 }
+/* iter-20 T3（REQ-050，design-iter-20 §4）：≤480px 二级弹窗同口径全屏（inset 0）；>480px 形态零变化 */
+@media (max-width: 480px) {
+  .overlay {
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+  .modal {
+    width: 100vw;
+    max-width: none;
+    height: 100vh;
+    max-height: none;
+    border-radius: 0;
+    box-shadow: none;
+    overflow-y: auto;
+  }
+}
 .modal-enter-active,
 .modal-leave-active {
   transition: opacity 0.18s ease;

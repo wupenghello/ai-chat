@@ -191,7 +191,7 @@ function cancel() {
   .item :deep(.dd-trigger)::after {
     content: '';
     position: absolute;
-    inset: calc((44px - 100%) / 2);
+    inset: calc((100% - 44px) / 2);
   }
 }
 .edit-input {

@@ -249,7 +249,7 @@ function onKey(e: KeyboardEvent) {
   .stop::after {
     content: '';
     position: absolute;
-    inset: calc((44px - 100%) / 2);
+    inset: calc((100% - 44px) / 2);
   }
 }
 @media (max-width: 480px) {
