@@ -405,7 +405,9 @@ try {
     paneOY === 'auto' && navOY === 'hidden' && docNoHOverflow,
     `pane=${paneOY} nav=${navOY} noH=${docNoHOverflow}`)
 
-  // 条 18：导航横切（flex row + overflow-x auto + role=tablist 六分区 + 方向键沿现状）
+  // 条 18：导航横切（flex row + overflow-x auto + role=tablist + 方向键沿现状）
+  // CHG-015 改写映射（iter-21 T3）：六分区 → 七分区（「用量与费用」加法分区，REQ-028
+  // 波及注记/设计 design-iter-21 §2）；旧断言 tabCount === 6 → 新断言 === 7，功能性删除为零
   const navDir = await style('.sm-nav', 'flexDirection')
   const navOX = await style('.sm-nav', 'overflowX')
   const tabCount = await page.$$eval('.sm-nav [role="tab"]', (els) => els.length)
@@ -418,8 +420,8 @@ try {
     const v = panes.find((p) => p.style.display !== 'none')
     return v?.textContent ?? ''
   })
-  log('条18 [几] 导航横向滚动条（flex row + overflow-x:auto + 滚动条 --c-scrollbar）+ role=tablist 六分区 + 方向键切换沿现状（定夺⑤）',
-    navDir === 'row' && navOX === 'auto' && tabCount === 6 && navRole === 'tablist' && arrowPane.includes('密钥模式'),
+  log('条18 [几] 导航横向滚动条（flex row + overflow-x:auto + 滚动条 --c-scrollbar）+ role=tablist 七分区（CHG-015 加法分区后平移）+ 方向键切换沿现状（定夺⑤）',
+    navDir === 'row' && navOX === 'auto' && tabCount === 7 && navRole === 'tablist' && arrowPane.includes('密钥模式'),
     `dir=${navDir} ox=${navOX} tabs=${tabCount} arrow→${arrowPane.slice(0, 8)}`)
 
   // 条 21：「前往高级设置」全屏态复验（模式卡跨分区链接 → 分区直达 + 高亮 + 导航滚动至目标钮可见）

@@ -163,15 +163,17 @@ describe('REQ-050 验收 4 既有用例容器兼容面（T3 首步 spike 机器�
     setActivePinia(createPinia())
   })
 
-  it('全屏化零改容器结构：settings-mask/settings-modal/sm-nav(六 tab)/sm-pane 类名与 DOM 形状零变化', async () => {
+  it('全屏化零改容器结构：settings-mask/settings-modal/sm-nav(七 tab)/sm-pane 类名与 DOM 形状零变化', async () => {
+    // CHG-015 改写映射（iter-21 T3）：六 tab → 七 tab（「用量与费用」加法分区，
+    // design-iter-21 §2）；旧断言 6 → 新断言 7，功能性删除为零
     const settings = useSettingsStore()
     settings.profilesLoaded = true
     useAuthStore().user = { id: 1, username: '猫南北' }
     const w = mount(SettingsForm, { props: { open: true } })
     expect(w.find('.settings-mask').exists()).toBe(true)
     expect(w.find('.settings-modal[role="dialog"][aria-modal="true"]').exists()).toBe(true)
-    expect(w.findAll('.sm-nav [role="tab"]')).toHaveLength(6)
-    expect(w.findAll('.sm-pane')).toHaveLength(6)
+    expect(w.findAll('.sm-nav [role="tab"]')).toHaveLength(7)
+    expect(w.findAll('.sm-pane')).toHaveLength(7)
   })
 
   it('二级弹窗全屏化仅 CSS：ConfirmModal/DeleteAccountModal 组件 DOM 零变化（挂载即开 props 兼容）', async () => {

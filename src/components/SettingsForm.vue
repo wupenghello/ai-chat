@@ -11,6 +11,7 @@ import ConfirmModal from './ConfirmModal.vue'
 import KeyModeCard from './KeyModeCard.vue'
 import DeleteAccountModal from './DeleteAccountModal.vue'
 import MemoryPane from './MemoryPane.vue'
+import UsagePane from './UsagePane.vue'
 import ToggleSwitch from './ToggleSwitch.vue'
 
 const settings = useSettingsStore()
@@ -36,6 +37,10 @@ const TABS = [
   // CHG-011/REQ-043（iter-17 T3）：第六分区「AI 的记忆」——对话设置之后、账号之前
   // （REQ-028 改写定序）；导航取模机制随 TABS.length 5→6 自然涵盖，零改动
   { key: 'memory', label: 'AI 的记忆' },
+  // CHG-015/REQ-052（iter-21 T3）：第七分区「用量与费用」——AI 的记忆之后、账号之前
+  // （design-iter-21 §2 定夺②：信息类分区相邻、账号恒居尾）；纯只读面零表单控件，
+  // isDirty() 零置位、Esc 链零插入点（§2）；导航取模随 TABS.length 自然涵盖
+  { key: 'usage', label: '用量与费用' },
   { key: 'account', label: '账号' },
 ] as const
 type PaneKey = (typeof TABS)[number]['key']
@@ -548,7 +553,12 @@ async function confirmDeleteAccount(password: string) {
           <MemoryPane ref="memPane" :active="pane === 'memory'" />
         </div>
 
-        <!-- 分区六：账号（REQ-021，design-iter-9 §2~3）：改密 + 注销危险区 -->
+        <!-- 分区六：用量与费用（CHG-015 REQ-052，design-iter-21：四分支态自含组件） -->
+        <div v-show="pane === 'usage'" class="sm-pane" role="tabpanel">
+          <UsagePane :active="pane === 'usage'" />
+        </div>
+
+        <!-- 分区七：账号（REQ-021，design-iter-9 §2~3）：改密 + 注销危险区 -->
         <div v-show="pane === 'account'" class="sm-pane" role="tabpanel">
           <div class="section-label pane-label">账号</div>
 

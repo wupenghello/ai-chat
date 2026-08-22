@@ -116,6 +116,36 @@ export interface QuotaStatus {
   research_available?: boolean
 }
 
+/** CHG-015/REQ-052（iter-21）：个人用量与费用面板（design-iter-21 §5 定案形状）。
+ *  cost_total 单价未配置 → null（前端显「未配置」，铁律 5 不估算）；
+ *  cache_hit_tokens 全天无带字段行 → null（前端显「—」缺失，永不显 0）。 */
+export interface UsageDailyRow {
+  day: string
+  turns: number
+  tokens_prompt: number
+  tokens_completion: number
+  cache_hit_tokens: number | null
+  cost_total: number | null
+}
+
+export interface UsageSummary {
+  window: { days: number; date_from: string; date_to: string }
+  price: {
+    configured: boolean
+    input_per_mtok: number | null
+    output_per_mtok: number | null
+    cache_hit_per_mtok: number | null
+  }
+  today: {
+    mode: 'unified' | 'self'
+    daily_limit: number
+    used_today: number
+    cost_total: number | null
+  }
+  daily: UsageDailyRow[]
+  retention_days: number
+}
+
 /** REQ-025（iter-8 T2）：管理后台——用户列表行（design-iter-8 §1.2 六列） */
 export interface AdminUserRow {
   id: number
@@ -301,6 +331,10 @@ export const backend = {
   clearActiveProfile: () => request<{ detail: string }>('DELETE', '/api/profiles/active'),
   // REQ-024/014（iter-8 T1 后端、T2 前端接入）：当前用户配额口径
   getQuota: () => request<QuotaStatus>('GET', '/api/quota'),
+  // CHG-015/REQ-052（iter-21 T2 后端、T3 前端接入）：个人用量与费用面板
+  // （design-iter-21 §5；days 枚举 {7,30} 越界后端 422；today 三数字与 /api/quota 同源）
+  getUsageSummary: (days: number) =>
+    request<UsageSummary>('GET', `/api/usage/summary?days=${days}`),
   // CHG-010/REQ-040（iter-16 T3，design-iter-16 §5.1）：手动压缩——四语义 200 compacted /
   // 200 skipped too_short / 409 session_generating（detail.message 逐字呈现）/ 502·504 失败
   compactSession: (session_id: string) =>
