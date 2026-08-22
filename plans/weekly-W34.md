@@ -368,3 +368,4 @@
 - 后端 pytest **382→397**（+15：三档逐字锚点/档位矩阵/max_tokens 载荷/depth 交互/read 七例）+ ruff clean；受控改写映射 test_research 5 处登记（功能性删除为零）；前端 vitest **435→441**（+6：档位 UI 4 + client 载荷 2）+ vue-tsc + guard:style + 生产构建全过；composer emit 断言受控改写 1 处登记。
 - **真实端到端 PASS（verify §11）**：本地 uvicorn + 真 DeepSeek + 真 Tavily，depth=deep 硬题（三框架版本核对）——11 搜 + **5 读原文**（sglang GitHub/TRT-LLM 与 vLLM release notes 等）、max_steps=32 生效、[m-n] 引用 101 零裸 [n]、置信度/矛盾/遗留三段齐、69.4s/5494 事件流。观察项：报告 8730 字超 deep 上限 25%（版本核对型硬题），字数为 prompt 约束非硬截断（沿 iter-18 口径），留线上观察。
 - 台账：changes.md CHG-018 + spec REQ-046 改写/REQ-054/055 新增（基线 req-baseline-v14）+ rtm 三行收口 + 全局回归基线 CHG-018 面 + plans/chg-018-verify.md（T0/T2/T3/§11 全留档）。
+- **线上部署与生产验证（同日回填）**：VPS git pull(3bcf753) + dist scp + 双容器重建 healthy；生产深度档端到端 PASS——12 搜 + 3 读原文 + max_steps=32 + 97 处 [m-n] 引用 + 置信度/矛盾/遗留三段（verify §12）；冒烟账号当日注销（v1.4.22），零痕迹收口。

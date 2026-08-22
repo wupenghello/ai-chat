@@ -198,3 +198,9 @@ R1 候选稿要点：两轮/三轮推进（广度轮多角度 → [深度档:深
 - 结果：**PASS**——11 次 search + **5 次 read**（sglang GitHub / TensorRT-LLM release notes / vLLM release notes / freedom.tech vllm / sglang changelog 等真实原文）、turn.step max_steps=32（deep 档护栏生效）、报告 8730 字、[m-n] 引用 101 处零裸 [n]、置信度/矛盾/遗留三段齐、69.4s / 5494 事件流、turn.end reason=done。
 - 观察项登记：报告 8730 字超 deep 档 7000 上限 25%（版本核对型硬题，模型倾向完整呈现三框架版本史）——字数为 prompt 约束非硬截断（与 iter-18 口径一致），留线上观察；若常态超限，后续以 prompt 收紧或上限微调处置（走 CHG 小批）。
 - 留档：/tmp/chg018-e2e-result.json（stats + 报告全文）；一次性脚本未沉淀 git（沿 T0 先例）。
+
+## §12 线上部署与生产验证（2026-08-23，回填闭环）
+
+- **部署**：VPS 47.79.228.253 /opt/ai-chat git pull（3bcf753）→ 本地构建 dist scp → docker compose up --build -d 双容器 healthy（backend/frontend）；HTTPS 200；.env 零改动（档位参数全默认值，search/weather key 既有）。
+- **生产深度档端到端 PASS**（https://www.maomaoxia.online，depth=deep，「DeepSeek vs Qwen 最新开源模型对比」）：**12 次 search + 3 次 read 读原文**、turn.step max_steps=32（deep 档护栏生产生效）、turn.end reason=done、报告 7642 字含 **97 处 [m-n] 引用坐标（零裸 [n]）** + 置信度/矛盾分歧/遗留问题三段 + 引用坐标图例；遗留段为三条带引用的真实缺口（对等横向实测缺失/极限量化无系统数据/许可证细节未确认）——「深度」行为在生产完整呈现。
+- **冒烟账号当日注销**（制度 v1.4.22 / release checklist 第 7 条）：smoke-chg018 delete-account 200、复登 401、服务器临时文件（cookie/SSE 留档/脚本）清理完成；SSE 关键数据已摘录本节，全文不外留。
