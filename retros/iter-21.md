@@ -37,8 +37,8 @@
 
 | 改进项 | 落点 | 批准 | 状态 |
 |--------|------|------|------|
-| A 清单符号唯一化 + 闭环声明滞后禁令 | process/requirements.md §3 + templates/change-record.md | 待 CEO 批准（v1.4.20） | ⬜ |
-| B 走查输出编号对照 | process/testing.md §5 | 待 CEO 批准（v1.4.20） | ⬜ |
+| A 清单符号唯一化 + 闭环声明滞后禁令 | process/requirements.md §3 + templates/change-record.md | CEO 2026-08-22「认可，改进全批」 | ✅ v1.4.20（company-os ff92549） |
+| B 走查输出编号对照 | process/testing.md §5 | CEO 2026-08-22「认可，改进全批」 | ✅ v1.4.20（company-os ff92549） |
 
 ## 度量（iter-21）
 
@@ -52,3 +52,10 @@
 | Code Review | 三问过 + NCR-CR-iter21-001 当轮修（48a8fd5）+ 5 取舍留档 |
 | NCR 根因分布 | 清单回填滞后（声明半边无防线）1 / 机检符号面漏洞 1 |
 | 提交 | 8 笔全推送（a0eddde..48a8fd5），双 tag 在案 |
+
+
+---
+
+## CEO 批准记录
+
+- 2026-08-22 CEO「下一步」= Code Review 过目认可落痕（三问过 + NCR-CR-iter21-001 当轮修 + 5 取舍留档）。复盘呈报后 CEO「**认可，改进全批**」= 四问认可 + 改进 A/B 全部落制度 **v1.4.20**（company-os ff92549：A requirements.md §3 符号唯一化 ✅/☐ + 闭环声明滞后禁令 + 模板尾注；B testing.md §5 走查输出编号对照）。tailoring 版本行同批升 v1.4.20。**iter-21 关闭。**
