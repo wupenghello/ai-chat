@@ -30,6 +30,21 @@ function onScroll() {
   if (echo) return
   follow.value = nearBottom()
 }
+// DEF-041（2026-08-23 CEO 上线后反馈，DEF-034 残留竞态）：高频增量下程序滚底（微任务）
+// 会赶在用户滚动事件派发前把位置拽回底，120px 距离阈值实际攒不够、脱离跟随不可达。
+// 修复：从输入事件识别意图——向上滚轮 / 触屏下滑（回看方向手势）立即脱离跟随，
+// 先行于任何位置判定；回底恢复仍由 onScroll 距底判定承载
+function onWheel(e: WheelEvent) {
+  if (e.deltaY < 0) follow.value = false
+}
+let touchStartY = 0
+function onTouchStart(e: TouchEvent) {
+  touchStartY = e.touches[0]?.clientY ?? 0
+}
+function onTouchMove(e: TouchEvent) {
+  const y = e.touches[0]?.clientY ?? touchStartY
+  if (y - touchStartY > 10) follow.value = false // 手指下滑 = 回看更早内容
+}
 async function stick() {
   const n = el.value
   if (!n) return
@@ -65,7 +80,14 @@ watch(
 </script>
 
 <template>
-  <div ref="el" class="list" @scroll.passive="onScroll">
+  <div
+    ref="el"
+    class="list"
+    @scroll.passive="onScroll"
+    @wheel.passive="onWheel"
+    @touchstart.passive="onTouchStart"
+    @touchmove.passive="onTouchMove"
+  >
     <div class="list-col">
       <template v-for="(m, i) in messages" :key="m.id">
         <template v-if="m.status === 'error'">

@@ -80,3 +80,70 @@ describe('MessageList 滚动跟随（DEF-034 修复）', () => {
     expect(w.find('.tb-btn').exists()).toBe(false)
   })
 })
+
+/** DEF-041 修复（2026-08-23 CEO 上线后反馈，DEF-034 残留竞态）：高频增量下程序滚底
+ * （微任务）赶在用户滚动事件派发前拽回底部，120px 阈值实际攒不够——改为输入意图
+ * 先行：向上滚轮 / 触屏下滑手势立即脱离跟随，与距底位置无关。 */
+describe('MessageList 滚动跟随（DEF-041 修复：输入意图先行）', () => {
+  const wheel = (deltaY: number) => {
+    const e = new Event('wheel')
+    Object.defineProperty(e, 'deltaY', { value: deltaY })
+    return e
+  }
+  const touch = (type: 'touchstart' | 'touchmove', clientY: number) => {
+    const e = new Event(type)
+    Object.defineProperty(e, 'touches', { value: [{ clientY }] })
+    return e
+  }
+
+  it('向上滚轮即时脱离（距底 <120px 也生效——竞态根因回归面），增量不再拽底', async () => {
+    const w = mount(MessageList, { props: { messages: mk(4) } })
+    const el = w.find('.list').element as HTMLElement
+    geo(el, 1000, 500)
+    el.scrollTop = 940 // 距底 60px < 120：位置判定不足以脱离
+    el.dispatchEvent(new Event('scroll'))
+    await nextTick()
+    expect(w.find('.tb-btn').exists()).toBe(false) // 仍跟随（DEF-034 语义）
+    el.dispatchEvent(wheel(-100)) // 向上滚轮 → 意图先行脱离
+    await nextTick()
+    expect(w.find('.tb-btn').exists()).toBe(true)
+    const grown = mk(4)
+    ;(grown[3] as { content: string }).content = '内容3' + '高频流式增量文本'
+    await w.setProps({ messages: grown })
+    await nextTick()
+    expect(el.scrollTop).toBe(940) // 位置保持，未被拽回底部
+  })
+
+  it('向下滚轮不主动脱离跟随（贴底流式继续滚底）', async () => {
+    const w = mount(MessageList, { props: { messages: mk(4) } })
+    const el = w.find('.list').element as HTMLElement
+    geo(el, 1000, 500)
+    el.scrollTop = 999
+    el.dispatchEvent(new Event('scroll'))
+    await nextTick()
+    el.dispatchEvent(wheel(120)) // 向下滚轮 → 非回看意图
+    await nextTick()
+    expect(w.find('.tb-btn').exists()).toBe(false)
+    await w.setProps({ messages: [...mk(4), mk(1)[0]] })
+    await nextTick()
+    expect(el.scrollTop).toBe(1000) // 跟随滚底
+  })
+
+  it('触屏下滑手势脱离跟随（回看方向，移动端同缺陷面）', async () => {
+    const w = mount(MessageList, { props: { messages: mk(4) } })
+    const el = w.find('.list').element as HTMLElement
+    geo(el, 1000, 500)
+    el.scrollTop = 999
+    el.dispatchEvent(new Event('scroll'))
+    await nextTick()
+    el.dispatchEvent(touch('touchstart', 100))
+    el.dispatchEvent(touch('touchmove', 160)) // 手指下滑 60px > 10：回看更早内容
+    await nextTick()
+    expect(w.find('.tb-btn').exists()).toBe(true)
+    const grown = mk(4)
+    ;(grown[3] as { content: string }).content = '内容3' + '流式增量'
+    await w.setProps({ messages: grown })
+    await nextTick()
+    expect(el.scrollTop).toBe(999)
+  })
+})
