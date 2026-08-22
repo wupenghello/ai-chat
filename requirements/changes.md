@@ -84,7 +84,7 @@
   | 4 | RTM 新增 REQ-048 行 + REQ-030 波及注记 + 变更备注表 CHG-013 行 + 全局回归基线 D2 面说明（v1.4.11 C 行级收口 + v1.4.16 独立行同批收口） | ✅ | 同上（rtm.md，本提交） |
   | 5 | 定夺项①~⑧结论回填本条（含 hook_timeout 若 T0 定档非 5s 的回填） | ✅ | 本条内容 4（八定夺全按推荐定案；hook_timeout 维持 5s 拟值，T0 定档授权在案） |
   | 6 | registry.md 同步（主会话执行） | ✅ | 2026-08-22 随 CHG-013 批准登记（company-os 提交） |
-  | 7 | T0 机制写实留档（事件点位表/载荷 schema/分发语义/T0 实测值，plans/iter-19-verify.md）为 T2 开发前置（定夺⑧串行口径） | 待交付（iter-19 T0） | — |
+  | 7 | T0 机制写实留档（事件点位表/载荷 schema/分发语义/T0 实测值，plans/iter-19-verify.md）为 T2 开发前置（定夺⑧串行口径） | ✅ 已交付（2026-08-22，0444fbb；NCR-iter19-001 整改回填——原漏勾） | plans/iter-19-verify.md T0 段（REQ-048 验收 8 载体） |
 - CEO 批准：批准（2026-08-22，CEO 原话「全部按推荐」——CHG-013 整体批准 + 八定夺全按推荐定案：①整体批准出基线 req-baseline-v10 ②闭合 5 事件③fire-and-forget 旁路语义只观察不决策④部署者级注册与 .env 配置⑤元数据-only 载荷⑥webhook 后置留池⑦**移动端不搭班**（D2 单独 iter-19 收官，移动端独立 CHG-014 + iter-20）⑧Σ4~5 推荐 Σ4 + T0 技术基线承担串行基线职能；spec/RTM 同日同批落盘，tag req-baseline-v10 由主会话执行）
 
 ## CHG-012 架构升级第六期 D1：deep-research 子代理（含 SSE 心跳）
