@@ -595,21 +595,21 @@ def usage_summary(
     t = acc.get(date_to)
     today_cost = _cost(date_to) if t is not None else (
         telemetry.unified_cost(0, 0, 0, 0, settings.price_input,
-                               settings.price_output, settings.price_cache_hit)["total"]
-        if settings.price_input is not None and settings.price_output is not None
-        and settings.price_cache_hit is not None else None
-    )
+                               settings.price_output, settings.price_cache_hit) or {}
+    ).get("total")
     profile = conn.execute(
         "SELECT tools_enabled FROM profiles WHERE user_id = ? AND is_active = 1",
         (user.id,),
     ).fetchone()
     mode = quota.MODE_SELF if profile is not None else quota.MODE_UNIFIED
+    # configured 判定含 ≥0（admin._price_configured 同口径，REQ-052 验收 2 同体例；
+    # 负值视为非法不估算——CR iter-21 当轮修）
+    prices = (settings.price_input, settings.price_output, settings.price_cache_hit)
+    configured = all(p is not None and p >= 0 for p in prices)
     return {
         "window": {"days": days, "date_from": date_from, "date_to": date_to},
         "price": {
-            "configured": settings.price_input is not None
-            and settings.price_output is not None
-            and settings.price_cache_hit is not None,
+            "configured": configured,
             "input_per_mtok": settings.price_input,
             "output_per_mtok": settings.price_output,
             "cache_hit_per_mtok": settings.price_cache_hit,

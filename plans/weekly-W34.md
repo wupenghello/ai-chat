@@ -266,3 +266,15 @@
 ### iter-21 T3 前端分区与全局回归收口完成（2026-08-22）
 
 - **T3 前端已交付并核验**：SettingsForm 第七分区「用量与费用」（TABS 加项〔AI 的记忆后账号前，导航取模自然涵盖〕+ UsagePane 自含组件〔沿 MemoryPane 先例〕：今日摘要行〔unified「X / Y 次」/self U5 逐字、费用 ¥4 位小数〕+ 时间窗按钮组〔近 7/30 天 radiogroup、默认 7、切换重拉〕+ 每日表格六列〔千分位/缓存缺失「—」/合计行求和、任一日缺失合计「—」〕+ 模式脚注；四分支态 = 加载/空/未配置〔U7+U15 列级口径 tokens 照常〕/失败〔U16 就地 + 重试钮〕；深色全走语义令牌零自造色值；表格容器 overflow-x:auto ≤480px 全屏态不溢出视口）。数据面 backend.ts 加 getUsageSummary + 类型（getQuota 调用点零改动——定夺④）；纯只读面 isDirty 零置位、Esc 链零插入点（走查条 22/23 实证）。测试：vitest 411→**423**（+12 UsagePane.spec）+ 既有 3 处分区计数耦合断言改写映射逐条登记（settings-form 弹窗结构/分区切换索引平移 + SettingsMobileCssContract 计数 6→7，功能性删除为零）；pytest 360 复跑背书 + ruff + guard:style + 生产构建。走查：scripts/e2e-walkthrough-21.mjs 真实 Chrome + 真实后端（telemetry 直插造数 + 网络层拦截模拟未配置/失败态——实现级决策 verify T3-1①）**32 PASS / 0 FAIL / 2 N/A**（四分支态 + 双态双主题 + 六分区零回退组 + 全局；截图 /tmp/e2e21/shots/）；既有 walkthrough-20 桌面基线复跑 38 PASS / 0 FAIL（条 18 计数断言随基线改写映射）。三轮脚本自迭代 FAIL 全为脚本断言问题，零产品缺陷。RTM REQ-052 行 + 全局回归基线「用量面」行同批收口；CHG-015 落地核对清单 6 项全勾闭环。下一步 QA 审计 → Code Review → G4 复盘。
+
+### Code Review（iter-21，6fd44a4..484804b + CR 修补批，2026-08-22）
+
+**三问结论**：①REQ 承载完整——REQ-052 验收 7 条逐条代码 + 测试/走查双面承载（后端 test_usage_api 14 例聚合精确断言 + admin 同构专项比对；前端 UsagePane.spec 12 例 U 样件逐字与四分支态；走查 32/0/2 + walkthrough-20 复跑 38/0 桌面/移动零回退）；②实现疑点独立实证全过——user_id 仅凭证解析（query 零参数面，结构性消除泄露）/ telemetry 聚合与 admin 端点同构 SQL 体例 / unified_cost 与 `_cost6` 逐字同公式（同构专项用例互证）/ 分区插入对 Esc 链与 isDirty 零影响（走查条 22/23 实证）/ 门禁 C 修补 dry-run 三态实证；③测试卫生——新增 26 用例（pytest 14 + vitest 12）本机复跑全绿无恒真，走查关键断言抽查均实值（千分位/¥4 位小数/合计求和/缓存缺失「—」）。
+
+**NCR 级缺陷 1 项（当轮修）**：NCR-CR-iter21-001 负单价口径不一致——个人端 `configured` 仅判非 None，admin `_price_configured` 要求 ≥0，负值环境下两侧 configured/cost 矛盾（违反 REQ-052 验收 2 同体例要求）。当轮修：proxy.py configured 判定 + telemetry.unified_cost 非法护栏（负值一律 None）+ 回归用例 `test_负单价_视为未配置_与admin同口径`。
+
+**呈现面小缺陷 1 项（当轮修）**：UsagePane 失败态今日费用格显示「¥0.0000」（数据未就绪却造值，铁律 5 呈现面）。当轮修：`phase !== 'ready'` 显「—」+ 失败态用例加断言。
+
+**非阻塞取舍 5 项（留档接受）**：①tool/memory_extract 遥测行贡献「有数据日」——个人面可能出现全 0 日行（与 admin 有数据日口径一致，一致性优先）②走查未配置/失败态为网络层响应拦截模拟（后端不可达未配置态，verify T3-1① 登记，组件/API 面各有真实测试承载）③窗口切换失败停留失败态且 win 已切换——重试即拉新窗口（语义自洽，无回滚必要）④today 快照与 KeyModeCard 两处独立拉取存在同刻 ≤1 回合瞬时差异（CHG-015 定夺④设计口径已登记）⑤M40 复验未执行（.env 无 search 配置，触发条件未出现——QA OBS-1 留档）。
+
+**总评**：交付质量沿高位；两处当轮修均为边界一致性问题，无核心路径缺陷。

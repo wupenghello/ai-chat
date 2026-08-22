@@ -168,6 +168,8 @@ describe('四分支态（§3.4）', () => {
     const w = mountPane()
     await flushPromises()
     expect(w.find('.u-state').text()).toContain('用量数据加载失败，请稍后重试')
+    // CR iter-21 当轮修：数据未就绪时今日费用格显「—」，不造 ¥0.0000（铁律 5 呈现面）
+    expect(w.findAll('.u-today .v')[1].text()).toBe('—')
     backendMock.getUsageSummary.mockResolvedValue(summary())
     await w.find('.retry').trigger('click')
     await flushPromises()

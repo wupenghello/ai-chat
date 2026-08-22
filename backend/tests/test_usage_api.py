@@ -221,6 +221,24 @@ def test_单价未配置_cost_null_tokens照常(tmp_path):
         assert r["today"]["cost_total"] is None
 
 
+def test_负单价_视为未配置_与admin同口径(tmp_path):
+    # CR iter-21 当轮修：configured 判定含 ≥0（admin._price_configured 同口径）
+    with usage_app(tmp_path):
+        pass  # 夹具造库（注册两账号）后，用同库重建带负单价的 app
+    kwargs = {"db_path": str(tmp_path / "t.db"), "price_input": -1.0,
+              "price_output": 8.0, "price_cache_hit": 0.5}
+    settings = Settings(**kwargs)
+    app = create_app(settings)
+    app.dependency_overrides[get_settings] = lambda: settings
+    with TestClient(app) as c:
+        _login(c, "alice")
+        _seed(c, [_llm(_TODAY, "unified", turn="a", prompt=1_000, completion=100, total=1_100)])
+        r = _get(c).json()
+        assert r["price"]["configured"] is False
+        assert r["daily"][0]["cost_total"] is None
+        assert r["today"]["cost_total"] is None
+
+
 def test_空窗口_daily空数组非404(tmp_path):
     with usage_app(tmp_path) as c:
         _login(c, "alice")

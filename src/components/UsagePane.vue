@@ -125,7 +125,8 @@ async function retry() {
       </div>
       <div class="cell">
         <div class="k">今日费用估算</div>
-        <div class="v">{{ priceConfigured ? fmtMoney(data?.today?.cost_total ?? 0) : '未配置' }}</div>
+        <!-- 数据未就绪（加载/失败态）显「—」，不造 ¥0.0000（铁律 5 呈现面，CR iter-21 当轮修） -->
+        <div class="v">{{ phase !== 'ready' ? '—' : priceConfigured ? fmtMoney(data?.today?.cost_total ?? 0) : '未配置' }}</div>
       </div>
     </div>
 

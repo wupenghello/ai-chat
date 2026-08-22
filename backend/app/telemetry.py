@@ -44,8 +44,10 @@ def unified_cost(
     admin 端点本体零改动（实现级决策：不回写 admin.py，行为等价由测试比对承载——见
     test_usage_api 同体例断言）。
     """
-    if price_input is None or price_output is None or price_cache_hit is None:
-        return None
+    if price_input is None or price_input < 0 \
+            or price_output is None or price_output < 0 \
+            or price_cache_hit is None or price_cache_hit < 0:
+        return None  # 未配置或非法（负值）一律不估算（admin _price_configured 同口径）
     ci = round((prompt + comp_prompt) * price_input / 1_000_000, 6)
     co = round(completion * price_output / 1_000_000, 6)
     cc = round(cost_hit * price_cache_hit / 1_000_000, 6)
