@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-chat · iter-20 设计稿（移动端主界面适配，呈批待基线）</title>
+<!--
+  ============================================================
+  ai-chat 迭代 20 T1 设计稿（设计稿即页面骨架，开发对照实现）
+  依据（逐条登记）：
+  1. plans/iter-20.md T1：六项工作面（768 抽屉 / 480 弹窗全屏 / 480 正文收窄 /
+     触屏常显 / 走查四象限 / spec 指针回填）；v1.4.15 串行纪律——本稿基线为
+     T2/T3 全部开发前置。
+  2. requirements/spec.md（req-baseline-v11）：REQ-049 验收 7 条 / REQ-050
+     验收 6 条 / REQ-051 验收 5 条；REQ-026/028/017 波及注记。
+  3. requirements/changes.md CHG-014（已批准 2026-08-22，八定夺全定案）：
+     双断点 ≤768/≤480 就地媒体查询；抽屉 overlay + --c-mask 瞬态不持久化；
+     弹窗 ≤480 全屏化（导航横切形态归本稿定案）；管理后台不纳入；
+     hover:none CSS 判定 + 2 处常显 + ≥44px 命中区（视觉放大与否归本稿）；
+     零新增令牌；深色零回退。
+  4. 现状实现取证：TheSidebar.vue（264px / rail 56px）；SessionListItem.vue
+     （「···」28px hover 行浮现，L175）；MessageBubble.vue（操作栏 icon 24px
+     opacity:0 hover 浮现，L341；版本箭头常显）；ComposerBox.vue（发送钮
+     36×36 L182；hint「Enter 发送 · Shift+Enter 换行」L37；placeholder L79；
+     信息行左右布局 = iter-18 基线）；SettingsForm.vue（720px 分栏 L745 /
+     左导航 168px L22 / role=tablist L396 / 二级弹窗 inset:0 L1179）；
+     LoginView.vue L467（≤480px 就地媒体查询先例）。
+  5. 已基线锚点：design/iter-11（侧栏/弹窗/rail/「···」走查 5·16~18）；
+     design/iter-14（引用卡）；design/iter-17（记忆分区）；design/iter-18
+     （Composer 信息行 + M38~M43，本稿样件自 M44 续编）。
+  6. design-system/tokens.md v1.3/v1.3.1 + components.md v1.4：只用既有令牌
+     （--c-mask 既有遮罩值），零新增令牌、零自造色值、零新增组件形态（§9）。
+  硬约束落实：桌面（>768px 且 hover:hover）规则面零触碰——全部新增面收敛在
+  max-width:768px / max-width:480px / (hover:none) 三组带界媒体查询内；
+  既有基线形态（iter-11/14/17/18）零冲突（§7.2 E 组 + md §11 核对结论）。
+  状态：呈批待基线。设计师只产出，不打 tag、不做 git 操作、不改 spec/RTM
+  （批准后由主会话执行基线动作）。spec 指针回填拟文见 design-iter-20.md §12。
+  可交互：右上「演示控制」亮/暗主题切换 + 44px 热区标注开关 + §1 抽屉开/合
+  真实可点（入口钮 → 抽屉展开 + 遮罩；遮罩/选中会话/Esc 三径关闭）。
+  零外部依赖，双击即开。
+  ============================================================
+-->
+<style>
+/* ============================================================
+   一、文档外壳（说明页自身，浅色固定；沿 iter-5~18 惯例）
+   ============================================================ */
+:root { --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-full: 999px; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-size: 14px; line-height: 1.6; color: #1F2329; background: #F5F6F7; padding: 40px 32px 80px;
+}
+.page { max-width: 1160px; margin: 0 auto; }
+h1 { font-size: 20px; font-weight: 600; }
+.sub { font-size: 13px; color: #8F959E; margin: 4px 0 8px; }
+.sub b { color: #646A73; }
+.badge { display: inline-block; padding: 1px 10px; border-radius: var(--r-full); font-size: 12px; font-weight: 500; background: #FFF7E8; color: #B45309; margin-bottom: 24px; }
+section { margin-bottom: 48px; }
+h2 { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+h2 .no { color: #3370FF; margin-right: 4px; }
+.sec-desc { font-size: 13px; color: #8F959E; margin-bottom: 16px; }
+.sec-desc b { color: #646A73; }
+table { width: 100%; border-collapse: collapse; background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-md); overflow: hidden; font-size: 13px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #E5E6EB; vertical-align: top; }
+th { color: #8F959E; font-weight: 500; background: #FAFBFC; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+td code, li code, .ann code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; background: #F2F3F5; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
+pre { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; background: #F2F3F5; border: 1px solid #E5E6EB; border-radius: var(--r-md); padding: 10px 14px; overflow: auto; line-height: 1.7; color: #1F2329; margin: 8px 0 0; }
+.spec { background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-lg); padding: 24px; box-shadow: 0 1px 2px rgba(31,35,41,.06); margin-bottom: 16px; }
+.spec-title { font-size: 13px; font-weight: 600; color: #646A73; margin-bottom: 12px; }
+.spec-title .tag { font-weight: 400; color: #8F959E; margin-left: 8px; }
+.ann { font-size: 12px; color: #8F959E; margin-top: 8px; line-height: 1.8; }
+.ann b { color: #646A73; font-weight: 600; }
+.frame-cap { text-align: center; font-size: 12px; color: #8F959E; margin-bottom: 8px; }
+.cols { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+.cols > div { flex: 1; min-width: 340px; max-width: 600px; }
+.scroll-x { overflow-x: auto; padding-bottom: 8px; }
+
+/* ---- 演示控制条（文档功能件，非产品组件） ---- */
+.demo-ctl {
+  position: sticky; top: 0; z-index: 500; display: flex; align-items: center; gap: 12px;
+  background: #FFFFFF; border: 1px solid #E5E6EB; border-radius: var(--r-md);
+  padding: 10px 16px; margin-bottom: 32px; box-shadow: 0 1px 2px rgba(31,35,41,.06);
+  font-size: 13px; color: #646A73; flex-wrap: wrap;
+}
+.demo-ctl .seg { display: inline-flex; border: 1px solid #E5E6EB; border-radius: var(--r-md); overflow: hidden; }
+.demo-ctl .seg button { height: 30px; padding: 0 14px; border: none; background: #FFFFFF; color: #646A73; font-size: 13px; cursor: pointer; transition: background .15s ease, color .15s ease; }
+.demo-ctl .seg button.on { background: #3370FF; color: #fff; font-weight: 600; }
+.demo-ctl label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.demo-ctl .note { font-size: 12px; color: #8F959E; }
+
+/* ============================================================
+   二、演示令牌作用域 .tk（组件全部 var() 引用；浅/暗 = tokens v1.3 值，零自造）
+   ============================================================ */
+.tk {
+  --c-bg: #F5F6F7; --c-surface: #FFFFFF; --c-border: #E5E6EB;
+  --c-text-1: #1F2329; --c-text-2: #646A73; --c-text-3: #8F959E;
+  --c-primary: #3370FF; --c-primary-h: #2E5FDF; --c-primary-l: #F0F4FF;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #2E5FDF;
+  --c-danger: #D93025; --c-danger-l: #FDECEA; --c-danger-solid: #D93025;
+  --c-success: #1A9E5C; --c-warning: #B45309; --c-warning-l: #FFF7E8;
+  --c-hover-bg: #F2F3F5; --c-subtle-bg: #FAFBFC; --c-avatar-bg: #E8EBF2;
+  --c-scrollbar: #D5D9E0; --c-mask: rgba(31,35,41,.4); --c-disabled-bg: #C9CFDB;
+  --c-focus-ring: rgba(51,112,255,.12);
+  --shadow-1: 0 1px 2px rgba(31,35,41,.06);
+  color: var(--c-text-1);
+}
+.tk.dark {
+  --c-disabled-bg: #3D414A;
+  --c-bg: #131417; --c-surface: #1E2026; --c-border: #33363E;
+  --c-text-1: #E6EAF0; --c-text-2: #A2A9B6; --c-text-3: #808896;
+  --c-primary: #5C8DFF; --c-primary-h: #7AA4FF; --c-primary-l: #1D2740;
+  --c-primary-solid: #3370FF; --c-primary-solid-h: #4C84FF;
+  --c-danger: #FF8073; --c-danger-l: #361B18; --c-danger-solid: #D93025;
+  --c-success: #4CC38A; --c-warning: #EDA23B; --c-warning-l: #38290F;
+  --c-hover-bg: #262930; --c-subtle-bg: #24272E; --c-avatar-bg: #33363E;
+  --c-scrollbar: #3A3E46; --c-mask: rgba(0,0,0,.55);
+  --c-focus-ring: rgba(92,141,255,.25);
+  --shadow-1: 0 1px 2px rgba(0,0,0,.4);
+}
+.tk.force-light { /* 锁定帧（§5 四象限），不随演示切换 */
+  --c-bg: #F5F6F7; --c-surface: #FFFFFF; --c-border: #E5E6EB;
+  --c-text-1: #1F2329; --c-text-2: #646A73; --c-text-3: #8F959E;
+  --c-primary: #3370FF; --c-primary-l: #F0F4FF; --c-primary-solid: #3370FF;
+  --c-danger: #D93025; --c-danger-l: #FDECEA; --c-success: #1A9E5C;
+  --c-warning: #B45309; --c-warning-l: #FFF7E8; --c-hover-bg: #F2F3F5;
+  --c-subtle-bg: #FAFBFC; --c-avatar-bg: #E8EBF2; --c-scrollbar: #D5D9E0;
+  --c-mask: rgba(31,35,41,.4); --c-focus-ring: rgba(51,112,255,.12);
+  color: var(--c-text-1);
+}
+.tk.force-dark {
+  --c-bg: #131417; --c-surface: #1E2026; --c-border: #33363E;
+  --c-text-1: #E6EAF0; --c-text-2: #A2A9B6; --c-text-3: #808896;
+  --c-primary: #5C8DFF; --c-primary-l: #1D2740; --c-primary-solid: #3370FF;
+  --c-danger: #FF8073; --c-danger-l: #361B18; --c-success: #4CC38A;
+  --c-warning: #EDA23B; --c-warning-l: #38290F; --c-hover-bg: #262930;
+  --c-subtle-bg: #24272E; --c-avatar-bg: #33363E; --c-scrollbar: #3A3E46;
+  --c-mask: rgba(0,0,0,.55); --c-focus-ring: rgba(92,141,255,.25);
+  color: var(--c-text-1);
+}
+
+/* ============================================================
+   三、产品组件样式（全部 var() 引用，零裸色值；参数沿现状组件取证）
+   ============================================================ */
+
+/* ---- 3a. 移动设备框（设计稿画框：768 态真实宽 768、480 态典型 390） ---- */
+.device { border: 1px solid var(--c-border); border-radius: 14px; overflow: hidden; background: var(--c-surface); position: relative; box-shadow: var(--shadow-1); }
+.device .vp { position: relative; height: 620px; display: flex; flex-direction: column; overflow: hidden; }
+
+/* ---- 3b. ≤768px 骨架：移动顶条 + 抽屉 overlay + 遮罩 ---- */
+.m-topbar { flex: none; height: 48px; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 4px; background: var(--c-surface); border-bottom: 1px solid var(--c-border); position: relative; z-index: 10; }
+.m-menu-btn { width: 44px; height: 44px; border: none; background: transparent; border-radius: var(--r-sm); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; color: var(--c-text-2); transition: background .15s ease; flex: none; }
+.m-menu-btn:hover { background: var(--c-hover-bg); }
+.m-menu-btn:focus-visible { outline: 2px solid var(--c-focus-ring); outline-offset: -2px; }
+.m-topbar-title { font-size: 13px; font-weight: 500; color: var(--c-text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+.m-mask { position: absolute; inset: 0; background: var(--c-mask); z-index: 40; opacity: 0; visibility: hidden; transition: opacity .15s ease, visibility .15s ease; }
+.m-drawer { position: absolute; left: 0; top: 0; bottom: 0; width: 264px; max-width: 80vw; background: var(--c-bg); border-right: 1px solid var(--c-border); z-index: 41; transform: translateX(-100%); visibility: hidden; transition: transform .15s ease, visibility .15s ease; display: flex; flex-direction: column; padding: 12px 8px; }
+.device.drawer-open .m-mask { opacity: 1; visibility: visible; }
+.device.drawer-open .m-drawer { transform: translateX(0); visibility: visible; }
+
+/* 抽屉内容 = 既有侧栏原样平移（TheSidebar 264px 形态零差异） */
+.bg-brand { display: flex; align-items: center; gap: 8px; padding: 0 10px 12px; font-size: 15px; font-weight: 600; color: var(--c-text-1); }
+.bg-new { margin: 0 2px 10px; width: calc(100% - 4px); height: 36px; border: none; border-radius: var(--r-md); background: var(--c-primary-solid); color: #fff; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; }
+.bg-gh { font-size: 12px; color: var(--c-text-3); padding: 12px 10px 4px; }
+.bg-row { height: 34px; border-radius: 8px; padding: 6px 10px; font-size: 13px; color: var(--c-text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; justify-content: space-between; gap: 6px; cursor: pointer; }
+.bg-row.on { background: var(--c-primary-l); color: var(--c-primary); }
+.bg-row:hover { background: var(--c-hover-bg); }
+.bg-row .dots { flex: none; color: var(--c-text-3); font-size: 14px; letter-spacing: 1px; padding: 4px 6px; }
+
+/* ---- 3c. 主区（正文 480 收窄态参数：padding 12 / 气泡 ≤92%） ---- */
+.m-main { flex: 1; min-height: 0; background: var(--c-surface); display: flex; flex-direction: column; }
+.m-flow { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; padding: 16px 12px 8px; scrollbar-width: thin; scrollbar-color: var(--c-scrollbar) transparent; }
+.a-turn { display: flex; flex-direction: column; min-width: 0; }
+.u-bubble { align-self: flex-end; max-width: 70%; background: var(--c-avatar-bg); color: var(--c-text-1); font-size: 15px; line-height: 1.75; padding: 10px 14px; border-radius: 12px 12px 4px 12px; white-space: pre-wrap; word-break: break-word; }
+.n-480 .u-bubble { max-width: 92%; }   /* ≤480px 收窄口径（REQ-049 描述逐字） */
+.a-plain { font-size: 15px; line-height: 1.75; color: var(--c-text-1); word-break: break-word; }
+
+/* 消息操作栏（MessageBubble 现状：icon 24px、opacity:0 hover 浮现；hover:none 常显） */
+.action-row { display: flex; gap: 2px; margin-top: 4px; }
+.touch-show .action-row .action-btn { opacity: 1 !important; }
+.action-btn { position: relative; width: 28px; height: 28px; border: none; background: transparent; border-radius: var(--r-sm); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; color: var(--c-text-3); opacity: 0; transition: opacity .15s ease, background .15s ease, color .15s ease; }
+.a-turn:hover .action-btn { opacity: 1; }
+.action-btn:hover { background: var(--c-hover-bg); color: var(--c-text-2); }
+.action-btn svg { width: 15px; height: 15px; }
+
+/* ---- 3d. Composer（480 收窄态：padding 12 / 发送钮 44 / 触屏 hint 隐藏） ---- */
+.composer-row { flex: none; padding: 12px 12px 14px; border-top: 1px solid var(--c-border); background: var(--c-surface); }
+.c-box { display: flex; align-items: flex-end; gap: 8px; border: 1px solid var(--c-border); border-radius: var(--r-lg); padding: 6px 6px 6px 12px; background: var(--c-surface); transition: border-color .15s ease; }
+.c-box:focus-within { border-color: var(--c-primary); }
+.c-ta { flex: 1; min-width: 0; border: none; outline: none; resize: none; background: transparent; color: var(--c-text-1); font: inherit; font-size: 14px; line-height: 1.6; max-height: 160px; padding-top: 7px; min-height: 20px; }
+.c-ta::placeholder { color: var(--c-text-3); }
+.c-send { width: 36px; height: 36px; flex: none; border: none; border-radius: var(--r-md); background: var(--c-primary-solid); color: #fff; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .15s ease; }
+.c-send:hover { background: var(--c-primary-solid-h); }
+.c-send:disabled { background: var(--c-disabled-bg); cursor: not-allowed; }
+.n-480 .c-send { width: 44px; height: 44px; }   /* ≤480px 发送钮视觉 44（定夺⑥推荐） */
+.c-send svg { width: 18px; height: 18px; }
+/* 信息行（iter-18 基线左右布局零改动；触屏闲置态右侧 hint 不渲染 = 定夺④推荐） */
+.chint { display: flex; align-items: center; gap: 8px; min-height: 20px; margin-top: 6px; padding: 0 2px; font-size: 12px; color: var(--c-text-3); }
+.tsw { width: 36px; height: 20px; flex: none; border-radius: var(--r-full); border: 1px solid var(--c-border); background: var(--c-hover-bg); position: relative; cursor: pointer; transition: background .15s ease; padding: 0; }
+.tsw::after { content: ''; position: absolute; left: 1px; top: 1px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: var(--shadow-1); transition: transform .15s ease; }
+.tsw.on { background: var(--c-primary-solid); }
+.tsw.on::after { transform: translateX(16px); }
+.mlabel { font-size: 13px; font-weight: 500; color: var(--c-text-2); }
+.mlabel.on { color: var(--c-primary); }
+.chint-r { margin-left: auto; }
+.touch-hide-hint .chint-r.idle { display: none; }   /* hover:none 闲置态 Enter hint 不渲染（走查条 14） */
+
+/* ---- 3e. 设置弹窗 ≤480px 全屏态 ---- */
+.sm-wrap { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--c-mask); z-index: 50; }
+.n-480 .sm-wrap { align-items: stretch; }        /* ≤480px：遮罩上全屏承载 */
+.sm-modal { width: min(720px, 100%); max-height: 100%; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); display: flex; flex-direction: column; overflow: hidden; }
+.n-480 .sm-modal { width: 100vw; height: 100vh; max-height: 100vh; border: none; border-radius: 0; }  /* inset 0 全屏（REQ-050 验收 1） */
+.sm-head { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--c-border); }
+.sm-title { font-size: 16px; font-weight: 600; color: var(--c-text-1); }
+.sm-close { width: 28px; height: 28px; border: none; background: transparent; border-radius: var(--r-sm); cursor: pointer; color: var(--c-text-2); display: inline-flex; align-items: center; justify-content: center; }
+.sm-close:hover { background: var(--c-hover-bg); }
+/* 导航：桌面纵列 168px → ≤480px 横向滚动条（定夺⑤推荐；钮形态零变化） */
+.sm-body { flex: 1; min-height: 0; display: flex; }
+.sm-nav { width: 168px; flex: none; border-right: 1px solid var(--c-border); padding: 12px 8px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
+.n-480 .sm-body { flex-direction: column; }
+.n-480 .sm-nav { width: 100%; flex-direction: row; overflow-x: auto; overflow-y: hidden; border-right: none; border-bottom: 1px solid var(--c-border); scrollbar-width: thin; scrollbar-color: var(--c-scrollbar) transparent; }
+.sm-nav-btn { flex: none; height: 34px; padding: 0 12px; border: none; background: transparent; border-radius: var(--r-md); font: inherit; font-size: 13px; color: var(--c-text-1); cursor: pointer; text-align: left; white-space: nowrap; }
+.sm-nav-btn:hover { background: var(--c-hover-bg); }
+.sm-nav-btn.on { background: var(--c-primary-l); color: var(--c-primary); font-weight: 500; }
+.sm-pane { flex: 1; min-width: 0; overflow-y: auto; padding: 16px; }   /* 唯一滚动容器（验收 2） */
+.f-row { margin-bottom: 16px; }
+.f-label { font-size: 13px; font-weight: 500; color: var(--c-text-1); margin-bottom: 6px; }
+.f-input { width: 100%; height: 36px; border: 1px solid var(--c-border); border-radius: var(--r-md); padding: 0 10px; font: inherit; font-size: 13px; color: var(--c-text-1); background: var(--c-surface); min-width: 0; }
+.f-note { font-size: 12px; color: var(--c-text-3); line-height: 1.7; }
+.f-btn { height: 36px; padding: 0 16px; border: none; border-radius: var(--r-md); background: var(--c-primary-solid); color: #fff; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+
+/* ---- 3f. 44px 热区标注（设计稿标注件，非产品组件；开关可切） ---- */
+.show-hot .hot { outline: 2px dashed #F54A45; outline-offset: -2px; position: relative; }
+.show-hot .hot::before { content: '44'; position: absolute; top: -8px; right: -8px; min-width: 18px; height: 18px; border-radius: 9px; background: #F54A45; color: #fff; font-size: 11px; line-height: 18px; text-align: center; z-index: 60; padding: 0 3px; }
+.hot-transparent { outline: 2px dashed #3370FF !important; outline-offset: 0; }   /* 透明热区（视觉 28/24、命中 44）蓝虚线区分 */
+.show-hot .hot-transparent::before { content: '44·热区'; background: #3370FF; }
+
+/* ---- 3g. 走查清单标记（[几]/[行]/[文]/[零] 徽标） ---- */
+.mk { display: inline-block; font-size: 11px; line-height: 1; padding: 3px 6px; border-radius: 4px; background: #F2F3F5; color: #646A73; margin-right: 4px; white-space: nowrap; }
+.mk.geo { background: #F0F4FF; color: #3370FF; }
+.mk.act { background: #E8F7EF; color: #1A9E5C; }
+.mk.txt { background: #FFF7E8; color: #B45309; }
+.mk.zero { background: #FDECEA; color: #D93025; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>ai-chat · design-iter-20 —— 移动端主界面适配（REQ-049/050/051）</h1>
+  <div class="sub">断点口径：<b>≤768px 侧栏抽屉化 / ≤480px 弹窗全屏 + 正文收窄</b>（CHG-014 定夺②，就地媒体查询不设断点令牌）· 触控判定：<b>@media (hover: none)</b>（零 JS 嗅探，定夺⑥）· 令牌：<b>零新增</b>（遮罩 = 既有 --c-mask，定夺⑦）· 触屏常显 2 处 + 命中区 ≥44px · 桌面（>768px）<b>逐像素零变化</b>（硬约束）</div>
+  <div class="badge">呈批待基线 · v1.4.15 串行纪律：本稿基线（tag design-iter-20）为 T2/T3 全部开发前置</div>
+
+  <!-- 演示控制 -->
+  <div class="demo-ctl">
+    <span>演示控制</span>
+    <span class="seg">
+      <button type="button" id="btnLight" class="on">浅色</button>
+      <button type="button" id="btnDark">暗色</button>
+    </span>
+    <label><input type="checkbox" id="chkHot"> 显示 44px 热区标注</label>
+    <label><input type="checkbox" id="chkTouch" checked> 触屏态（hover:none 常显 + hint 触控口径）</label>
+    <span class="note">§1 抽屉可真实开合（入口钮 / 遮罩 / 选中会话 / Esc 三径关闭）</span>
+  </div>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">1</span>主对话面 · ≤768px 抽屉态（REQ-049）</h2>
+    <div class="sec-desc">设备框真实宽 <b>768px</b>（横向可滚动）。左 = <b>抽屉关闭（默认）</b>：rail 56px <b>不渲染</b>、侧栏不占宽、正文列宽 = 视口 100%（验收 1）；移动顶条 48px（左 44×44 入口钮 M44 + 当前会话名）。右 = <b>抽屉展开</b>：fixed overlay 覆盖正文（非挤压，验收 2）、侧栏 264px 原样平移、遮罩 = <code>var(--c-mask)</code>（浅 rgba(31,35,41,.4) / 暗 rgba(0,0,0,.55) 既有令牌）、动画 .15s ease（tokens 唯一动效值）。</div>
+    <div class="scroll-x"><div class="cols" style="flex-wrap:nowrap;justify-content:flex-start;">
+      <!-- 抽屉关闭态 -->
+      <div style="flex:none;width:400px;">
+        <div class="frame-cap">抽屉关闭（默认态）——正文全宽 / rail 不渲染 / 顶条入口钮</div>
+        <div class="tk device n-768" id="devA" style="width:400px;">
+          <div class="vp">
+            <div class="m-topbar">
+              <button type="button" class="m-menu-btn hot" aria-expanded="false" aria-label="打开会话列表" title="打开会话列表" data-drawer="devA">
+                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+              </button>
+              <span class="m-topbar-title">自部署大模型硬件成本调研</span>
+            </div>
+            <div class="m-main">
+              <div class="m-flow" id="flowA"></div>
+              <div class="composer-row" data-composer></div>
+            </div>
+            <div class="m-mask" data-mask="devA"></div>
+            <div class="m-drawer" data-drawer-panel="devA">
+              <div class="bg-brand">喵喵 AI</div>
+              <button type="button" class="bg-new">＋ 新建会话</button>
+              <div class="bg-gh">今天</div>
+              <div class="bg-row on" data-pick="devA"><span>自部署大模型硬件成本调研</span></div>
+              <div class="bg-row" data-pick="devA"><span>周报措辞打磨</span><span class="dots hot hot-transparent">···</span></div>
+              <div class="bg-gh">更早</div>
+              <div class="bg-row" data-pick="devA"><span>API 密钥模式对比笔记</span><span class="dots hot hot-transparent">···</span></div>
+              <div class="bg-row" data-pick="devA"><span>记忆功能体验记录</span><span class="dots hot hot-transparent">···</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="ann">rail 56px 在 ≤768px <b>不渲染</b>（CHG-014 定夺③取证：480px 视口仍占 11.7% 且无会话名）；「···」触屏常显 + 热区扩 44（§5）。</div>
+      </div>
+      <!-- 抽屉展开态 -->
+      <div style="flex:none;width:400px;">
+        <div class="frame-cap">抽屉展开（点入口钮）——overlay 264px 平移 + 遮罩 --c-mask</div>
+        <div class="tk device n-768 drawer-open" id="devB" style="width:400px;">
+          <div class="vp">
+            <div class="m-topbar">
+              <button type="button" class="m-menu-btn hot" aria-expanded="true" aria-label="打开会话列表" data-drawer="devB">
+                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+              </button>
+              <span class="m-topbar-title">自部署大模型硬件成本调研</span>
+            </div>
+            <div class="m-main">
+              <div class="m-flow" id="flowB"></div>
+              <div class="composer-row" data-composer></div>
+            </div>
+            <div class="m-mask" data-mask="devB"></div>
+            <div class="m-drawer" data-drawer-panel="devB">
+              <div class="bg-brand">喵喵 AI</div>
+              <button type="button" class="bg-new">＋ 新建会话</button>
+              <div class="bg-gh">今天</div>
+              <div class="bg-row on" data-pick="devB"><span>自部署大模型硬件成本调研</span></div>
+              <div class="bg-row" data-pick="devB"><span>周报措辞打磨</span><span class="dots hot hot-transparent">···</span></div>
+              <div class="bg-gh">更早</div>
+              <div class="bg-row" data-pick="devB"><span>API 密钥模式对比笔记</span><span class="dots hot hot-transparent">···</span></div>
+              <div class="bg-row" data-pick="devB"><span>记忆功能体验记录</span><span class="dots hot hot-transparent">···</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="ann">关闭三径 = <b>点遮罩 / Esc / 选中会话</b>（REQ-049 异常分支 + 主流程：选中 → 抽屉自动关 → 正文全宽）；开合瞬态<b>不持久化</b>（不写 <code>mm-sidebar-collapsed</code>，验收 6）；生成中开合与 SSE 零交互（验收 7）。</div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">2</span>主对话面 · ≤480px 收窄态（REQ-049）</h2>
+    <div class="sec-desc">设备框典型宽 <b>390px</b>（≤480px 断点内）。正文列 padding 32→<b>12px</b>；用户气泡 max-width 70%→<b>≤92%</b>（验收 4：scrollWidth ≤ clientWidth）；composer-row padding <b>12px</b>（验收 5）；发送/停止钮 36→<b>44×44 视觉放大</b>（定夺⑥推荐，桌面 36px 零变化）；信息行沿 iter-18 左右布局，触屏闲置态右侧 Enter hint <b>不渲染</b>、placeholder = <b>M45「输入消息」</b>；消息操作栏触屏常显。</div>
+    <div class="cols">
+      <div>
+        <div class="frame-cap">≤480px 收窄态（触屏：常显 + hint 触控口径）</div>
+        <div class="tk device n-480 touch-show touch-hide-hint" id="devC" style="width:390px;margin:0 auto;">
+          <div class="vp" style="height:660px;">
+            <div class="m-topbar">
+              <button type="button" class="m-menu-btn hot" aria-expanded="false" aria-label="打开会话列表" data-drawer="devC">
+                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+              </button>
+              <span class="m-topbar-title">自部署大模型硬件成本调研</span>
+            </div>
+            <div class="m-main">
+              <div class="m-flow" id="flowC"></div>
+              <div class="composer-row" data-composer></div>
+            </div>
+            <div class="m-mask" data-mask="devC"></div>
+            <div class="m-drawer" data-drawer-panel="devC">
+              <div class="bg-brand">喵喵 AI</div>
+              <button type="button" class="bg-new">＋ 新建会话</button>
+              <div class="bg-gh">今天</div>
+              <div class="bg-row on" data-pick="devC"><span>自部署大模型硬件成本调研</span></div>
+              <div class="bg-row" data-pick="devC"><span>周报措辞打磨</span><span class="dots hot hot-transparent">···</span></div>
+              <div class="bg-gh">更早</div>
+              <div class="bg-row" data-pick="devC"><span>API 密钥模式对比笔记</span><span class="dots hot hot-transparent">···</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="spec" style="margin-top:26px;">
+          <div class="spec-title">收窄态参数表（md §3 正档同步）<span class="tag">全部间距/字号 = tokens 既有值</span></div>
+          <table>
+            <tr><th style="width:150px">项</th><th>≤480px 口径</th><th style="width:170px">桌面零回退</th></tr>
+            <tr><td>正文列 padding</td><td>左右 <b>12px</b></td><td>32px 逐像素不变</td></tr>
+            <tr><td>用户气泡 max-width</td><td><b>≤92%</b></td><td>70% 不变</td></tr>
+            <tr><td>composer-row padding</td><td><b>12px</b></td><td>现状不变</td></tr>
+            <tr><td>发送/停止钮</td><td><b>44×44 视觉</b>（图标 18px 沿用）</td><td>36×36 不变</td></tr>
+            <tr><td>hint 右（闲置态）</td><td>hover:none <b>不渲染</b></td><td>「Enter 发送 · Shift+Enter 换行」逐字</td></tr>
+            <tr><td>placeholder</td><td><b>M45「输入消息」</b></td><td>存量含 Enter 表述逐字</td></tr>
+            <tr><td>M40/M41/生成中 hint</td><td>保留渲染逐字（与输入方式无关）</td><td>同左（iter-18 零回退）</td></tr>
+            <tr><td>引用卡/工具卡</td><td>随列宽自然收缩，形态零变化</td><td>iter-14/18 基线不变</td></tr>
+          </table>
+        </div>
+        <div class="ann"><b>断点算术</b>（CHG-014 定夺②）：480 沿登录页既有口径（LoginView L467 先例）零新值；768 为唯一新增断点（侧栏 264px + 正文最小可用 ~500px 的算术下限）；就地媒体查询、不设断点令牌。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">3</span>设置弹窗 · ≤480px 全屏态（REQ-050）</h2>
+    <div class="sec-desc">弹窗 <code>inset:0</code> = <b>100vw × 100vh</b>（验收 1，DOM 断言）；表单列 = <b>唯一滚动容器</b>（验收 2 无双重滚动）；左导航 168px 纵列 → <b>横向滚动条</b>（定夺⑤推荐：分区钮形态零变化、role=tablist 保留、滚动条 --c-scrollbar）；关闭钮/Esc/返回路径沿 REQ-028 零改动；六分区（含 iter-17「AI 的记忆」）随容器平移零逻辑变化；「前往高级设置」直达全屏态复验（验收 6）。左侧附 &gt;480px 桌面 720px 分栏对照（验收 5：零变化）。</div>
+    <div class="cols">
+      <div>
+        <div class="frame-cap">≤480px 全屏态（导航横向滚动 → 右拉可见后段分区）</div>
+        <div class="tk device n-480" id="devD" style="width:390px;margin:0 auto;">
+          <div class="vp" style="height:640px;">
+            <div class="sm-wrap" style="position:absolute;">
+              <div class="sm-modal">
+                <div class="sm-head">
+                  <span class="sm-title">设置</span>
+                  <button type="button" class="sm-close hot hot-transparent" aria-label="关闭">
+                    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
+                  </button>
+                </div>
+                <div class="sm-body">
+                  <nav class="sm-nav" role="tablist" aria-label="设置分区">
+                    <button type="button" class="sm-nav-btn on" role="tab" aria-selected="true">外观</button>
+                    <button type="button" class="sm-nav-btn" role="tab" aria-selected="false">密钥模式</button>
+                    <button type="button" class="sm-nav-btn" role="tab" aria-selected="false">高级设置</button>
+                    <button type="button" class="sm-nav-btn" role="tab" aria-selected="false">对话设置</button>
+                    <button type="button" class="sm-nav-btn" role="tab" aria-selected="false">AI 的记忆</button>
+                    <button type="button" class="sm-nav-btn" role="tab" aria-selected="false">账号</button>
+                  </nav>
+                  <div class="sm-pane">
+                    <div class="f-row"><div class="f-label">主题</div><div class="f-note">跟随全局主题状态与存储（REQ-017 唯一入口）；浅色 / 深色两态。</div></div>
+                    <div class="f-row"><div class="f-label">界面字号</div><div class="f-note">正文 14px（tokens 字号阶梯）；本迭代零新增字号。</div></div>
+                    <div class="f-row"><div class="f-label">演示表单项</div><input class="f-input" type="text" value="宽度 100% − padding 32px，不溢出（验收 3）"></div>
+                    <div class="f-row"><button type="button" class="f-btn">保存</button></div>
+                    <div class="f-note" style="margin-top:24px;">（演示衬景）表单列 overflow-y:auto = 弹窗内唯一滚动容器；导航条 overflow-x:auto 为正交轴向（验收 2 口径注记）。</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="ann">二级弹窗（改密/注销）≤480px <b>同口径全屏化</b>（inset 0）；&gt;480px 形态零变化（md §4）。</div>
+      </div>
+      <div>
+        <div class="frame-cap">&gt;480px 桌面态（720px 左右分栏——零变化，验收 5）</div>
+        <div class="tk" style="width:100%;max-width:560px;">
+          <div style="border:1px solid var(--c-border);border-radius:12px;height:460px;position:relative;overflow:hidden;background:var(--c-mask);display:flex;align-items:center;justify-content:center;">
+            <div class="sm-modal" style="max-height:calc(100% - 48px);height:440px;">
+              <div class="sm-head"><span class="sm-title">设置</span><button type="button" class="sm-close" aria-label="关闭"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+              <div class="sm-body">
+                <nav class="sm-nav" role="tablist" aria-label="设置分区">
+                  <button type="button" class="sm-nav-btn on">外观</button>
+                  <button type="button" class="sm-nav-btn">密钥模式</button>
+                  <button type="button" class="sm-nav-btn">高级设置</button>
+                  <button type="button" class="sm-nav-btn">对话设置</button>
+                  <button type="button" class="sm-nav-btn">AI 的记忆</button>
+                  <button type="button" class="sm-nav-btn">账号</button>
+                </nav>
+                <div class="sm-pane">
+                  <div class="f-row"><div class="f-label">主题</div><div class="f-note">桌面 720px 分栏：左导航 168px 纵列 + 右表单列——design-iter-11 §4 基线形态逐像素零变化。</div></div>
+                  <div class="f-row"><div class="f-label">演示表单项</div><input class="f-input" type="text" value="（桌面对照衬景）"></div>
+                  <div class="f-row"><button type="button" class="f-btn">保存</button></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="ann">>480px 全部属性 = SettingsForm 现状（width:720px / max-width:calc(100vw−32px) / 左导航 168px）——本迭代仅在 <code>@media (max-width:480px)</code> 内改写容器，桌面规则零触碰。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">4</span>触屏常显态与 44px 命中区（REQ-051）</h2>
+    <div class="sec-desc"><code>@media (hover: none)</code> 一处规则承载双态（零 JS 分叉，CHG-014 定夺⑥）：会话「···」与消息操作栏 opacity 常为 1（验收 1）；命中区 ≥44×44（验收 2）——<b>分类口径</b>（定夺⑥推荐）：发送/停止钮与抽屉入口钮 = 44×44 视觉即热区（红标）；icon 钮（···/操作栏 28/24px 视觉）= 透明热区扩至 44（蓝标「44·热区」）；视觉反馈级 hover 保留（active 按压兜底）。开启顶部「显示 44px 热区标注」可查看全部标注位。</div>
+    <div class="spec">
+      <div class="spec-title">44px 热区标注总表（本页标注位一览）</div>
+      <table>
+        <tr><th style="width:190px">对象</th><th>视觉尺寸</th><th>命中区</th><th>实现口径</th></tr>
+        <tr><td>抽屉入口钮（移动顶条）</td><td>44×44</td><td>44×44</td><td>视觉即热区（REQ-049「触发钮 ≥44px」明文）</td></tr>
+        <tr><td>发送 / 停止钮</td><td>≤480px 44×44；>480px 36×36</td><td>≥44×44</td><td>≤480px 视觉放大；481~768px 透明 padding 扩热区；桌面 36px 零变化</td></tr>
+        <tr><td>会话「···」</td><td>28px（不变）</td><td>≥44×44</td><td>透明热区扩展（::after inset 扩展体例）——视觉不变破行高</td></tr>
+        <tr><td>消息操作栏（复制/修改）</td><td>28px 容器 / icon 15px（不变）</td><td>≥44×44</td><td>同上；版本箭头常显零变化</td></tr>
+        <tr><td>设置弹窗关闭钮</td><td>28px（不变）</td><td>≥44×44</td><td>同上（全屏态右上角，Esc 同径）</td></tr>
+      </table>
+      <div class="ann"><b>热区仅在 hover:none / ≤768px 断点内生效</b>（max-width 上界 + hover 媒体特性双护栏）——桌面 hover:hover 面零溢出（REQ-051 验收 3，E 组走查断言）。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">5</span>锁定帧 · 四象限（≤768/≤480 × 明/暗——REQ-051 验收 4 零裸色值）</h2>
+    <div class="sec-desc">关键帧浅/暗成对锁定（不随演示控制切换）——全部元素 var() 语义令牌，暗色由根变量覆盖，遮罩 = --c-mask 暗色值 rgba(0,0,0,.55)。</div>
+    <div class="scroll-x"><div id="lockDrawer" class="cols" style="flex-wrap:nowrap;justify-content:flex-start;"></div></div>
+    <div class="ann" style="margin-bottom:16px;">抽屉开态 × 亮/暗：遮罩（--c-mask）、侧栏表面（--c-bg/surface）、选中行（--c-primary-l + --c-primary）全部随主题自动覆盖。</div>
+    <div class="cols"><div id="lockModal" class="cols" style="padding:0;"></div></div>
+    <div class="ann">弹窗全屏态 × 亮/暗：导航横切选中态、表单控件、关闭钮全部令牌引用（T3 走查脚本四象限机械复跑本组断言）。</div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">6</span>桌面零回退对照（A 组硬约束——REQ-049 验收 3 / REQ-050 验收 5 / REQ-051 验收 3·5）</h2>
+    <div class="spec">
+      <div class="spec-title">零回退机制表达</div>
+      <pre><code>/* 本稿全部新增 CSS 收敛于三组带界媒体查询内（桌面规则文件零触碰） */
+@media (max-width: 768px) { /* 抽屉化 + 顶条 + rail 不渲染 */ }
+@media (max-width: 480px) { /* 弹窗全屏 + 正文/Composer 收窄 + 发送钮 44 */ }
+@media (hover: none)       { /* 「···」/操作栏常显 + icon 热区扩 44 + hint/placeholder 触控口径 */ }
+
+/* 桌面（>768px 且 hover:hover）：三组查询均不命中——
+   REQ-026 侧栏 264px 双列 / rail 56px（走查 16~18）、REQ-027「···」hover 浮现（走查 36）、
+   REQ-028 弹窗 720px 分栏、iter-18 信息行与 M38~M43、iter-14 引用卡、iter-17 记忆分区
+   —— 全部逐像素零变化（既有走查基线 + vitest 378 全量复跑承载）。 */</code></pre>
+      <div class="ann"><b>桌面不同步机制</b>：design/proto 与 design/iter-1~19 对移动断点不可见（CHG-014 设计资产承载段原文）——移动断点对既有桌面稿零影响即「桌面形态零变化」的机制化表达。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">7</span>走查清单（四象限断言式 · 全 31 条）与样件文案</h2>
+    <div class="spec">
+      <div class="spec-title">7.1 样件文案逐字登记表（v1.4.10 B 唯一来源 · 沿 iter-18 M43 续编）</div>
+      <table>
+        <tr><th style="width:60px">#</th><th style="width:220px">位置</th><th>文案（逐字）</th></tr>
+        <tr><td>M44</td><td>移动顶条抽屉入口钮 aria-label / title</td><td><code>打开会话列表</code></td></tr>
+        <tr><td>M45</td><td>触屏（hover:none）输入框 placeholder</td><td><code>输入消息</code></td></tr>
+        <tr><td colspan="3" style="color:#8F959E">触控口径处置（无新增文案）：hover:none 闲置态右侧 hint「Enter 发送 · Shift+Enter 换行」<b>不渲染</b>；M40/M41/「AI 回复生成中，发送暂不可用…」保留逐字；桌面全部逐字零回退（iter-18 §8 沿用表）。</td></tr>
+      </table>
+    </div>
+    <div class="spec">
+      <div class="spec-title">7.2 走查清单（[几]几何 v1.4.11 B / [行]行为 v1.4.13 B / [文]文案 v1.4.10 B / [零]零回退；一条可多标）</div>
+      <table>
+        <tr><th style="width:44px">#</th><th style="width:80px">组</th><th>断言（验收口径逐条映射）</th><th style="width:150px">REQ 映射</th></tr>
+        <!-- A 组 -->
+        <tr><td>1</td><td>A 抽屉态</td><td><span class="mk geo">几</span><span class="mk act">行</span>≤768px 抽屉关闭时 rail 不渲染、侧栏不占宽：正文列宽 = 视口宽 100%（DOM 断言）</td><td>REQ-049 验收 1</td></tr>
+        <tr><td>2</td><td>A</td><td><span class="mk geo">几</span>抽屉展开 = position:fixed overlay 覆盖正文（非挤压）；遮罩全屏 = var(--c-mask)（浅 rgba(31,35,41,.4)/暗 rgba(0,0,0,.55) 既有令牌）</td><td>REQ-049 验收 2</td></tr>
+        <tr><td>3</td><td>A</td><td><span class="mk act">行</span>点遮罩任意处关闭抽屉</td><td>REQ-049 验收 2</td></tr>
+        <tr><td>4</td><td>A</td><td><span class="mk act">行</span>Esc 关闭抽屉</td><td>REQ-049 异常分支</td></tr>
+        <tr><td>5</td><td>A</td><td><span class="mk act">行</span>选中会话 → 抽屉自动关 + 正文全宽恢复（主流程）</td><td>REQ-049 主流程</td></tr>
+        <tr><td>6</td><td>A</td><td><span class="mk act">行</span><span class="mk zero">零</span>抽屉开合不写 localStorage 任何键（mm-sidebar-collapsed 桌面收起态零污染）</td><td>REQ-049 验收 6</td></tr>
+        <tr><td>7</td><td>A</td><td><span class="mk act">行</span>生成中开合抽屉 SSE 流帧序不变（抽屉与 SSE 零事件交互）</td><td>REQ-049 验收 7</td></tr>
+        <tr><td>8</td><td>A</td><td><span class="mk geo">几</span><span class="mk txt">文</span>入口钮 44×44 常驻移动顶条（48px 高）；aria-label/title = M44「打开会话列表」逐字；aria-expanded 随态</td><td>REQ-049 描述 / M44</td></tr>
+        <tr><td>9</td><td>A</td><td><span class="mk geo">几</span>抽屉宽 264px（既有侧栏原样平移；&lt;330px 视口 min(80vw,264px)）；内容形态与桌面侧栏零差异；动画 .15s ease（tokens 唯一动效值）</td><td>定夺②③落法</td></tr>
+        <!-- B 组 -->
+        <tr><td>10</td><td>B 收窄态</td><td><span class="mk geo">几</span>≤480px 气泡 max-width ≤92%，scrollWidth ≤ clientWidth 不横向溢出</td><td>REQ-049 验收 4</td></tr>
+        <tr><td>11</td><td>B</td><td><span class="mk geo">几</span>正文列左右 padding 32→12px（间距令牌既有值）</td><td>REQ-049 描述</td></tr>
+        <tr><td>12</td><td>B</td><td><span class="mk geo">几</span>composer-row 左右 padding ≤12px；发送/停止钮可点击</td><td>REQ-049 验收 5</td></tr>
+        <tr><td>13</td><td>B</td><td><span class="mk geo">几</span>发送/停止钮 ≤480px 视觉 44×44（停止钮红实底形态零回退）；>480px 恢复 36×36</td><td>REQ-051 验收 2 / 定夺⑥</td></tr>
+        <tr><td>14</td><td>B</td><td><span class="mk txt">文</span><span class="mk zero">零</span>hover:none 闲置态：右侧「Enter 发送 · Shift+Enter 换行」不渲染；M40/M41/「AI 回复生成中…」保留逐字；hover:hover 全部逐字零回退（iter-18 §8）</td><td>REQ-049 hint 触控口径</td></tr>
+        <tr><td>15</td><td>B</td><td><span class="mk txt">文</span><span class="mk zero">零</span>hover:none placeholder = M45「输入消息」逐字；hover:hover 存量「输入消息，Enter 发送，Shift+Enter 换行」逐字零变化</td><td>M45</td></tr>
+        <!-- C 组 -->
+        <tr><td>16</td><td>C 弹窗全屏</td><td><span class="mk geo">几</span>≤480px 弹窗 inset:0 = 100vw×100vh（DOM 断言）；圆角 0、投影不适用</td><td>REQ-050 验收 1</td></tr>
+        <tr><td>17</td><td>C</td><td><span class="mk geo">几</span><span class="mk act">行</span>表单列唯一滚动容器（无双重滚动）；内容不横向溢出视口（导航 overflow-x 为正交轴向）</td><td>REQ-050 验收 2/3</td></tr>
+        <tr><td>18</td><td>C</td><td><span class="mk geo">几</span>左导航转横向滚动条：分区钮形态零变化（选中 primary-l 同款）、role=tablist 与方向键沿现状、滚动条 --c-scrollbar</td><td>REQ-050 描述 / 定夺⑤</td></tr>
+        <tr><td>19</td><td>C</td><td><span class="mk act">行</span><span class="mk zero">零</span>关闭钮/Esc/返回路径保留；弹窗内登出/改密/校验零逻辑改动——既有 settings 全量用例全屏容器下全绿</td><td>REQ-050 验收 4 / REQ-028</td></tr>
+        <tr><td>20</td><td>C</td><td><span class="mk geo">几</span>内嵌二级弹窗（改密/注销）≤480px 同口径全屏（inset 0）；>480px 形态零变化</td><td>REQ-050 描述</td></tr>
+        <tr><td>21</td><td>C</td><td><span class="mk act">行</span>「前往高级设置」分区直达 + 标题高亮全屏态复验（横向导航顺带滚动至目标钮可见）</td><td>REQ-050 验收 6 / iter-2 走查 15</td></tr>
+        <tr><td>22</td><td>C</td><td><span class="mk geo">几</span><span class="mk zero">零</span>>480px 弹窗 720px 左右分栏逐像素零变化（width/max-width/导航 168px 全属性现状）</td><td>REQ-050 验收 5</td></tr>
+        <!-- D 组 -->
+        <tr><td>23</td><td>D 触屏</td><td><span class="mk act">行</span>hover:none 会话「···」无 hover 即可见（opacity 常 1，一处 CSS 规则零 JS 分叉）</td><td>REQ-051 验收 1</td></tr>
+        <tr><td>24</td><td>D</td><td><span class="mk act">行</span>hover:none 消息操作栏（复制/修改）无 hover 即可见；版本箭头常显不变</td><td>REQ-051 验收 1</td></tr>
+        <tr><td>25</td><td>D</td><td><span class="mk geo">几</span>发送/停止/「···」/操作栏钮命中区 ≥44×44（视觉不变者透明热区扩展）；热区仅在 hover:none/≤768px 内生效</td><td>REQ-051 验收 2</td></tr>
+        <tr><td>26</td><td>D</td><td><span class="mk geo">几</span>视觉反馈级 hover 保留（列表/按钮 hover 底不消除）；active 按压态兜底（scale .98/.94 令牌）</td><td>REQ-051 描述</td></tr>
+        <tr><td>27</td><td>D</td><td><span class="mk geo">几</span>深色模式（[data-theme='dark']）新增触屏/断点样式全部 var() 语义令牌，双主题四象限零裸色值</td><td>REQ-051 验收 4 / REQ-017</td></tr>
+        <tr><td>28</td><td>D</td><td><span class="mk geo">几</span>焦点可达：入口钮/关闭钮 :focus-visible 焦点环 --c-focus-ring 沿用；抽屉展开焦点移入侧栏、关闭还收入口钮</td><td>键盘可达（附）</td></tr>
+        <!-- E 组 -->
+        <tr><td>29</td><td>E 桌面零回退</td><td><span class="mk geo">几</span><span class="mk zero">零</span>>768px 侧栏 264px 双列 + rail 56px 形态逐像素零变化（mm-sidebar-collapsed 读写点零触达；iter-11 走查 16~18 复跑）</td><td>REQ-049 验收 3 / REQ-026</td></tr>
+        <tr><td>30</td><td>E</td><td><span class="mk act">行</span><span class="mk zero">零</span>hover:hover 下「···」/操作栏 hover 浮现行为零变化；hint/placeholder/信息行桌面逐字零变化</td><td>REQ-051 验收 3 / REQ-027</td></tr>
+        <tr><td>31</td><td>E</td><td><span class="mk act">行</span><span class="mk zero">零</span>桌面走查基线全量复跑 + vitest 既有 378 零回退（pytest 347 纯前端零改动断言登记 verify）</td><td>REQ-051 验收 5 / 全局回归</td></tr>
+      </table>
+      <div class="ann"><b>分组覆盖核对</b>：REQ-049 验收 1~7 → 条 1/2+3/29+31/10/12/6/7 ✓；REQ-050 验收 1~6 → 条 16/17/17/19/22+31/21 ✓；REQ-051 验收 1~5 → 条 23+24/25(+13)/30/27/31 ✓。四象限由 §5 锁定帧 + T3 <code>scripts/e2e-walkthrough-20.mjs</code> 真实 Chrome 设备仿真承载。</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">8</span>CEO 定夺项（6 项 · CHG-014 八定夺已全定案，本表为其授权范围内的形态落法）</h2>
+    <table>
+      <tr><th style="width:36px">#</th><th style="width:150px">参数</th><th style="width:290px">推荐</th><th>理由与备选</th></tr>
+      <tr><td>①</td><td>抽屉入口钮位置</td><td><b>≤768px 移动顶条 48px：左端 44×44 汉堡钮（M44）+ 当前会话名（ellipsis 截断）</b></td><td>顶条补位桌面侧栏选中态的上下文（抽屉化后当前会话名不可见）；fixed 悬浮钮遮挡消息流首行；>768px 顶条整条不渲染。备选（未采纳）：正文左上悬浮钮——省一条顶条但丢上下文且遮挡内容</td></tr>
+      <tr><td>②</td><td>抽屉宽度</td><td><b>264px 原样平移</b>（&lt;330px 视口 min(80vw, 264px)）</td><td>侧栏内容形态与桌面零差异（开发/走查双成本最低）；375px 视口占 70% 留可点遮罩区。备选（未采纳）：80vw 定宽——与桌面 264px 形成分叉，走查面翻倍</td></tr>
+      <tr><td>③</td><td>开合动画</td><td><b>.15s ease</b>（侧栏 translateX + 遮罩 fade）</td><td>tokens 动效唯一值（零新增令牌硬约束）；.15s 于 264px 位移感知足够。备选（未采纳）：.2s/.25s——更「从容」但引入新动效值，违反定夺⑦</td></tr>
+      <tr><td>④</td><td>触屏 hint 口径</td><td><b>闲置态「Enter 发送 · Shift+Enter 换行」不渲染</b>（M40/M41/生成中提示保留逐字）</td><td>键盘口径文案对触屏无意义（纯噪音）；生成中/模式提示与输入方式无关必须保留；零新增文案。备选（未采纳）：替换为触屏版文案——为隐藏即可达的信息新增 M 编号，不划算</td></tr>
+      <tr><td>⑤</td><td>弹窗导航横切形态</td><td><b>横向滚动条</b>（分区钮形态零变化，role=tablist/方向键保留）</td><td>六分区在 320px 分段等宽压缩至不可读；横向滚动保密度 + 零新组件形态。备选（未采纳）：分段控件——components.md 分段控件语义为互斥视图切换且等宽挤压不可读</td></tr>
+      <tr><td>⑥</td><td>发送/停止钮触屏口径</td><td><b>≤480px 视觉放大 44×44；icon 钮（···/操作栏/关闭）视觉不变热区扩 44</b></td><td>主操作视觉即热区最简可断言；icon 放大破坏列表行高/消息流节奏（CHG-014 定夺⑥基线 = 视觉不变热区扩大为准）。备选（未采纳）：全量热区扩大（发送钮也视觉 36）——44px 拇指主操作区值得视觉放大</td></tr>
+    </table>
+    <div class="ann" style="margin-top:12px;">CEO 定夺栏：① <code>＿＿＿＿</code> ② <code>＿＿＿＿</code> ③ <code>＿＿＿＿</code> ④ <code>＿＿＿＿</code> ⑤ <code>＿＿＿＿</code> ⑥ <code>＿＿＿＿</code>（批准结论由主会话回填本表与 design-iter-20.md §9/§12）。</div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <h2><span class="no">9</span>令牌 / 组件 / 卫生评估 + 基线声明</h2>
+    <div class="spec">
+      <div class="spec-title">令牌 / 组件 / 卫生评估结论（零新增令牌自查）</div>
+      <table>
+        <tr><th style="width:190px">项</th><th>结论</th></tr>
+        <tr><td>新令牌</td><td><b>无提案</b>——零新增令牌、零自造色值（逐项自查：遮罩 = --c-mask 既有〔CHG-014 定夺⑦明文复用〕；顶条/抽屉 = surface/border/text-1/text-2/hover-bg 既有；断点 768/480 = 就地媒体查询不设令牌〔定夺②〕；动画 .15s ease = tokens 唯一动效值；导航横切 = 既有分区钮样式平移；44px = 几何参数非令牌）</td></tr>
+        <tr><td>components.md</td><td><b>零新增组件形态</b>——抽屉 = 既有 TheSidebar 容器定位切换；移动顶条 = 骨架行（icon 钮 + 文本既有形态）；横向导航 = 既有分区钮布局轴向切换；热区扩展 = 伪元素扩展非组件。无需登记动作</td></tr>
+        <tr><td>卫生（铁律 5）</td><td>样件会话名/消息全虚构（沿 M 系列样件风格）；断点/触屏判定只消费 CSS 媒体特性（无 UA 嗅探无设备猜测）；抽屉态零持久化零服务端交互；UI 零 key 泄露面</td></tr>
+        <tr><td>design/proto & iter-1~19</td><td><b>不同步</b>（CHG-014 设计资产承载段：移动断点对既有桌面稿不可见 = 桌面形态零变化的机制化表达）</td></tr>
+        <tr><td>基线冲突核对</td><td><b>零冲突</b>——iter-11（侧栏/弹窗/「···」）/ iter-14（引用卡）/ iter-17（记忆分区）/ iter-18（信息行/开关簇/M38~43）全部仅在 ≤768/≤480/hover:none 带界查询内切换，>断点上界逐像素零变化（E 组 + md §11）</td></tr>
+      </table>
+    </div>
+    <div class="ann" style="margin-top:16px;">
+      <b>基线声明</b>：本稿为 iter-20 T1 交付物，呈 CEO 评审；批准后由主会话：① 打 tag <code>design-iter-20</code>；
+      ② spec REQ-049/050/051「涉及页面」指针核对回填（v1.4.16 核对清单第 8 项——<b>回填拟文见 design-iter-20.md §12</b>，本稿产出会话不改 spec/RTM，任务边界交接明示）；
+      ③ 定夺结论回填本文件 §8 与 design-iter-20.md；④ 定案值同步 T2/T3——<b>基线 tag 未落前不派任何开发任务（v1.4.15 串行纪律）</b>。
+      基线后任何改动须先登记变更，不接受「顺手改」。
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (s) { return document.querySelector(s); };
+  var $$ = function (s) { return Array.prototype.slice.call(document.querySelectorAll(s)); };
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+  /* ================= 主题（演示控制；锁定帧 force-* 不随动） ================= */
+  function applyTheme(dark) {
+    $$('.tk').forEach(function (t) {
+      if (t.classList.contains('force-light') || t.classList.contains('force-dark')) return;
+      t.classList.toggle('dark', dark);
+    });
+    $('#btnLight').classList.toggle('on', !dark);
+    $('#btnDark').classList.toggle('on', dark);
+  }
+  $('#btnLight').addEventListener('click', function () { applyTheme(false); });
+  $('#btnDark').addEventListener('click', function () { applyTheme(true); });
+
+  /* ================= 热区标注 / 触屏态开关 ================= */
+  $('#chkHot').addEventListener('change', function () { document.body.classList.toggle('show-hot', this.checked); });
+  $('#chkTouch').addEventListener('change', function () {
+    var on = this.checked;
+    $$('.device').forEach(function (d) {
+      d.classList.toggle('touch-show', on);
+      d.classList.toggle('touch-hide-hint', on);
+    });
+  });
+
+  /* ================= 样件文案（= §7.1 登记表逐字） ================= */
+  var M = { menuBtn: '打开会话列表', placeholderTouch: '输入消息', hintIdle: 'Enter 发送 · Shift+Enter 换行', research: '深度研究' };
+
+  /* ================= 样件消息流（全虚构，铁律 5） ================= */
+  var Q = '2026 年自己部署一个开源大模型跑推理，硬件成本大概什么水平？';
+  var A = '入门门槛已降至千元级，中配约三至五千元；压成本空间主要在量化档位与租用策略（演示衬景，长文本在 92% 气泡内自动换行不横向溢出——验收 4）。';
+  var IC_SEND = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3.4 20.4 22 12 3.4 3.6 3.4 10l13 2-13 2z"/></svg>';
+  var IC_COPY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.7" d="M9 9h11v11H9zM5 15H4V4h11v1"/></svg>';
+  var IC_EDIT = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.7" d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17z"/></svg>';
+
+  function flowHtml() {
+    return '<div class="u-bubble">' + esc(Q) + '</div>' +
+      '<div class="a-turn"><div class="a-plain">' + esc(A) + '</div>' +
+      '<div class="action-row">' +
+      '<button type="button" class="action-btn hot hot-transparent" title="复制" aria-label="复制">' + IC_COPY + '</button>' +
+      '<button type="button" class="action-btn hot hot-transparent" title="修改" aria-label="修改" style="display:none">' + IC_EDIT + '</button>' +
+      '<button type="button" class="action-btn hot hot-transparent" title="复制" aria-label="复制">' + IC_COPY + '</button>' +
+      '</div></div>' +
+      '<div class="u-bubble">那 Quantization 该怎么选？</div>';
+  }
+  ['flowA', 'flowB', 'flowC'].forEach(function (id) { document.getElementById(id).innerHTML = flowHtml(); });
+
+  /* ================= Composer 构建器（480 态 = 触屏：hint 隐藏 + M45 placeholder） ================= */
+  function buildComposers() {
+    $$('[data-composer]').forEach(function (host) {
+      var in480 = host.closest('.n-480');
+      host.innerHTML =
+        '<div class="c-box">' +
+        '<textarea class="c-ta" rows="1" aria-label="输入消息" placeholder="' + esc(in480 ? M.placeholderTouch : '输入消息，Enter 发送，Shift+Enter 换行') + '"></textarea>' +
+        '<button type="button" class="c-send hot" aria-label="发送">' + IC_SEND + '</button>' +
+        '</div>' +
+        '<div class="chint">' +
+        '<button type="button" class="tsw" role="switch" aria-checked="false" aria-label="深度研究模式开关"></button>' +
+        '<span class="mlabel">' + esc(M.research) + '</span>' +
+        (in480 ? '' : '<span class="chint-r idle">' + esc(M.hintIdle) + '</span>') +
+        '</div>';
+    });
+  }
+  buildComposers();
+
+  /* ================= 抽屉开合（真实可交互：入口钮 / 遮罩 / 选中会话 / Esc） ================= */
+  function setDrawer(deviceId, open) {
+    var d = document.getElementById(deviceId);
+    if (!d) return;
+    d.classList.toggle('drawer-open', open);
+    var btn = d.querySelector('.m-menu-btn');
+    if (btn) btn.setAttribute('aria-expanded', String(open));
+  }
+  document.addEventListener('click', function (e) {
+    var trg = e.target.closest('[data-drawer]');
+    if (trg) { var d1 = document.getElementById(trg.getAttribute('data-drawer')); setDrawer(trg.getAttribute('data-drawer'), !d1.classList.contains('drawer-open')); return; }
+    var mask = e.target.closest('[data-mask]');
+    if (mask) { setDrawer(mask.getAttribute('data-mask'), false); return; }
+    var pick = e.target.closest('[data-pick]');
+    if (pick) { /* 选中会话 → 抽屉自动关（REQ-049 主流程） */ setDrawer(pick.getAttribute('data-pick'), false); }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    $$('.device.drawer-open').forEach(function (d) { d.classList.remove('drawer-open'); var b = d.querySelector('.m-menu-btn'); if (b) b.setAttribute('aria-expanded', 'false'); });
+  });
+
+  /* ================= §5 锁定帧（浅 ↔ 暗，不随演示切换） ================= */
+  function drawerFrame(open) {
+    return '<div class="device n-480' + (open ? ' drawer-open' : '') + '" style="width:280px;">' +
+      '<div class="vp" style="height:440px;">' +
+      '<div class="m-topbar"><button type="button" class="m-menu-btn" aria-expanded="' + open + '" aria-label="' + esc(M.menuBtn) + '"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16"/></svg></button><span class="m-topbar-title">自部署大模型硬件成本调研</span></div>' +
+      '<div class="m-main"><div class="m-flow" style="padding-top:12px;"><div class="u-bubble" style="max-width:92%;">样例消息</div></div></div>' +
+      '<div class="m-mask"></div>' +
+      '<div class="m-drawer"><div class="bg-brand">喵喵 AI</div><button type="button" class="bg-new">＋ 新建会话</button><div class="bg-gh">今天</div><div class="bg-row on"><span>自部署大模型硬件成本调研</span></div><div class="bg-row"><span>周报措辞打磨</span><span class="dots">···</span></div></div>' +
+      '</div></div>';
+  }
+  function modalFrame() {
+    return '<div class="device n-480" style="width:280px;">' +
+      '<div class="vp" style="height:440px;"><div class="sm-wrap" style="position:absolute;">' +
+      '<div class="sm-modal"><div class="sm-head"><span class="sm-title">设置</span><button type="button" class="sm-close" aria-label="关闭"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button></div>' +
+      '<div class="sm-body"><nav class="sm-nav" role="tablist" aria-label="设置分区"><button type="button" class="sm-nav-btn on">外观</button><button type="button" class="sm-nav-btn">密钥模式</button><button type="button" class="sm-nav-btn">高级设置</button><button type="button" class="sm-nav-btn">AI 的记忆</button></nav>' +
+      '<div class="sm-pane"><div class="f-row"><div class="f-label">主题</div><div class="f-note">演示分区（全屏态 × 双主题锁定帧）</div></div><input class="f-input" type="text" value="不溢出（验收 3）"></div></div>' +
+      '</div></div></div></div>';
+  }
+  function lockCol(cls, cap, inner) {
+    return '<div style="flex:none;width:300px;"><div class="frame-cap">' + cap + '</div><div class="tk ' + cls + '">' + inner + '</div></div>';
+  }
+  $('#lockDrawer').innerHTML =
+    lockCol('force-light', '浅色 · 抽屉开态（遮罩 rgba(31,35,41,.4)）', drawerFrame(true)) +
+    lockCol('force-dark', '暗色 · 抽屉开态（遮罩 rgba(0,0,0,.55)）', drawerFrame(true)) +
+    lockCol('force-light', '浅色 · 抽屉关态（正文全宽）', drawerFrame(false)) +
+    lockCol('force-dark', '暗色 · 抽屉关态', drawerFrame(false));
+  $('#lockModal').innerHTML =
+    lockCol('force-light', '浅色 · 弹窗全屏态', modalFrame()) +
+    lockCol('force-dark', '暗色 · 弹窗全屏态', modalFrame());
+})();
+</script>
+</body>
+</html>

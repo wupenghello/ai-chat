@@ -1019,7 +1019,9 @@ ai-chat 为多个用户提供 AI 对话服务：任何人可注册账号使用�
   6. 抽屉状态不写入 `mm-sidebar-collapsed`（桌面收起态零污染）
   7. 生成中开合抽屉 SSE 流不中断（vitest 断言流帧序不变）
 - **优先级**：P1（CHG-014 建议，CEO 已批准——2026-08-22「全部按照推荐」）｜**批次**：iter-20 候选（design-iter-20 设计基线前置——定夺⑧）
-- **涉及页面**：主界面（App/TheSidebar/MessageList/MessageBubble/ComposerBox）
+- **涉及页面**：主界面（App/TheSidebar/MessageList/MessageBubble/ComposerBox）+
+design-iter-20（已基线，tag design-iter-20；≤768px 抽屉态〔移动顶条入口钮 + overlay 264px 平移 + 遮罩三径关闭 + 瞬态不持久化〕+
+≤480px 收窄态〔padding 12 / 气泡 ≤92% / 发送钮 44 / hint 与 placeholder 触控口径〕；走查清单 31 条随稿留档）
 
 ### REQ-050 设置弹窗移动端适配〔CHG-014〕
 
@@ -1035,7 +1037,8 @@ ai-chat 为多个用户提供 AI 对话服务：任何人可注册账号使用�
   5. >480px 弹窗与现行走查基线零变化
   6. 「前往高级设置」定位（iter-2 走查 15）在全屏态复验通过
 - **优先级**：P1（CHG-014 建议，CEO 已批准——2026-08-22「全部按照推荐」）｜**批次**：iter-20 候选（design-iter-20 设计基线前置——定夺⑧）
-- **涉及页面**：SettingsForm（含内嵌改密/注销二级弹窗）
+- **涉及页面**：SettingsForm（含内嵌改密/注销二级弹窗）+ design-iter-20（已基线，tag design-iter-20；
+≤480px 全屏态〔inset 0 单滚动 + 导航横向滚动条 + 二级弹窗同口径〕，弹窗逻辑零改动）
 
 ### REQ-051 移动端触摸交互〔CHG-014〕
 
@@ -1050,7 +1053,8 @@ ai-chat 为多个用户提供 AI 对话服务：任何人可注册账号使用�
   4. 深色模式（[data-theme='dark']）下新增触屏态全部走语义令牌，双主题走查零裸色值（沿 tokens v1.3 禁令）
   5. 桌面 vitest 既有 378 用例零回退
 - **优先级**：P1（CHG-014 建议，CEO 已批准——2026-08-22「全部按照推荐」）｜**批次**：iter-20 候选（design-iter-20 设计基线前置——定夺⑧）
-- **涉及页面**：跨面（TheSidebar/SessionListItem/MessageBubble/ComposerBox/SettingsForm）
+- **涉及页面**：跨面（TheSidebar/SessionListItem/MessageBubble/ComposerBox/SettingsForm）+
+design-iter-20（已基线，tag design-iter-20；hover:none 两处常显 + 44px 命中区分类口径〔发送/停止 ≤480px 视觉 44，icon 钮热区扩 44〕）
 
 ### 全局回归基线〔CHG-007〕（iter-13/14 验收统一门槛）
 
