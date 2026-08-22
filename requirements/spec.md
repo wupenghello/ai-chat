@@ -1078,7 +1078,7 @@ design-iter-20（已基线，tag design-iter-20；hover:none 两处常显 + 44px
   6. ≤480px 设置弹窗全屏态（REQ-050 容器）下分区可用、不横向溢出视口
   7. vitest 新增分区用例 + pytest 新端点用例全绿（存量 pytest 347 / vitest 411 零回退）
 - **优先级**：P1（CHG-015 建议，CEO 已批准——2026-08-22「全部按推荐」）｜**批次**：iter-21 候选（design-iter-21 设计基线前置——定夺⑥）
-- **涉及页面**：SettingsForm（第七分区）+ 后端（个人用量端点，routers/proxy.py 或新 router；design-iter-21 设计基线前置）
+- **涉及页面**：SettingsForm（第七分区）+ 后端（个人用量端点，routers/proxy.py 或新 router）；design-iter-21（已基线，2026-08-22 CEO「批准」——分区形态/四分支态/API 形状/走查 28 条/样件 U1~U16，六定夺全按推荐定案，tag design-iter-21）
 
 ### 全局回归基线〔CHG-007〕（iter-13/14 验收统一门槛）
 
