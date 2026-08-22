@@ -1,6 +1,6 @@
 # 产品需求文档（PRD）— ai-chat
 
-- 基线状态：已基线（tag: req-baseline-v1，2026-08-15 CEO 批准；基线后改动一律走变更记录。**req-baseline-v3：2026-08-15 CEO 批准 CHG-004 后的新基线**，含 REQ-020~025 新增与 REQ-006/014/018 改写。**req-baseline-v4：2026-08-16 CEO 批准 CHG-006 后的新基线**，含 REQ-026~029 新增。**req-baseline-v5：2026-08-17 CEO 批准 CHG-007 后的新基线**——agent 架构升级第一期（A1 Agent 地基 + A2 联网搜索），含 REQ-030~035 新增、REQ-001/002/006/022/024/025 改写、波及 8 项同步、暂缓池路线登记。**req-baseline-v6：2026-08-18 CEO 批准 CHG-009 后的新基线**——架构升级第三期 B1（prompt 分割 + 请求级遥测 + admin 遥测面板），含 REQ-036~038 新增、REQ-033/008/025 改写、非功能三行更新、波及 4 项（REQ-002/030/031/034）、旧透传端点随 B1 下线决策（定夺④方案 A）。**req-baseline-v7：2026-08-19 CEO 批准 CHG-010 后的新基线**——架构升级第四期 B2（三级上下文压缩），含 REQ-039~041 新增、REQ-002/033/036 改写、非功能三行更新、波及 5 项（REQ-015/030/034/037/038）、零波及明示 4 项（REQ-006/022/013/016）、暂缓池 B2 条目移出 + C 条目摘要基建复用注记。**req-baseline-v8：2026-08-20 CEO 批准 CHG-011 后的新基线**——架构升级第五期 C（五层记忆体系），含 REQ-042~043 新增、REQ-002/008/028/036 改写、非功能三行更新；REQ-044 按定夺⑩不立项。**req-baseline-v9：2026-08-21 CEO 批准 CHG-012 后的新基线**——架构升级第六期 D1（deep-research 子代理 + SSE 心跳），含 REQ-045~047 新增（编号自 045 起、不复用 044——定夺②）、REQ-030/036 改写、非功能两行更新、波及 9 项同步、零波及明示 8 项、暂缓池 D1 条目移出 + 两条新增（十定夺全按推荐定案）。**req-baseline-v10：2026-08-22 CEO 批准 CHG-013 后的新基线**——架构升级第七期 D2 收官（生命周期事件 hooks），含 REQ-048 新增（编号顺延、044 永久留档）、REQ-030 波及注记、非功能两行更新、零波及明示 8 项、暂缓池 D2 条目移出 + 三条新增 + 移动端不搭班注记（八定夺全按推荐定案——定夺⑦移动端独立 CHG-014 + iter-20））。**req-baseline-v11：2026-08-22 CEO 批准 CHG-014 后的新基线**——移动端主界面适配（主对话/设置弹窗响应式 + 触摸交互），含 REQ-049~051 新增（编号顺延、044 永久留档不复用）、REQ-028/026/017 波及注记、非功能兼容行更新（移动端承诺扩为登录/注册 + 主对话 + 设置弹窗；管理后台维持桌面优先不承诺——定夺⑤）、暂缓池移动端条目移出 + 「管理后台移动化」「移动端原生能力面」两条新增（八定夺全按推荐定案——CEO「全部按照推荐」）。**req-baseline-v12：2026-08-22 CEO 批准 CHG-015 后的新基线**——普通用户用量与费用面板，含 REQ-052 新增（编号顺延、044 永久留档不复用）、REQ-028/024/037/038 波及/复用注记、暂缓池「用量与费用统计面板（面向普通用户）」条目移出（六定夺全按推荐定案——CEO「全部按推荐」）。**req-baseline-v13：2026-08-22 CEO 批准 CHG-016 后的新基线**——真实天气工具（和风天气接入，第二个生产出网工具），含 REQ-053 新增（编号顺延、044 永久留档不复用）、REQ-030 波及注记（验收 6 演示工具口径随定夺①改写——demo_weather 移除、echo 保留）、REQ-031/035 复用注记、暂缓池「真实天气工具」条目移出（六定夺全按推荐定案——CEO「全部按推荐」）
+- 基线状态：已基线（tag: req-baseline-v1，2026-08-15 CEO 批准；基线后改动一律走变更记录。**req-baseline-v3：2026-08-15 CEO 批准 CHG-004 后的新基线**，含 REQ-020~025 新增与 REQ-006/014/018 改写。**req-baseline-v4：2026-08-16 CEO 批准 CHG-006 后的新基线**，含 REQ-026~029 新增。**req-baseline-v5：2026-08-17 CEO 批准 CHG-007 后的新基线**——agent 架构升级第一期（A1 Agent 地基 + A2 联网搜索），含 REQ-030~035 新增、REQ-001/002/006/022/024/025 改写、波及 8 项同步、暂缓池路线登记。**req-baseline-v6：2026-08-18 CEO 批准 CHG-009 后的新基线**——架构升级第三期 B1（prompt 分割 + 请求级遥测 + admin 遥测面板），含 REQ-036~038 新增、REQ-033/008/025 改写、非功能三行更新、波及 4 项（REQ-002/030/031/034）、旧透传端点随 B1 下线决策（定夺④方案 A）。**req-baseline-v7：2026-08-19 CEO 批准 CHG-010 后的新基线**——架构升级第四期 B2（三级上下文压缩），含 REQ-039~041 新增、REQ-002/033/036 改写、非功能三行更新、波及 5 项（REQ-015/030/034/037/038）、零波及明示 4 项（REQ-006/022/013/016）、暂缓池 B2 条目移出 + C 条目摘要基建复用注记。**req-baseline-v8：2026-08-20 CEO 批准 CHG-011 后的新基线**——架构升级第五期 C（五层记忆体系），含 REQ-042~043 新增、REQ-002/008/028/036 改写、非功能三行更新；REQ-044 按定夺⑩不立项。**req-baseline-v9：2026-08-21 CEO 批准 CHG-012 后的新基线**——架构升级第六期 D1（deep-research 子代理 + SSE 心跳），含 REQ-045~047 新增（编号自 045 起、不复用 044——定夺②）、REQ-030/036 改写、非功能两行更新、波及 9 项同步、零波及明示 8 项、暂缓池 D1 条目移出 + 两条新增（十定夺全按推荐定案）。**req-baseline-v10：2026-08-22 CEO 批准 CHG-013 后的新基线**——架构升级第七期 D2 收官（生命周期事件 hooks），含 REQ-048 新增（编号顺延、044 永久留档）、REQ-030 波及注记、非功能两行更新、零波及明示 8 项、暂缓池 D2 条目移出 + 三条新增 + 移动端不搭班注记（八定夺全按推荐定案——定夺⑦移动端独立 CHG-014 + iter-20））。**req-baseline-v11：2026-08-22 CEO 批准 CHG-014 后的新基线**——移动端主界面适配（主对话/设置弹窗响应式 + 触摸交互），含 REQ-049~051 新增（编号顺延、044 永久留档不复用）、REQ-028/026/017 波及注记、非功能兼容行更新（移动端承诺扩为登录/注册 + 主对话 + 设置弹窗；管理后台维持桌面优先不承诺——定夺⑤）、暂缓池移动端条目移出 + 「管理后台移动化」「移动端原生能力面」两条新增（八定夺全按推荐定案——CEO「全部按照推荐」）。**req-baseline-v12：2026-08-22 CEO 批准 CHG-015 后的新基线**——普通用户用量与费用面板，含 REQ-052 新增（编号顺延、044 永久留档不复用）、REQ-028/024/037/038 波及/复用注记、暂缓池「用量与费用统计面板（面向普通用户）」条目移出（六定夺全按推荐定案——CEO「全部按推荐」）。**req-baseline-v13：2026-08-22 CEO 批准 CHG-016 后的新基线**——真实天气工具（和风天气接入，第二个生产出网工具），含 REQ-053 新增（编号顺延、044 永久留档不复用）、REQ-030 波及注记（验收 6 演示工具口径随定夺①改写——demo_weather 移除、echo 保留）、REQ-031/035 复用注记、暂缓池「真实天气工具」条目移出（六定夺全按推荐定案——CEO「全部按推荐」）。**req-baseline-v14：2026-08-23 CEO 直派 CHG-018 后的新基线**——deep-research 深度升级（方法论重写 + read 工具 + 深度档位），含 REQ-046 正式改写（轮次推进方法论 + 证据质量完成判据 + 报告结构四段 + 引用坐标 [m-n] + 护栏档位化 + max_tokens 载荷）、REQ-054/055 新增（read 工具 / 深度档位）、REQ-047/030/035 波及注记、iter-18 T0 三项随测闭账（plans/chg-018-verify.md §8）；直派三定夺（完整升级 / 深度档位 / 插队）+ 实现级定夺④~⑦ T0 定死留档 verify
 - 最后更新：2026-08-22（**req-baseline-v12：CHG-015 已批准（CEO「全部按推荐」= 整体批准 + 六定夺全按推荐定案）——普通用户用量与费用面板：REQ-052 个人用量端点 GET /api/usage/summary（本人-only，telemetry 按 user_id 聚合）+ 设置弹窗第七分区「用量与费用」（7/30 天二档、成本沿 REQ-038 定夺⑥ 体例、/api/quota 与 KeyModeCard 零改动），P1；REQ-028/024/037/038 波及/复用注记、暂缓池「用量与费用统计面板（面向普通用户）」移出；design-iter-21 设计基线前置（定夺⑥），iter-21 排期走 /mm-iteration-plan；spec/RTM 同日同批落盘，tag req-baseline-v12 由主会话执行**。基线沿革：v1 2026-08-15 → v3 2026-08-15（CHG-004）→ v4 2026-08-16（CHG-006）→ v5 2026-08-17（CHG-007）→ v6 2026-08-18（CHG-009）→ v7 2026-08-19（CHG-010）→ v8 2026-08-20（CHG-011）→ v9 2026-08-21（CHG-012）→ v10 2026-08-22（CHG-013）→ v11 2026-08-22（CHG-014）→ v12 2026-08-22（CHG-015）；基线后变更见 changes.md）
 - 交互原型：design/proto/index.html（单文件，浏览器直接打开；右下角"演示控制"可载入演示数据与错误模拟，"设计参数标注"内置令牌对照表）
 
@@ -922,41 +922,43 @@ ai-chat 为多个用户提供 AI 对话服务：任何人可注册账号使用�
 - **优先级**：P0（CHG-012 建议，CEO 已批准——连接正确性 + deep-research 前置）｜**批次**：D1（iter-18 候选）
 - **涉及页面**：不涉及（连接层，用户无感知）
 
-### REQ-046 deep-research 模式与 coordinator 编排（in-process async）〔CHG-012〕
+### REQ-046 deep-research 模式与 coordinator 编排（in-process async）〔CHG-012；CHG-018〕
 
 - **用户故事**：作为用户，我要丢一个开放问题给「深度研究」模式，AI 自动拆解问题、多轮联网搜索、边做边给进度，最后交付一份带引用来源的综合报告，以便开放式问题得到有依据、可核验的深度回答（审核稿 §九 D1/D2 效果叙事）。
-- **描述**（CHG-012 新增，基线 req-baseline-v9）：在 REQ-030 ReAct 循环、REQ-031 工具网关、REQ-035 搜索工具基础上，新增**单子代理 deep-research 编排**（in-process async，不建通用编排框架——审核稿 §三要素 9；定夺③推荐形态 = **受控 ReAct 变体**：同一循环结构换专用研究指令与独立护栏，不建结构化三段 coordinator）。**模式判定** = 回合端点 POST /api/chat/turn 请求体加法可选字段 `mode`（缺省 'chat' 行为零变化；'research' = 深度研究回合——定夺⑦推荐；受理管线[404/503/配额/组装/generating/telemetry sink]全复用零分叉）；**可用性门控** = 与 search 工具下发同源三与门（档案 tools_enabled 或统一 key ∧ admin search 开关 ∧ search_key 配置）——不满足时 research 模式受理即拒（422 research_unavailable，零上游调用、零事件流），**不新增独立 admin 开关**（定夺⑧推荐，独立开关入暂缓池）；**编排与注入** = 回合组装沿既有组装链（snip → compact → 记忆注入零变化）+ **research 指令 system 消息**注入 = 动态尾区（system[1]）之后、记忆消息之前（六层注入序，research 回合时：人设 → 动态尾区 → research 指令 → 记忆 → 摘要 → 历史；指令内容跨请求字节恒定，REQ-036 改写承载注入位）+ 专用研究 prompt（方法论：先输出研究计划（子问题分点）→ 逐项调用 search 收集证据（每子问题至少一次搜索或明示无需）→ 综合输出带引用标注的报告；文案后端拥有、T0 定稿、逐字断言面登记 verify——沿 SUMMARY_PROMPT R2/EXTRACT_PROMPT R1 先例；报告长度 prompt 约束 ≤3000 字）；**双护栏** = 步数硬上限 `max_research_steps`（16，独立于普通回合 10；T0 校准 ±4 步授权）+ 回合总时长护栏 `research_total_timeout`（900s，T0 校准 ±300s 授权，到顶 turn.end reason='time_limit'——**turn.end reason 枚举加法扩展**，前端 REQ-047 适配标注）；单步 120s/工具超时/断连取消沿用 REQ-030 既有护栏；**计费** = 1 次发起 = 1 回合（REQ-034「1 回合 = 一次用户发送触发」语义自然覆盖，tokens 如实累计含全部内部上游调用，步数/时长为回合内护栏不占配额——定夺⑤推荐，审核稿「回合制+步数硬上限，防 2000/日熔断形同虚设」验收口径的落实）；**事件** = 既有 v2 事件承载（text.delta 流式输出计划与报告、tool.call/tool.result 呈现每轮搜索、turn.step 步数进度），首版**不新增事件类型**（research.phase 阶段事件为 design-iter-18 可提案项，若提案按加法事件随 T0 定帧格式——定夺⑨附属）；**遥测** = llm/tool 行 endpoint='research' 加法区分（行形状零变化）；**产出** = 报告以 blocks 落库随会话 PUT（现状机制零变化），引用来源经 tool.result sources 数组前送 → 前端引用卡复用（REQ-035）。上游错误映射/配额拦截/断连取消全沿 REQ-030 既有异常分支，零新增口径。
+- **描述**（CHG-012 新增，基线 req-baseline-v9；**CHG-018 正式改写，基线 req-baseline-v14**——研究方法论/完成判据/报告结构/引用坐标/护栏档位化，CEO 线上验收反馈直派）：在 REQ-030 ReAct 循环、REQ-031 工具网关、REQ-035 搜索工具基础上，**单子代理 deep-research 编排**（in-process async，不建通用编排框架——审核稿 §三要素 9；受控 ReAct 变体：同一循环结构换专用研究指令与独立护栏，不建结构化三段 coordinator）。**模式判定** = 回合端点 POST /api/chat/turn 请求体加法可选字段 `mode`（缺省 'chat' 行为零变化；'research' = 深度研究回合）；**深度档位（CHG-018）** = 请求体加法可选字段 `depth`（Literal["light","standard","deep"]，缺省 "standard"；mode='chat' 时忽略——宽容口径；档位承载见 REQ-055）。**可用性门控** = 与 search 工具下发同源三与门（档案 tools_enabled 或统一 key ∧ admin search 开关 ∧ search_key 配置）——不满足时 research 模式受理即拒（422 research_unavailable，零上游调用、零事件流），不新增独立 admin 开关。**编排与注入** = 回合组装沿既有组装链 + research 指令 system 消息注入 = 动态尾区（system[1]）之后、记忆消息之前（六层注入序）；**指令文案按档三份**（CHG-018：RESEARCH_PROMPT 单文案 → light/standard/deep 三档常量，逐字断言面 = plans/chg-018-verify.md §9 R2 定稿）。**研究方法论（CHG-018 重写核心）** = 轮次推进取代单遍覆盖——标准档两轮（广度轮多角度拟词检索 → 深度轮对薄弱点/单一来源/矛盾处换词重检、交叉验证）、深度档三轮（广度 → 深读轮 read 读原文、数字/日期/版本号从原文核对 → 验证轮）、轻量档快速核实；**完成判据 = 证据质量**（关键结论 ≥2 相互独立来源支撑、矛盾已查证或如实标注分歧），取代「每子问题至少一次 + 覆盖后即报告」的及格线口径（T0 坐实其为深度不足根因，verify §2）；**报告结构四段**（结论含置信度高/中/低与理由 / 分点论证 / 矛盾与分歧 / 未能验证的遗留问题；轻量档精简口径）；**引用坐标 [m-n] 全档统一**（m = 第 m 次工具调用、n = 该次结果来源第 n 条；read 单来源 [m-1]；消除旧 [n] 跨轮歧义——随测①闭账结论）；报告长度 prompt 约束**按档**：light ≤1600 / standard ≤3500 / deep ≤7000 字。**护栏（CHG-018 档位化）** = 步数硬上限与回合总时长护栏按 depth 取值：light 8 步/300s、standard 16 步/900s（现值零变化）、deep 32 步/900s（T0 定死，verify §6；到顶 turn.end reason='time_limit'/'max_steps' 既有口径）；单步 120s/工具超时/断连取消沿用 REQ-030。**上游载荷（CHG-018）** = research 回合带 `max_tokens=8192`（现网不带 max_tokens、DeepSeek 默认输出 4096 tokens，深度报告必然截断——T0 发现的生产隐患修复，verify §3 发现 4；普通回合载荷零变化）。**read 工具（CHG-018）** = deep 档可用 read（Tavily /extract）读原文（工具本体见 REQ-054；**仅 research 回合下发**，普通回合 tools 定义零变化）。**计费** = 1 次发起 = 1 回合（REQ-034 语义自然覆盖，tokens 如实累计——实测 light ~24k / standard ~89k~104k / deep ~93k~146k tokens/回合，verify §7）；**事件** = 既有 v2 事件承载（text.delta 流式输出计划与报告、tool.call/tool.result 呈现每轮检索与 read、turn.step 步数进度——max_steps 随档动态值），不新增事件类型；**遥测** = llm/tool 行 endpoint='research' 加法区分（行形状零变化）；**产出** = 报告以 blocks 落库随会话 PUT（现状机制零变化），来源经 tool.result sources 数组前送 → 前端引用卡复用。上游错误映射/配额拦截/断连取消全沿 REQ-030 既有异常分支，零新增口径。
 - **主流程**：
-  1. 用户开启深度研究开关并发送开放问题（REQ-047）→ POST /api/chat/turn（mode='research'）
-  2. 受理：三与门校验 → 配额按回合计（不足即 429 零上游调用）→ turn.start → 组装（五层 + research 指令）→ 循环开始（step 计数）
+  1. 用户开启深度研究开关（可选档位，REQ-047/055）并发送开放问题 → POST /api/chat/turn（mode='research'[, depth]）
+  2. 受理：三与门校验 → 配额按回合计（不足即 429 零上游调用）→ turn.start → 组装（五层 + 按档 research 指令）→ 循环开始（step 计数，上限随档）
   3. 规划：模型流式输出研究计划（text.delta，子问题分点可见）
-  4. 检索循环：模型自主发起 search（tool.call → 网关六项校验执行 → tool.result[ok/error/timeout + sources]）→ 结果回填 → 继续下一子问题或补充搜索（每步 turn.step，事件流实时呈现——边做边给进度）
-  5. 综合：模型输出带引用标注的综合报告（text.delta 流式；≤3000 字 prompt 约束）
-  6. 回合结束：usage（回合内累计）→ turn.end（done / max_steps / time_limit）→ 报告 blocks 落库（前端 PUT 现状）、usage_daily 落账（turns+1、tokens 累计）
+  4. 检索循环：模型自主发起 search / read（tool.call → 网关六项校验执行 → tool.result[ok/error/timeout + sources]）→ 结果回填 → 广度轮/深读轮/验证轮按文案推进（每步 turn.step，事件流实时呈现——边做边给进度）
+  5. 综合：证据质量判据满足后输出综合报告（text.delta 流式；结构四段 + [m-n] 引用 + 按档字数约束）
+  6. 回合结束：usage（回合内累计）→ turn.end（done / max_steps / time_limit）→ 报告 blocks 落库、usage_daily 落账（turns+1、tokens 累计）
 - **异常分支**：
   - 可用性门不满足（admin 关搜索 / key 缺失 / 档案工具开关关）：受理即 422 research_unavailable（零上游调用、零事件流），前端入口同步禁用（REQ-047）
-  - 步数到顶：turn.end(reason=max_steps)，已生成计划/检索步骤/部分报告保留并落库，回复末尾标注「已到步数上限」（沿 REQ-030 体例，文案随 design-iter-18）
-  - 时长到顶：turn.end(reason='time_limit')，已生成内容同样保留落库 + 标注（reason 加法枚举）
-  - 检索全部失败（search error/timeout 连续）：error 结果回填模型，模型可降级直答（基于已有知识 + 明示「检索未成功」标注，沿 REQ-035 降级体例），回合不崩
+  - 步数到顶：turn.end(reason=max_steps)，已生成计划/检索步骤/部分报告保留并落库，回复末尾标注「已到步数上限」（沿 REQ-030 体例）
+  - 时长到顶：turn.end(reason='time_limit')，已生成内容同样保留落库 + 标注
+  - 检索全部失败（search/read error/timeout 连续）：error 结果回填模型，模型可降级直答（基于已有知识 + 明示「检索未成功」标注，沿 REQ-035 降级体例），回合不崩
   - 上游报错/中断/断连取消/配额拦截：沿 REQ-030 既有异常分支零新增（计费沿「已抵上游则计」既有定夺）
-  - 自填端点不支持 tools（档案开关开但上游明确报错）：沿 REQ-014 定夺①既有引导（提示关闭开关），research 无特例
-  - 报告超长：prompt 约束为主（≤3000 字），无硬截断（文本段自然落库；超长属 prompt 纪律问题，T0 冒烟校准）
+  - 自填端点不支持 tools（档案开关开但上游明确报错）：沿 REQ-014 定夺①既有引导，research 无特例
+  - 报告超长：prompt 约束为主（按档 1600/3500/7000 字），无硬截断（文本段自然落库；超长属 prompt 纪律问题，T0 冒烟校准——R2 三档实测达标 verify §4）
+  - 非法 depth 值：Literal 校验 422（沿 mode 体例）；mode='chat' 携带 depth = 忽略（宽容，普通回合零影响）
 - **验收标准（可判定）**：
-  1. 帧级断言：MockTransport 编排「规划 + 2×search + 综合」的 research 回合 → 事件序逐帧断言（turn.start → turn.step(1) → text.delta*（含计划要点）→ tool.call(search) → tool.result(ok, sources 非空) → turn.step(2) → … → usage → turn.end(done)），首步请求体含 research 指令 system 消息（位置 = system[1] 之后、记忆消息[如有]之前；内容 = T0 定稿逐字）且 system[0] 人设/时间行口径不回退（pytest，含记忆预置用例）
-  2. 步数硬上限：max_research_steps=3 注入 + 编排需 4 步的假上游 → 第 3 步后 turn.end(reason=max_steps)、已生成内容保留、进程不悬挂（pytest，沿 REQ-030 验收 2 体例）
-  3. 时长护栏：假工具拖超 research_total_timeout → turn.end(reason='time_limit')、无孤儿任务（pytest）
-  4. 计费口径：一回合并 5 次上游调用（MockTransport）→ usage_daily 该日该用户 turns +1、tokens = 5 次调用 usage 之和（pytest 数值断言，沿 REQ-034 验收 2 体例——「回合制 + 步数硬上限」审核稿验收口径落成可判定条款）
+  1. 帧级断言：MockTransport 编排「规划 + 2×search + 综合」的 research 回合 → 事件序逐帧断言（turn.start → turn.step(1) → text.delta*（含计划要点）→ tool.call(search) → tool.result(ok, sources 非空) → turn.step(2) → … → usage → turn.end(done)），首步请求体含 research 指令 system 消息（位置 = system[1] 之后、记忆消息[如有]之前；**CHG-018：内容 = 按档三文案之一逐字——verify §9 R2 定稿，depth 缺省 = standard 文案**）且 system[0] 人设/时间行口径不回退（pytest，含记忆预置用例）
+  2. 步数硬上限：档位上限注入缩值（如 3）+ 编排需 4 步的假上游 → 第 3 步后 turn.end(reason=max_steps)、已生成内容保留、进程不悬挂（pytest，沿 REQ-030 验收 2 体例）
+  3. 时长护栏：假工具拖超档位总时长 → turn.end(reason='time_limit')、无孤儿任务（pytest）
+  4. 计费口径：一回合并 5 次上游调用（MockTransport）→ usage_daily 该日该用户 turns +1、tokens = 5 次调用 usage 之和（pytest 数值断言，沿 REQ-034 验收 2 体例）
   5. 门控拒绝：admin 关闭搜索 / key 缺失 / 档案工具关 → mode='research' 受理即 422、零上游调用、零事件流（pytest）；mode 缺省的普通回合不受影响（既有验收复跑）
   6. 网关复用：research 路径工具执行走 execute_tool 网关——非法入参 search（假上游发起）→ error tool.result 回填、回合继续；tool 行 endpoint='research' 落库断言（pytest）
   7. 断连取消：检索执行中断开 → 取消后零新增上游调用、工具协程终止、无孤儿任务（沿 REQ-030 验收 4）
   8. 卫生：research 指令文案/事件流/日志/遥测行检索不到 key（沿 REQ-037 验收 5 探针体例）
-- **优先级**：P0（CHG-012 建议，CEO 已批准）｜**批次**：D1（iter-18 候选）
-- **涉及页面**：不涉及（纯后端；入口与呈现归 REQ-047）
+  9. **档位矩阵（CHG-018）**：depth='light'/'deep' → 指令文案逐字对应档位常量 + steps_limit/total_deadline 取档位参数（pytest 断言 turn.step max_steps 值与护栏生效）；research 回合上游载荷含 max_tokens=8192、普通回合载荷不含 max_tokens（pytest 载荷断言）；mode='chat' 携带 depth → 普通回合载荷与事件序零变化（pytest）；非法 depth 值 422（pytest）
+- **优先级**：P0（CHG-012 建议，CEO 已批准；CHG-018 直派改写沿用）｜**批次**：D1（iter-18 已收口）；CHG-018 直派插队批次当轮实施
+- **涉及页面**：不涉及（纯后端；入口与呈现归 REQ-047，档位入口归 REQ-055）
 
 ### REQ-047 deep-research 前端模式入口与进度/报告呈现〔CHG-012〕
 
 - **用户故事**：作为用户，我要在输入框一键切换「深度研究」模式、实时看到 AI 研究到哪一步、收到带引用来源的报告，以便知道何时该用深研、进度可见、结论可核验。
-- **描述**（CHG-012 新增，基线 req-baseline-v9）：输入区新增模式开关（ComposerBox 加法，形态随 design-iter-18，候选输入框角落 toggle + 模式提示标签——定夺⑦推荐输入框开关而非会话类型：模式为**回合级属性**、同一会话可与普通回合混用）。开启时发送 → 回合请求体携带 mode='research'（client.ts runChatTurn 加法可选参数，缺省不传 = 现状零变化）；**发送后开关复位为普通模式**（防高成本模式误连发，定夺⑦附属推荐，design-iter-18 基线可定夺）。**进度与报告呈现 = 零新增渲染面**：研究计划/报告经 text.delta 流式渲染（现状打字机）、每轮搜索经既有 ToolStepCard 工具步骤卡（运行中→完成、可折叠、创建即折叠规则沿用）、来源经既有 SourceCard 引用卡（REQ-035/design-iter-14 复用）——**不新增 block 类型**（沿 CHG-011 内容 3.5 体例）；mode 不写入会话档（回合瞬时属性，消息模型与 schema:2 零变化）。research.phase 阶段条（规划中/检索中/综合中）为 design-iter-18 可提案增强：提案则后端加法事件 + 前端消费（帧格式 T0 定），不提案则工具步骤卡密度天然呈现进度（定夺⑨附属）。turn.end reason='time_limit' 标注态适配（沿 maxSteps 标注体例，文案随 design-iter-18）。**入口可用性**：GET /api/quota 端点加法字段 research_available（bool，= 三与门判定）为开关禁用态判定源；不可用时开关禁用 + 提示（文案随 design-iter-18）。既有交互零回退：REQ-001 发送/停止、REQ-010 停止生成、暗色主题全部保留。
+- **描述**（CHG-012 新增，基线 req-baseline-v9；**CHG-018 波及注记**：开关交互扩展档位选择（开启态出轻量/标准/深度小选段 + hint 随档）、进度条 max_steps 随档动态值、报告 [m-n] 引用坐标为纯文本渲染零前端处理——入口与呈现承载归 REQ-055，本条既有口径零回退）：输入区新增模式开关（ComposerBox 加法，形态随 design-iter-18，候选输入框角落 toggle + 模式提示标签——定夺⑦推荐输入框开关而非会话类型：模式为**回合级属性**、同一会话可与普通回合混用）。开启时发送 → 回合请求体携带 mode='research'（client.ts runChatTurn 加法可选参数，缺省不传 = 现状零变化）；**发送后开关复位为普通模式**（防高成本模式误连发，定夺⑦附属推荐，design-iter-18 基线可定夺）。**进度与报告呈现 = 零新增渲染面**：研究计划/报告经 text.delta 流式渲染（现状打字机）、每轮搜索经既有 ToolStepCard 工具步骤卡（运行中→完成、可折叠、创建即折叠规则沿用）、来源经既有 SourceCard 引用卡（REQ-035/design-iter-14 复用）——**不新增 block 类型**（沿 CHG-011 内容 3.5 体例）；mode 不写入会话档（回合瞬时属性，消息模型与 schema:2 零变化）。research.phase 阶段条（规划中/检索中/综合中）为 design-iter-18 可提案增强：提案则后端加法事件 + 前端消费（帧格式 T0 定），不提案则工具步骤卡密度天然呈现进度（定夺⑨附属）。turn.end reason='time_limit' 标注态适配（沿 maxSteps 标注体例，文案随 design-iter-18）。**入口可用性**：GET /api/quota 端点加法字段 research_available（bool，= 三与门判定）为开关禁用态判定源；不可用时开关禁用 + 提示（文案随 design-iter-18）。既有交互零回退：REQ-001 发送/停止、REQ-010 停止生成、暗色主题全部保留。
 - **主流程**：
   1. 用户开启「深度研究」开关 → 输入开放问题 → 发送（请求体 mode='research'）
   2. 消息流：计划文本流式出现 → 搜索工具步骤卡依次运行/完成 → 报告流式生成 → 引用卡呈现 → 回合完成标注；开关复位
@@ -1105,9 +1107,53 @@ design-iter-20（已基线，tag design-iter-20；hover:none 两处常显 + 44px
 - **优先级**：P1（CHG-016 建议，CEO 已批准——2026-08-22「全部按推荐」）｜**批次**：iter-22 候选（零 UI 无设计稿任务——定夺④，沿 iter-19 先例，不构成 tailoring 偏离）
 - **涉及页面**：不涉及（纯后端；admin 面零改动——定夺②）
 
+### REQ-054 read 工具（网页原文读取，Tavily /extract）〔CHG-018〕
+
+- **用户故事**：作为用户，我要深度研究能读到关键来源的原文全文而不是只看搜索摘要，以便报告中的数字、日期与细节可核验、深研真正「深」得下去。
+- **描述**（CHG-018 新增，基线 req-baseline-v14）：第三个生产出网工具 `read`（Tavily `/extract` 端点，凭据与 search 共用 `AI_CHAT_SEARCH_KEY`——同域同 key 不同端点）经工具网关接入（REQ-031 六项校验零改动）。**出网白名单 = api.tavily.com 固定域**（与 search 完全一致——安全面零扩大；SSRF 白名单判定 + DNS 解析期地址核验照旧，零连接拒绝口径不变）；**入参 = 单 url 必填**（string maxLength 2000；单 URL 单次调用——多 URL 批量留给模型多次调用/并行 tool_calls 自然承载，减小单结果体积）；**内部截断 10000 字符**（原文回填模型上下文前的工具内截断——防上下文溢出：read 全量 32KiB × 6 次可逼近 DeepSeek 128k 窗口，T0 定死 verify §5；网关 32KiB 外限沿用、超限截断标注沿用）；单工具超时 **15s**（extract 实测慢于 search，10s 基础上留余量）；**门控 = gate "search"**（三与门与 search 共用：admin 开关 ∧ key 配置 ∧ 档案工具开关——不新增开关）；**下发面 = 仅 research 回合**（deep 档方法论要求 read 读原文；普通回合 tools 定义不含 read——「普通回合逐字节等价」铁律，proxy 回合受理时按 mode 过滤）。**结果双视角**：文本给模型（「读取『标题』原文：\nURL\n正文」+ 内部截断标注）+ sources 单来源数组（url/title）随 tool.result 可选下发 → 前端 SourceCard 引用卡复用渲染（既有机制零改动）。**异常分支**：failed_results / 空正文 / API 失败 → ToolError 机器可读原因 → 网关 error result → 模型降级（换来源重试或跳过，回合不崩，沿 REQ-035 降级体例）；key 未配置 → 工具不注册（三与门本就不满足，research 受理即拒——read 无独立缺失态）。
+- **主流程**：
+  1. deep 档深读轮：模型从广度轮来源中选定高价值来源 → tool.call(read, {url})
+  2. 网关校验链（REQ-031）→ /extract 调用（白名单 + DNS 核验，15s 内）
+  3. 结果组装：raw_content 截断至 10000 字符 → 文本 + sources 回填 → 模型以原文为准核对细节
+  4. 前端工具卡 + 引用卡复用渲染（零前端改动）
+- **异常分支（含用户所见）**：
+  - 提取失败（failed_results 非空 / 空正文 / API 错误 / 超时）：error/timeout result → 模型换来源或跳过，回合不崩
+  - 结果超限：内部截断 10000 字符标注后回填（网关 32KiB 外限兜底）
+  - 配额/步数护栏：沿 REQ-030/034 通用分支
+- **验收标准（可判定）**：
+  1. 真实端到端：深度档真实走查报告引用含 read 来源（verify/走查留档）
+  2. 提取失败（假端点 failed_results）→ error result 回填、回合降级继续不崩（pytest）
+  3. **下发面**：普通回合上游 tools 定义不含 read；research 回合（任一档）tools 含 read（pytest 载荷断言——档位不限 read 下发，方法论约束由文案承载：light/standard 档文案不引导 read 使用）
+  4. 内部截断：raw_content >10000 字符 → 回填文本 ≤10000 + 截断标注（pytest）
+  5. 出网仅 api.tavily.com（/extract 与 /search 同域断言——目标改内网/他域零连接，沿 REQ-035 验收 4 体例）
+  6. key 卫生：请求头唯一承载，结果/来源/日志/事件零 key 明文（沿 REQ-035 既有探针）
+- **优先级**：P1（CHG-018 建议，CEO 直派已批准）｜**批次**：CHG-018 直派插队批次当轮实施
+- **涉及页面**：不涉及（工具卡/引用卡复用零前端改动）
+
+### REQ-055 deep-research 深度档位（light / standard / deep）〔CHG-018〕
+
+- **用户故事**：作为用户，我要发起深度研究时能选择轻量/标准/深度三档，以便在速度与深度、成本之间按问题重要性自选，而不是一刀切。
+- **描述**（CHG-018 新增，基线 req-baseline-v14）：deep-research 回合增**深度档位**三值：`light`（快速核实：2~4 子问题、~24k tokens、8 步/300s、报告 ≤1600 字）/ `standard`（两轮推进：交叉验证、~89k~104k tokens、16 步/900s、≤3500 字）/ `deep`（三轮推进含 read 深读：~93k~146k tokens、32 步/900s、≤7000 字）——成本与护栏实测值留档 verify §6/§7。**请求承载** = turn 端点加法可选字段 `depth`（Literal["light","standard","deep"]，缺省 "standard"——**存量前端不传 depth 零影响**；mode='chat' 时忽略；非法值 422）；**护栏按档参数化** = config 新增 research_steps_light=8 / research_timeout_light=300.0 / research_steps_deep=32 / research_timeout_deep=900.0（.env 可覆盖），既有 max_research_steps=16 / research_total_timeout=900.0 语义收窄为 standard 档（默认部署零变化）；**指令文案按档三份**（REQ-046 描述、verify §9 逐字）。**前端入口（定夺⑦：零设计基线——既有控件家族复用）**：ComposerBox 深研开关开启态出**档位小选段**（三钮 segmented，默认 standard，文案逐字随实现定稿登记 verify）+ hint 文案随档（时长/深度预期管理）；**发送即复位**（开关与档位一并复位为关/standard，沿定夺③体例）；档位为回合瞬时属性不写会话档、不持久化；进度条 max_steps 随档动态值（turn.step 事件 max_steps 字段既有机制零改动）；**可用性**：research_available 禁用态判定不变（档位选择随之禁用）。
+- **主流程**：
+  1. 用户开深研开关 → 选档位（默认 standard）→ 发送（请求体 mode='research' + depth）
+  2. 后端按档注入指令文案 + 取档位护栏 → 深读轮（deep 档 read 下发）→ 按档报告
+  3. 发送后开关与档位复位；下一回合照常
+- **异常分支（含用户所见）**：
+  - 非法 depth 值：422（沿 mode 体例）
+  - mode='chat' 携带 depth：忽略（普通回合零影响）
+  - 档位护栏到顶：沿 REQ-046 既有 reason 口径（max_steps/time_limit，内容保留 + 标注）
+  - 深研不可用（三与门不满足）：开关与档位整体禁用（REQ-047 既有口径）
+- **验收标准（可判定）**：
+  1. 载荷与复位：选档发送 → 请求体 mode='research' + depth=所选值；发送后开关与档位复位（vitest 断言载荷形状与复位）
+  2. 档位 UI：开启态三钮 segmented 渲染、默认 standard、hint 随档切换、禁用态整体不可操作（vitest + 走查）
+  3. 不传 depth（存量兼容）：请求体不含 depth 字段 = 后端按 standard（pytest + vitest 载荷断言）
+  4. 档位护栏与文案：见 REQ-046 验收 9（后端矩阵承载，不重复断言）
+- **优先级**：P1（CHG-018 建议，CEO 直派已批准——定夺②）｜**批次**：CHG-018 直派插队批次当轮实施
+- **涉及页面**：ComposerBox（既有深研开关行扩展，零设计基线——定夺⑦，沿 CHG-017「视觉参数级改版 + 既有模式复用」先例）
+
 ### 全局回归基线〔CHG-007〕（iter-13/14 验收统一门槛）
 
-- 前端 254 用例 + 后端 139 用例全绿（CHG-007 批准时点原始门槛）；因口径迁移（REQ-002 请求体观测服务端化、REQ-024 回合语义、blocks 适配等）而改写的用例逐条登记映射（旧断言 → 新断言），功能性删除为零；度量数据全部机器采集（铁律 5）。RTM 以独立行跟踪（原验收条款 8 归位）。**实际收口：iter-13（A1）前端 273 + 后端 182，iter-14（A2）前端 301 + 220，均全绿（见 RTM 全局回归基线行）**。**B1 面（CHG-009，iter-15）**：沿同口径执行——存量全绿、改写用例登记映射、功能性删除为零；例外登记：定夺④旧透传端点下线，test_proxy 16 例随端点退役（决策驱动的功能性移除，映射随 B1 任务登记）。**D1 面（CHG-012，iter-18）**：沿同口径执行——存量全绿（iter-17 终态 pytest 312 + vitest 364）、改写用例登记映射（REQ-030 验收 1 事件序断言排除心跳注释帧等）、功能性删除为零（推荐方案零新表零迁移、零数据面改动）。**D2 面（CHG-013，iter-19 候选）**：沿同口径执行——存量全绿（iter-18 终态 pytest 332 + vitest 378 + 走查 41/0）、预计零既有用例改写（埋点为纯加法旁路，「改写映射为零」断言登记 verify）、功能性删除为零（零新表零迁移零前端改动）、度量机器采集（铁律 5）；无 UI 走查面（零 UI）。**天气面（CHG-016，iter-22 候选）**：沿同口径执行——存量基线 v1.0.0 终态 pytest 363（DEF-040 修复后）/ vitest 423 + 走查 32/0（iter-21 终态）；test_agent_tools 4 处断言面随定夺①改写映射逐条登记（demo_weather 退役，决策驱动已批准——沿 test_proxy 16 例先例）；功能性删除为零（weather 纯加法）；度量机器采集（铁律 5）；零前端走查面（e2e-walkthrough-22 天气链路 3~5 条为增量）。
+- 前端 254 用例 + 后端 139 用例全绿（CHG-007 批准时点原始门槛）；因口径迁移（REQ-002 请求体观测服务端化、REQ-024 回合语义、blocks 适配等）而改写的用例逐条登记映射（旧断言 → 新断言），功能性删除为零；度量数据全部机器采集（铁律 5）。RTM 以独立行跟踪（原验收条款 8 归位）。**实际收口：iter-13（A1）前端 273 + 后端 182，iter-14（A2）前端 301 + 220，均全绿（见 RTM 全局回归基线行）**。**B1 面（CHG-009，iter-15）**：沿同口径执行——存量全绿、改写用例登记映射、功能性删除为零；例外登记：定夺④旧透传端点下线，test_proxy 16 例随端点退役（决策驱动的功能性移除，映射随 B1 任务登记）。**D1 面（CHG-012，iter-18）**：沿同口径执行——存量全绿（iter-17 终态 pytest 312 + vitest 364）、改写用例登记映射（REQ-030 验收 1 事件序断言排除心跳注释帧等）、功能性删除为零（推荐方案零新表零迁移、零数据面改动）。**D2 面（CHG-013，iter-19 候选）**：沿同口径执行——存量全绿（iter-18 终态 pytest 332 + vitest 378 + 走查 41/0）、预计零既有用例改写（埋点为纯加法旁路，「改写映射为零」断言登记 verify）、功能性删除为零（零新表零迁移零前端改动）、度量机器采集（铁律 5）；无 UI 走查面（零 UI）。**天气面（CHG-016，iter-22 候选）**：沿同口径执行——存量基线 v1.0.0 终态 pytest 363（DEF-040 修复后）/ vitest 423 + 走查 32/0（iter-21 终态）；test_agent_tools 4 处断言面随定夺①改写映射逐条登记（demo_weather 退役，决策驱动已批准——沿 test_proxy 16 例先例）；功能性删除为零（weather 纯加法）；度量机器采集（铁律 5）；零前端走查面（e2e-walkthrough-22 天气链路 3~5 条为增量）。**CHG-018 面（直派批次）**：沿同口径执行——存量基线 v13 终态 pytest 382 / vitest 435；test_research 5 处受控改写映射逐条登记（三档文案锚点/注入位/卫生，功能性删除为零）；test_hooks 零改动（ResearchProfile max_tokens 默认值兼容）；pytest 382→397 / vitest 435→441 全绿；真实端到端取证面 verify §11；度量机器采集（铁律 5）。
 
 ## 3. 非功能需求
 
@@ -1115,7 +1161,7 @@ design-iter-20（已基线，tag design-iter-20；hover:none 两处常显 + 44px
 |------|------|
 | 性能 | 首次可交互时间 < 2 秒（立项书成功标准，验收环境：最新版 Chrome、本地网络）；流式首块到达到开始渲染 < 200ms；切换会话渲染 < 1 秒；不因会话数增长（≤100 个）导致首屏显著变慢〔CHG-004 补充：经代理转发引入的流式首块额外延迟 ≤ 500ms〕 |
 | 兼容 | 桌面浏览器优先：Chrome / Edge / Safari 最新及上一大版本（均需支持流式请求；IndexedDB 仅用于旧版本本地数据的一次性迁移）；移动端响应式布局为 P1 目标——**〔CHG-014〕主对话面与设置弹窗承诺 ≤768px/≤480px 移动端可用（REQ-049/050/051，断点与触控口径见 changes.md CHG-014）；管理后台维持桌面优先不承诺移动端（CHG-014 定夺⑤），现状横向滚动兜底不溢出视口；登录/注册页 ≤480px 承诺沿用（design-iter-6）** |
-| 架构 | 〔CHG-004〕前后端分离：前端 Vue3+TS+Vite（不变）+ Python FastAPI 后端。后端职责：账号体系、API 密钥服务端代管（双模式）、OpenAI 兼容流式代理、用户数据云端存储。决策历史：req-baseline-v1（2026-08-15）曾为「纯前端直连、不自建后端」，同日 CHG-004 替换。〔CHG-007〕后端增 **agent 运行时**（ReAct 循环 / 工具网关 / SSE 协议 v2 回合端点 / 服务端上下文组装 / 回合计配额）——技术口径见 changes.md CHG-007。〔CHG-009〕旧 /api/chat 透传端点：**随 B1 直接下线（定夺④方案 A，CEO 批准 2026-08-18）**——下线执行完成后回合端点 `/api/chat/turn` 为唯一对话入口；下线执行与 test_proxy 16 例退役登记随 B1 任务（评估全文见 changes.md CHG-009 内容 5）。〔CHG-010〕agent 运行时增三级上下文压缩管道（旧工具结果裁剪 → 中段历史摘要 → token 阈值自动 + 手动；摘要调用基建为 C 期记忆体系复用，技术口径见 changes.md CHG-010）。〔CHG-011〕agent 运行时增用户长期记忆子系统（记忆表 + 会话后异步抽取后台任务〔常驻扫描 + 重启恢复〕+ 五层注入序组装；摘要调用基建复用 B2，技术口径见 changes.md CHG-011）。〔CHG-012〕agent 运行时增 deep-research coordinator（in-process async 受控 ReAct 变体：专用研究指令注入 + 步数/时长双护栏 + endpoint='research' 遥测区分）；SSE 流增心跳注释帧——技术口径见 changes.md CHG-012。〔CHG-013〕agent 运行时增生命周期事件 hooks 旁路分发机制（进程内回调静态注册、闭合 5 事件枚举、fire-and-forget + 独立超时护栏、只观察不决策——技术口径见 changes.md CHG-013） |
+| 架构 | 〔CHG-004〕前后端分离：前端 Vue3+TS+Vite（不变）+ Python FastAPI 后端。后端职责：账号体系、API 密钥服务端代管（双模式）、OpenAI 兼容流式代理、用户数据云端存储。决策历史：req-baseline-v1（2026-08-15）曾为「纯前端直连、不自建后端」，同日 CHG-004 替换。〔CHG-007〕后端增 **agent 运行时**（ReAct 循环 / 工具网关 / SSE 协议 v2 回合端点 / 服务端上下文组装 / 回合计配额）——技术口径见 changes.md CHG-007。〔CHG-009〕旧 /api/chat 透传端点：**随 B1 直接下线（定夺④方案 A，CEO 批准 2026-08-18）**——下线执行完成后回合端点 `/api/chat/turn` 为唯一对话入口；下线执行与 test_proxy 16 例退役登记随 B1 任务（评估全文见 changes.md CHG-009 内容 5）。〔CHG-010〕agent 运行时增三级上下文压缩管道（旧工具结果裁剪 → 中段历史摘要 → token 阈值自动 + 手动；摘要调用基建为 C 期记忆体系复用，技术口径见 changes.md CHG-010）。〔CHG-011〕agent 运行时增用户长期记忆子系统（记忆表 + 会话后异步抽取后台任务〔常驻扫描 + 重启恢复〕+ 五层注入序组装；摘要调用基建复用 B2，技术口径见 changes.md CHG-011）。〔CHG-012〕agent 运行时增 deep-research coordinator（in-process async 受控 ReAct 变体：专用研究指令注入 + 步数/时长双护栏 + endpoint='research' 遥测区分）；SSE 流增心跳注释帧——技术口径见 changes.md CHG-012。〔CHG-013〕agent 运行时增生命周期事件 hooks 旁路分发机制（进程内回调静态注册、闭合 5 事件枚举、fire-and-forget + 独立超时护栏、只观察不决策——技术口径见 changes.md CHG-013）。〔CHG-018〕deep-research 升级三档深度（light/standard/deep：档位化护栏与三份专用文案 + 引用坐标 [m-n] + 回合载荷 max_tokens=8192）+ read 工具（Tavily /extract，同域白名单零扩大，仅 research 回合下发）——技术口径见 changes.md CHG-018 |
 | 数据 | 〔CHG-004〕登录用户的会话与配置存服务端数据库（SQLite 起步，CEO 认可），为唯一持久层；存储结构带版本号以支持迁移；IndexedDB 仅作为 v0.4.0 及以前本地数据的一次性迁移源，导入后只读 30 天清除；不保留未登录本地模式；账号注销即删除该用户全部云端数据（REQ-021）。〔CHG-009〕迁移 v8 新增 telemetry 明细表：老数据不动、遥测不回填历史；明细保留期 90 天（定夺⑤，按自然日惰性清理）。〔CHG-010〕迁移 v9：telemetry 加法增列（tokens_before/tokens_after，compress 行专用）+ 新建 context_summary 压缩产物表（独立于会话档，不写回会话 JSON）；老数据不动、不回填；压缩产物随账号注销级联清理（ON DELETE CASCADE）。〔CHG-011〕迁移 v10：新建 user_memories 用户长期记忆表 + memory_jobs 抽取任务表（均独立于会话档，ON DELETE CASCADE 注销级联）+ users 加法列 memory_enabled（整体停用开关）；老数据不动、不回填 |
 | 安全 | 〔CHG-004〕密码以 argon2/bcrypt 哈希加盐存储，任何环节不出明文；会话 token 有有效期，改密/注销即失效；API 密钥仅存服务端（受保护存储），不下发前端、绝不硬编码、绝不进 git 仓库（git 全量历史可验证，前后端仓库均适用）；浏览器本地不存储任何 API 密钥；沿用 401/403 引导更新机制（REQ-007 扩展映射） |
 | 可观测 | 错误场景对用户有明确提示（REQ-007）；开发阶段可通过日志/网络面板观测请求与上下文组装（支撑 REQ-002 验收）；〔CHG-004〕后端记录每用户调用计数与上游转发结果日志（支撑 REQ-024/025 验收），日志不包含密钥与密码明文；〔CHG-007〕增回合事件日志（步数/工具名/状态/耗时/是否截断），机器采集、不含工具结果全文；〔CHG-009〕请求级结构化遥测——每次上游 LLM 调用与工具执行落明细行（延迟/token 分项/缓存命中/状态/错误码），机器采集；缓存字段上游不返回记 NULL、聚合显示缺失不造数（铁律 5）；不含 key 与内容全文；〔CHG-010〕压缩执行行（kind='compress'：状态/耗时/摘要调用 token 消耗/压缩前后 token 实测值），机器采集（铁律 5）；未测得分项记 NULL、聚合显示缺失不造数；不含 key 与消息内容全文。〔CHG-011〕记忆抽取执行行（kind='memory_extract'：状态/耗时/抽取调用 token 消耗/触发会话），机器采集（铁律 5）；行不含记忆内容全文与 key；失败如实记、不补造。〔CHG-012〕deep-research 回合的 llm/tool 行以 endpoint='research' 加法区分（kind 枚举与行形状零变化），机器采集（铁律 5）；心跳为连接层行为不落遥测。〔CHG-013〕hook 分发失败/超时记服务端 warning 日志（hook 名/事件名，不含消息内容与 key，机器可查）；hooks 不落遥测行（遥测 kind 枚举零变化） |

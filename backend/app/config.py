@@ -68,9 +68,21 @@ class Settings(BaseSettings):
     memory_extract_timeout: float = 30.0  # 抽取调用独立超时护栏（沿 summary_timeout 同值定案）
     # CHG-012/REQ-046（iter-18 T2）deep-research 双护栏——默认值即 T0 取证定死值
     # （plans/iter-18-verify.md §3：真实研究回合实测 3~5 步 / 22~27s，16 步 + 900s
-    # 维持，定夺⑥授权内零调整）；.env 可覆盖，验收用例以小值注入压测
-    max_research_steps: int = 16  # research 步数硬上限（独立于普通回合 10）
-    research_total_timeout: float = 900.0  # research 回合总时长护栏（秒；到顶 reason='time_limit'）
+    # 维持，定夺⑥授权内零调整）；.env 可覆盖，验收用例以小值注入压测。
+    # CHG-018/REQ-055（直派批次）：语义收窄为 standard 档——light/deep 档用下列四参数
+    max_research_steps: int = 16  # research 步数硬上限（standard 档；独立于普通回合 10）
+    research_total_timeout: float = 900.0  # research 总时长护栏（standard 档，到顶 time_limit）
+    # CHG-018/REQ-055（直派批次）深度档位护栏——默认值即 T0 取证定死值
+    # （plans/chg-018-verify.md §6：实测 light 3 步/23.5s、standard 6 步/53s、
+    # deep 4~5 步/54~82s——护栏为兜底非常态路径）；.env 可覆盖
+    research_steps_light: int = 8  # light 档步数硬上限
+    research_timeout_light: float = 300.0  # light 档总时长护栏（秒）
+    research_steps_deep: int = 32  # deep 档步数硬上限
+    research_timeout_deep: float = 900.0  # deep 档总时长护栏（秒）
+    # CHG-018/REQ-046（直派批次）research 回合上游载荷输出上限——T0 发现生产截断隐患：
+    # 不带 max_tokens 时 DeepSeek 默认 4096 tokens，深度档 7000 字报告必然截断
+    # （plans/chg-018-verify.md §3 发现 4）；普通回合不带 max_tokens（零变化）
+    research_max_tokens: int = 8192
     # CHG-012/REQ-045（iter-18 T2）SSE 心跳间隔——T0 本地 nginx 反代实测定档 20s
     # （plans/iter-18-verify.md §2：默认 60s 配置静默流 60.0s 断连、20s 心跳 100s 完整
     # 存活）；非法值 ≤0 由使用方兜底默认 20.0（保守方向，不拒启动）

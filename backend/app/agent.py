@@ -366,6 +366,12 @@ async def run_turn(
             }
             if tool_defs:
                 payload["tools"] = toolsgw.openai_tools_payload(tool_defs)
+            if research is not None:
+                # CHG-018/REQ-046（直派批次）：research 回合载荷带输出上限——不带
+                # max_tokens 时 DeepSeek 默认 4096 tokens，深度档报告必然截断
+                # （T0 发现的生产隐患，plans/chg-018-verify.md §3 发现 4）；
+                # 普通回合不带（载荷零变化）。
+                payload["max_tokens"] = research.max_tokens
 
             call = UpstreamCall(client, base_url, api_key)
             active = call

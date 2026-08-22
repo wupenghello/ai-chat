@@ -606,3 +606,99 @@ class TestProfileToolsEnabled:
                                                     "model": "m1", "api_key": "",
                                                     "tools_enabled": True})
             assert r.json()["tools_enabled"] is True
+
+
+# ---------- CHG-018/REQ-054 read 工具（Tavily /extract 同域端点，直派批次） ----------
+
+def _extract_ok(raw: str = "正文" * 50, url: str = "https://example.com/a",
+                title: str = "来源页") -> httpx.Response:
+    return httpx.Response(200, json={"results": [{"url": url, "title": title,
+                                                  "raw_content": raw}]})
+
+
+def test_read_提取成功_双视角_文本与单来源():
+    """read 主流程：ok → 文本（标题/URL/原文）+ sources 单来源数组（引用卡数据面）。"""
+    with search_bound(lambda _req: _extract_ok("核心正文内容。", url="https://ex.com/p1",
+                                               title="深度好文")):
+        out = asyncio.run(search.tavily_extract("https://ex.com/p1"))
+    assert out.text.startswith("读取「深度好文」原文：\nhttps://ex.com/p1\n")
+    assert "核心正文内容。" in out.text
+    assert out.sources == [{"url": "https://ex.com/p1", "title": "深度好文"}]
+
+
+def test_read_经网关_参数校验_缺url报错():
+    """网关 ②：缺必填参数 → error result（回合不崩体例）。"""
+    from app.tools import _REGISTRY
+    defn = _REGISTRY["read"]
+    execution = asyncio.run(execute_tool(defn, "{}", limit=LIMIT))
+    assert execution.status == "error"
+    assert execution.result == "缺少必填参数：url"
+
+
+def test_read_内部截断_10000字符_带标注():
+    """REQ-054 验收 4：raw_content 超长 → 回填 ≤ READ_CHAR_LIMIT + 截断标注。"""
+    with search_bound(lambda _req: _extract_ok("字" * 15000)):
+        out = asyncio.run(search.tavily_extract("https://example.com/long"))
+    body = out.text.split("\n", 2)[2]
+    assert len(body) == search.READ_CHAR_LIMIT
+    assert body.endswith("[原文超长，已截断]")
+
+
+def test_read_failed_results_空正文_API错误_降级error():
+    """REQ-054 验收 2：failed_results / 空正文 / API ≥400 → ToolError 机器可读
+    （网关转 error result → 模型降级，回合不崩）。"""
+    with search_bound(lambda _req: httpx.Response(
+            200, json={"results": [], "failed_results": [{"url": "u", "error": "x"}]})):
+        with pytest.raises(search.ToolError, match="未能提取该网页内容"):
+            asyncio.run(search.tavily_extract("https://example.com/fail"))
+    with search_bound(lambda _req: httpx.Response(
+            200, json={"results": [{"url": "u", "raw_content": "  "}]})):
+        with pytest.raises(search.ToolError, match="无可提取正文"):
+            asyncio.run(search.tavily_extract("https://example.com/empty"))
+    with search_bound(lambda _req: httpx.Response(429, json={})):
+        with pytest.raises(search.ToolError, match="读取服务返回 429"):
+            asyncio.run(search.tavily_extract("https://example.com/ratelimited"))
+
+
+def test_read_同域出网_extract端点_白名单SSRF判定照旧():
+    """REQ-054 验收 5：出网仍仅 api.tavily.com——/extract 与 /search 同域断言；
+    假端点捕获的请求 host 即白名单域，DNS 解析拒绝用例沿 search 既有面复用。"""
+    seen_holder: list[httpx.Request] = []
+    with search_bound(lambda _req: _extract_ok()) as seen:
+        asyncio.run(search.tavily_extract("https://example.com/any"))
+        seen_holder.extend(seen)
+    req = seen_holder[-1]
+    assert req.url.host == "api.tavily.com" and req.url.path == "/extract"
+    # DNS 解析为内网 → 拒绝（零连接，沿 _assert_public_resolution 既有判定）
+    async def _bad_resolve(_host: str) -> list[str]:
+        return ["10.0.0.5"]
+    with search_bound(lambda _req: _extract_ok(), resolver=_bad_resolve) as seen:
+        with pytest.raises(search.ToolError, match="内网"):
+            asyncio.run(search.tavily_extract("https://example.com/any"))
+        assert seen == []
+
+
+def test_read_key卫生_仅请求头承载():
+    """REQ-054 验收 6：key 仅进 Authorization 头；结果/来源零 key 明文。"""
+    with search_bound(lambda _req: _extract_ok()) as seen:
+        out = asyncio.run(search.tavily_extract("https://example.com/a"))
+    req = seen[-1]
+    assert req.headers["Authorization"] == f"Bearer {SEARCH_KEY}"
+    assert SEARCH_KEY not in out.text
+    assert all(SEARCH_KEY not in (s.get("url", "") + s.get("title", ""))
+               for s in (out.sources or []))
+
+
+def test_read_下发面_research_only过滤():
+    """REQ-054 验收 3（tools_for_user 面）：research=False 无 read（普通回合 tools
+    定义零变化）；research=True 有 read；gate 三与门共用（search 关 → read 同关）。"""
+    from app.tools import tools_for_user
+    names_chat = [d.name for d in tools_for_user(
+        is_admin=False, gates={"search": True, "weather": False}, research=False)]
+    assert "read" not in names_chat and "search" in names_chat
+    names_research = [d.name for d in tools_for_user(
+        is_admin=False, gates={"search": True, "weather": False}, research=True)]
+    assert "read" in names_research
+    names_gate_off = [d.name for d in tools_for_user(
+        is_admin=False, gates={"search": False, "weather": False}, research=True)]
+    assert "read" not in names_gate_off and "search" not in names_gate_off

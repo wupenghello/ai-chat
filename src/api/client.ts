@@ -119,13 +119,19 @@ function errorKindOf(code: string): ApiErrorKind {
  *
  * CHG-012/REQ-046（iter-18 T3）：opts.mode 加法可选字段——缺省不传 = 请求体零变化
  * （现状锚点）；'research' = deep-research 回合（请求体携带 mode 字段）。
+ * CHG-018/REQ-055（直派批次）：opts.depth 加法可选字段——'light'/'deep' 变更深研
+ * 档位（护栏/文案/报告上限按档）；缺省不传 = 后端按 standard（请求体零变化）。
  * resolve 于 turn.end（done/max_steps/aborted/time_limit）；流内 error 事件与 HTTP 层错误
  * 抛 ApiError（已生成文本与工具步骤由调用方保留——store 侧 aiMsg 已累积的 blocks 不回滚）。
  */
 export async function runChatTurn(
   sessionId: string,
   message: string,
-  opts: { systemPrompt?: string; mode?: 'research' },
+  opts: {
+    systemPrompt?: string
+    mode?: 'research'
+    depth?: 'light' | 'standard' | 'deep'
+  },
   handlers: TurnHandlers,
   signal?: AbortSignal,
 ): Promise<TurnEndReason> {
@@ -139,6 +145,7 @@ export async function runChatTurn(
         message,
         ...(opts.systemPrompt ? { system_prompt: opts.systemPrompt } : {}),
         ...(opts.mode ? { mode: opts.mode } : {}),
+        ...(opts.depth ? { depth: opts.depth } : {}),
       }),
       credentials: 'same-origin',
       signal,

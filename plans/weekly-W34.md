@@ -347,3 +347,24 @@
 - **DEF-045 消息块间距**：code-block 12→8px、md hr 12→8px、degrade-note 4→8px——消息气泡内块级间距统一 8px 基准（工具卡/来源卡/段落原 8px 不动，标题层级间距保留）。
 - **DEF-046 整页拖动晃动**：html/body overflow hidden + overscroll-behavior none（应用壳自管滚动）；main/sm-pane overscroll-behavior contain（滚动链不穿透文档根）。
 - **验证（机器口径）**：vitest 428→435（+7 纯新增，既有用例零删除——改密 8 例随按需展开交互改造挂载方式、成功例断言随收起行为改写，功能断言零削弱）；后端 pytest 382 复跑全过（零改动）；guard:style 过；生产构建过。走查 scripts/e2e-style-0823.mjs 真实 Chrome 19/19 PASS（auto 档系统切换实时生效/显式档不覆盖、账号三段布局与展开聚焦、Esc 链、改密输入框 13px/32px、分区标题 borderTopWidth=0px、code-block margin 8px、html/body overflow hidden、注销端到端自清理走查账号）。
+
+## CHG-018 deep-research 深度升级（CEO 直派插队批次，2026-08-23）
+
+### 触发与诊断（T0 取证坐实）
+
+- **触发**：CEO 线上使用 deep-research 后反馈「从逻辑上来看没什么问题，但是我看也没什么深度啊，感觉仅仅只是在解决需求的基础上做到的最小程度的深度研究」——直派三定夺（计划会话）：① 完整升级（prompt 重写 + read 工具 + 护栏再校准）② 做深度档位（轻量/标准/深度，成本口径）③ 插队直派（沿 CHG-008/017 先例，与在途批次并行登记）。
+- **诊断（plans/chg-018-verify.md §2，真 Tavily 复测）**：iter-18 R2 prompt 的完成判据「每个子问题至少检索一次 + 覆盖后即报告」把及格线写成天花板——旧 prompt 真数据基线 5 步/7 搜/2672 字，结构四段全缺（无置信度/矛盾/遗留）；工具面只有 search（5 条 snippet）模型从未读过原文；护栏 16 步按常态 3~5 步校准从未成为约束。**规格使然，非实现走样**。
+- **随测三项闭账**（iter-18 T0 §1 声明、真 key 就绪后兑现，verify §8）：① 引用对应——[n] 跨轮歧义实证，升级为 [m-n] 双坐标（R2 三档 100% 采用零裸 [n]）② 字数——真实数据下三档达标（3370/4607/1596 对上限 3500/7000/1600）③ 检索质量影响——deep 档报告含逐条多源核验记录与 84~108 处引用坐标。
+
+### 交付内容（T0 → T2 后端 → T3 前端，当轮闭环）
+
+- **方法论三档重写（REQ-046 正式改写）**：单遍覆盖 → 轮次推进（standard 两轮：广度+深度交叉验证；deep 三轮：广度+深读 read 原文+验证；light 快速核实）；完成判据改证据质量（关键结论 ≥2 独立来源）；报告结构四段（结论含置信度/论证/矛盾分歧/遗留问题）；引用坐标 [m-n] 全档统一；字数上限按档 1600/3500/7000。R1→R2 修订三项留档（verify §3）。
+- **read 工具（REQ-054 新增，第三个生产出网工具）**：Tavily /extract 同域白名单零扩大 + DNS 核验照旧；单 url 入参；内部截断 10000 字符防上下文溢出；gate 沿三与门；research_only 仅 research 回合下发（普通回合 tools 定义零变化——定夺④）。
+- **深度档位（REQ-055 新增）**：turn 端点 depth 加法可选字段（缺省 standard，chat 时忽略）；护栏按档 light 8 步/300s·standard 16 步/900s（现值零变化）·deep 32 步/900s；**research 回合载荷 max_tokens=8192**（T0 发现生产隐患：不带时 DeepSeek 默认 4096 tokens，深度报告必然截断——verify §3 发现 4）；前端 ComposerBox 开启态三钮档位小选段（零新增令牌，定夺⑦零设计基线）+ hint 随档（M44/M45 新文案、M40 存量零变化）+ 发送即一并复位。
+- **成本实测留档（CEO 定夺②量化依据，verify §7）**：tokens light ~24k / standard ~89k~104k / deep ~93k~146k 每回合；Tavily credits light ~4 / standard ~9~10 / deep ~9~14（免费 1000/月 ≈ 标准档 100 次）。
+
+### 验证（机器口径）
+
+- 后端 pytest **382→397**（+15：三档逐字锚点/档位矩阵/max_tokens 载荷/depth 交互/read 七例）+ ruff clean；受控改写映射 test_research 5 处登记（功能性删除为零）；前端 vitest **435→441**（+6：档位 UI 4 + client 载荷 2）+ vue-tsc + guard:style + 生产构建全过；composer emit 断言受控改写 1 处登记。
+- **真实端到端 PASS（verify §11）**：本地 uvicorn + 真 DeepSeek + 真 Tavily，depth=deep 硬题（三框架版本核对）——11 搜 + **5 读原文**（sglang GitHub/TRT-LLM 与 vLLM release notes 等）、max_steps=32 生效、[m-n] 引用 101 零裸 [n]、置信度/矛盾/遗留三段齐、69.4s/5494 事件流。观察项：报告 8730 字超 deep 上限 25%（版本核对型硬题），字数为 prompt 约束非硬截断（沿 iter-18 口径），留线上观察。
+- 台账：changes.md CHG-018 + spec REQ-046 改写/REQ-054/055 新增（基线 req-baseline-v14）+ rtm 三行收口 + 全局回归基线 CHG-018 面 + plans/chg-018-verify.md（T0/T2/T3/§11 全留档）。

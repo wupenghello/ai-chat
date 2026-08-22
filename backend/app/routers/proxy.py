@@ -51,11 +51,15 @@ class TurnRequest(BaseModel):
     服务端组装需随回合上传——design-iter-13 基线后补注，随 verify 文档登记）。
     CHG-012/REQ-046（iter-18 T2）：mode 加法可选字段——缺省 'chat' 行为零变化；
     'research' = deep-research 回合（受理即过三与门）；非法值 Literal 校验 422。
+    CHG-018/REQ-055（直派批次）：depth 加法可选字段——light/standard/deep 三档，
+    缺省 "standard"（存量前端不传零影响）；mode='chat' 时忽略（宽容口径，
+    普通回合零影响）；非法值 Literal 校验 422。
     """
     session_id: str = Field(min_length=1, max_length=64)
     message: str = Field(min_length=1, max_length=32768)
     system_prompt: str | None = Field(default=None, max_length=8000)
     mode: Literal["chat", "research"] = "chat"
+    depth: Literal["light", "standard", "deep"] = "standard"
 
 
 def _tool_gates(
@@ -258,11 +262,13 @@ async def chat_turn(
     # CHG-012/REQ-046（iter-18 T2）research 指令注入（六层注入序，REQ-036 改写承载）：
     # system[1] 动态尾区之后、记忆消息之前——后于记忆注入执行同位插入即落序
     # （人设 → 动态尾区 → research 指令 → 记忆 → 摘要 → 历史）；普通回合不含（零变化）。
+    # CHG-018（直派批次）：文案与护栏按 depth 三档（缺省 standard，mode='chat' 时
+    # depth 不参与任何判定——普通回合零影响）。
     research_profile = None
     if body.mode == "research":
-        research_profile = research.research_profile(settings)
+        research_profile = research.research_profile(settings, body.depth)
         messages = research.inject_instruction(
-            messages, has_persona=bool(settings.product_persona))
+            messages, has_persona=bool(settings.product_persona), depth=body.depth)
 
     # 工具可用性（design-iter-14 §6.2/§6.3）：自填档案「支持工具」开关（定夺①，默认开；
     # 统一 key 恒开）× admin 联网搜索总开关（KV 落库，回合受理时实时读——PUT 后下一回合
@@ -271,12 +277,15 @@ async def chat_turn(
     # CHG-012：tools_allowed/search_gate 判定已上移至三与门（_tool_gates 一处读两用）。
     # CHG-016/REQ-053：weather 门 = key∧Host 均配置（定夺②，无 admin 开关——纯
     # settings 判定不读 conn，独立于 _tool_gates；任一缺失 → weather 不下发）。
+    # CHG-018/REQ-054：read（research_only）仅 research 回合进下发——普通回合
+    # tools 定义零变化（定夺④）。
     tool_defs = tools_for_user(
         is_admin=user.is_admin,
         gates={
             "search": search_gate,
             "weather": bool(settings.weather_key and settings.weather_host),
         },
+        research=body.mode == "research",
     ) if tools_allowed else []
 
     def record_usage(calls: int, tokens: int) -> None:

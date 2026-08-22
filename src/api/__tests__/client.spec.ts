@@ -242,6 +242,25 @@ describe('runChatTurn（CHG-007 REQ-030/033：回合端点 + SSE v2 九事件）
     })
   })
 
+  it('depth=deep：请求体携带 depth 字段（CHG-018/REQ-055 验收 1）', async () => {
+    const spy = vi.fn().mockResolvedValue(new Response(sseBody([{ type: 'turn.end', reason: 'done' }]), { status: 200 }))
+    vi.stubGlobal('fetch', spy)
+    await runChatTurn('s1', '开放问题', { mode: 'research', depth: 'deep' }, { onEvent: () => {} })
+    expect(JSON.parse(spy.mock.calls[0][1].body)).toEqual({
+      session_id: 's1',
+      message: '开放问题',
+      mode: 'research',
+      depth: 'deep',
+    })
+  })
+
+  it('depth 缺省：请求体不含 depth 字段 = 后端按 standard（CHG-018/REQ-055 验收 3 存量兼容）', async () => {
+    const spy = vi.fn().mockResolvedValue(new Response(sseBody([{ type: 'turn.end', reason: 'done' }]), { status: 200 }))
+    vi.stubGlobal('fetch', spy)
+    await runChatTurn('s1', 'hi', {}, { onEvent: () => {} })
+    expect(JSON.parse(spy.mock.calls[0][1].body)).toEqual({ session_id: 's1', message: 'hi' })
+  })
+
   it('mode 缺省：请求体零变化（无 mode 字段——现状锚点，iter-13#42 复跑）', async () => {
     const spy = vi.fn().mockResolvedValue(new Response(sseBody([{ type: 'turn.end', reason: 'done' }]), { status: 200 }))
     vi.stubGlobal('fetch', spy)

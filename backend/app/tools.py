@@ -53,6 +53,9 @@ class ToolDef:
     # 运行时能力门名（design-iter-14 §6.2，A2 起）：非 None = 该工具额外受运行时开关过滤
     # （如 search 受 admin 开关 ∧ key 已配置；gates 缺省视为关——A1 行为不变）
     gate: str | None = None
+    # CHG-018/REQ-054（直派批次）：仅 deep-research 回合下发（read 工具）——普通回合
+    # tools 定义零变化（「普通回合逐字节等价」铁律）；tools_for_user 以 research 参数过滤
+    research_only: bool = False
 
 
 @dataclass
@@ -80,19 +83,23 @@ def register_tool(defn: ToolDef) -> None:
 
 
 def tools_for_user(
-    *, is_admin: bool, gates: dict[str, bool] | None = None
+    *, is_admin: bool, gates: dict[str, bool] | None = None, research: bool = False
 ) -> list[ToolDef]:
     """按请求者过滤注册表（定夺④：演示工具仅 admin）。
 
     gates = 运行时能力门状态（design-iter-14 §6.2，回合受理时实时读后传入）：
     带 gate 声明的工具仅在 gates[gate] 为真时进入下发列表——admin 关闭或 key 缺失时
     search 不在注册表可见面（上游 tools 定义不含 search，模型不知其存在）。缺省 = 全关。
+    research（CHG-018/REQ-054）：False = 普通回合，research_only 工具（read）不进
+    下发列表——普通回合 tools 定义零变化；True = research 回合，read 可见。
     """
     out: list[ToolDef] = []
     for d in _REGISTRY.values():
         if d.admin_only and not is_admin:
             continue
         if d.gate is not None and not (gates or {}).get(d.gate):
+            continue
+        if d.research_only and not research:
             continue
         out.append(d)
     return out

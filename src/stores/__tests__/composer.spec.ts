@@ -91,7 +91,8 @@ describe('ComposerBox 深度研究模式开关（REQ-047，design-iter-18 §2）
     await ta.setValue('开放问题')
     ta.element.dispatchEvent(keyEvent('Enter'))
     await wrapper.vm.$nextTick()
-    expect(wrapper.emitted('send')![0]).toEqual(['开放问题', 'research'])
+    // CHG-018/REQ-055 受控改写映射：原两参 ['开放问题', 'research'] → 三参（+depth 缺省档）
+    expect(wrapper.emitted('send')![0]).toEqual(['开放问题', 'research', 'standard'])
     // 发送即复位（§2.3 定夺③）
     expect(wrapper.find('.tsw').attributes('aria-checked')).toBe('false')
     expect(wrapper.find('.hint-right').text()).toBe('Enter 发送 · Shift+Enter 换行')
@@ -115,5 +116,67 @@ describe('ComposerBox 深度研究模式开关（REQ-047，design-iter-18 §2）
     expect(wrapper.find('.tsw').attributes('disabled')).toBeDefined()
     expect(wrapper.find('.mlabel').classes()).toContain('dis')
     expect(wrapper.find('.hint-right').text()).toBe('深度研究暂不可用：需联网搜索可用')
+  })
+})
+
+describe('ComposerBox 深度研究档位（CHG-018/REQ-055，定夺⑦ 零设计基线）', () => {
+  it('开启态渲染档位小选段：三钮（轻量/标准/深度），默认标准 active', async () => {
+    const wrapper = mount(ComposerBox, { props: { researchAvailable: true } })
+    expect(wrapper.find('.depth-seg').exists()).toBe(false) // 关闭态不渲染
+    await wrapper.find('.tsw').trigger('click')
+    const seg = wrapper.find('.depth-seg')
+    expect(seg.exists()).toBe(true)
+    expect(seg.attributes('role')).toBe('group')
+    const btns = wrapper.findAll('.depth-btn')
+    expect(btns.map((b) => b.text())).toEqual(['轻量', '标准', '深度'])
+    expect(btns[1].classes()).toContain('active')
+    expect(btns[1].attributes('aria-pressed')).toBe('true')
+    expect(btns[0].attributes('aria-pressed')).toBe('false')
+  })
+
+  it('hint 随档切换逐字：轻量 M44 / 深度 M45 / 标准 M40（存量文案零变化）', async () => {
+    const wrapper = mount(ComposerBox, { props: { researchAvailable: true } })
+    await wrapper.find('.tsw').trigger('click')
+    const btns = wrapper.findAll('.depth-btn')
+    await btns[0].trigger('click')
+    expect(wrapper.find('.hint-right').text()).toBe(
+      '已开启深度研究（轻量）：快速核实、简要带引用报告，约半分钟',
+    )
+    await btns[2].trigger('click')
+    expect(wrapper.find('.hint-right').text()).toBe(
+      '已开启深度研究（深度）：三轮研究将读原文并交叉验证，报告更深，耗时与用量更高',
+    )
+    await btns[1].trigger('click')
+    expect(wrapper.find('.hint-right').text()).toBe(
+      '已开启深度研究：发送后 AI 将自动拆解问题、多轮联网搜索并给出带引用的报告，耗时较长',
+    )
+  })
+
+  it('深度档发送：emit send 携带 depth=deep + 档位随开关一并复位为标准（REQ-055 验收 1）', async () => {
+    const wrapper = mount(ComposerBox, { props: { researchAvailable: true } })
+    await wrapper.find('.tsw').trigger('click')
+    const btns = wrapper.findAll('.depth-btn')
+    await btns[2].trigger('click') // 深度档
+    const ta = wrapper.find('textarea')
+    await ta.setValue('开放问题')
+    ta.element.dispatchEvent(keyEvent('Enter'))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('send')![0]).toEqual(['开放问题', 'research', 'deep'])
+    // 发送即复位：开关关 + 档位回标准（再开启时选中态回归标准）
+    await wrapper.find('.tsw').trigger('click')
+    expect(wrapper.findAll('.depth-btn')[1].classes()).toContain('active')
+  })
+
+  it('可用性翻转：档位随开关强制复位（researchAvailable 翻 false 再翻 true → 标准档）', async () => {
+    const wrapper = mount(ComposerBox, { props: { researchAvailable: true } })
+    await wrapper.find('.tsw').trigger('click')
+    await wrapper.findAll('.depth-btn')[0].trigger('click') // 轻量
+    await wrapper.setProps({ researchAvailable: false })
+    await wrapper.setProps({ researchAvailable: true })
+    await wrapper.find('.tsw').trigger('click')
+    expect(wrapper.findAll('.depth-btn')[1].classes()).toContain('active')
+    expect(wrapper.find('.hint-right').text()).toBe(
+      '已开启深度研究：发送后 AI 将自动拆解问题、多轮联网搜索并给出带引用的报告，耗时较长',
+    )
   })
 })

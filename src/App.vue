@@ -78,11 +78,16 @@ function onSettingsClose() {
   void quota.refresh()
 }
 
-async function send(text: string, mode?: 'research') {
+async function send(
+  text: string,
+  mode?: 'research',
+  depth?: 'light' | 'standard' | 'deep',
+) {
   // v3 双模式（design-iter-7 §3.1）：「未配置密钥即发送」分支消亡——
   // 无档案 = 统一 key 模式零配置可用（REQ-023），自填必填校验在档案保存时拦截
   // CHG-012/REQ-047：mode 加法透传（'research' = 深度研究回合；缺省 undefined = 普通回合）
-  await sessions.send(text, mode)
+  // CHG-018/REQ-055：depth 加法透传（深研档位；缺省 undefined = 后端 standard）
+  await sessions.send(text, mode, depth)
 }
 
 /** REQ-013（走查 36，design-iter-11 §3.4）：导出入口迁至列表项「···」菜单，按会话导出；空会话 toast */

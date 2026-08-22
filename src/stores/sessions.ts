@@ -161,8 +161,10 @@ export const useSessionsStore = defineStore('sessions', {
      *  v3 双模式（REQ-023，iter-7 T2）——全部请求经后端代理（后端按生效档案/统一 key 路由），
      *  登录即可发送；未登录（实际不可达：路由守卫保证主界面已登录）返回 false。
      *  CHG-012/REQ-047（iter-18 T3）：mode 加法可选参数（回合级属性）——'research' = 深度研究
-     *  回合（开关开启态发送）；缺省 undefined = 普通回合（现状零变化）。 */
-    async send(text: string, mode?: 'research'): Promise<boolean> {
+     *  回合（开关开启态发送）；缺省 undefined = 普通回合（现状零变化）。
+     *  CHG-018/REQ-055（直派批次）：depth 加法可选参数——深研档位（light/standard/deep），
+     *  缺省 undefined = 后端按 standard（请求体零变化）。 */
+    async send(text: string, mode?: 'research', depth?: 'light' | 'standard' | 'deep'): Promise<boolean> {
       if (!useAuthStore().user) return false
 
       let session = this.active
@@ -182,7 +184,7 @@ export const useSessionsStore = defineStore('sessions', {
 
       // 关键：从响应式数组取回代理对象，后续变更才能触发视图更新（Bug#1 根因）
       const aiMsgReactive = session.messages[session.messages.length - 1]
-      await this.generate(session, aiMsgReactive, mode)
+      await this.generate(session, aiMsgReactive, mode, depth)
       return true
     },
 
@@ -254,7 +256,12 @@ export const useSessionsStore = defineStore('sessions', {
       void this.persist(session)
     },
 
-    async generate(session: Session, aiMsg: Message, mode?: 'research') {
+    async generate(
+      session: Session,
+      aiMsg: Message,
+      mode?: 'research',
+      depth?: 'light' | 'standard' | 'deep',
+    ) {
       const settings = useSettingsStore()
       const controller = new AbortController()
       const epoch = (this.generation[session.id] = (this.generation[session.id] ?? 0) + 1)
@@ -280,7 +287,7 @@ export const useSessionsStore = defineStore('sessions', {
         const reason = await runChatTurn(
           session.id,
           userText,
-          { systemPrompt: settings.systemPrompt || undefined, ...(mode ? { mode } : {}) },
+          { systemPrompt: settings.systemPrompt || undefined, ...(mode ? { mode } : {}), ...(depth ? { depth } : {}) },
           {
             onEvent: (ev) => {
               // TurnEvent 含宽型未知成员：字面量判别后分支内显式断言字段
