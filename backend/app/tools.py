@@ -5,7 +5,9 @@
   ① 注册检查 ② 参数校验（JSON Schema 精简子集）③ 出网白名单 + SSRF 防护
   ④ 单工具超时 ⑤ 结果大小截断 ⑥ 注入防护包裹（回填模型上下文前）
 - 安全日志四字段：工具名 / 状态 / 耗时 / 是否截断（不含结果全文与密钥，REQ-025 可观测条款）
-- 演示工具 echo / demo_weather：无出网、仅 admin 可见（design-iter-13 定夺④，2026-08-17）
+- 演示工具 echo：无出网、仅 admin 可见（design-iter-13 定夺④，2026-08-17）。demo_weather
+  已随 CHG-016/REQ-053 真实天气工具落地移除（2026-08-22 定夺①：admin 侧两天气工具并存
+  混淆模型选择，A1 循环验证使命已由真实工具覆盖；用例退役映射登记 plans/iter-22-verify.md）
 """
 
 from __future__ import annotations
@@ -31,16 +33,8 @@ _TOOL_RESULT_OPEN = "<tool_result>"
 _TOOL_RESULT_CLOSE = "</tool_result>"
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
-# 演示工具口径（CHG-007 4.6）：单工具超时 2s；demo_weather 带模拟延迟
+# 演示工具口径（CHG-007 4.6）：单工具超时 2s（echo；demo_weather 已随 CHG-016/REQ-053 移除）
 DEMO_TOOL_TIMEOUT = 2.0
-
-_WEATHER: dict[str, str] = {
-    "北京": "北京：晴，最高 32°C",
-    "上海": "上海：多云，最高 30°C",
-    "广州": "广州：阵雨，最高 29°C",
-    "深圳": "深圳：晴转多云，最高 31°C",
-    "杭州": "杭州：晴，最高 33°C",
-}
 
 
 class ToolError(Exception):
@@ -238,15 +232,10 @@ def _log(name: str, status: str, duration_ms: int, truncated: bool) -> None:
     )
 
 
-# ---------- 内置演示工具（CHG-007 4.6；无出网、仅 admin） ----------
+# ---------- 内置演示工具（CHG-007 4.6；无出网、仅 admin。demo_weather 已移除，见模块头） ----------
 
 async def _echo(args: dict[str, Any]) -> str:
     return args["text"]
-
-
-async def _demo_weather(args: dict[str, Any]) -> str:
-    await asyncio.sleep(0.2)  # 模拟延迟（200~500ms 下限取稳态，验收不抖动）
-    return _WEATHER[args["city"]]
 
 
 register_tool(ToolDef(
@@ -258,18 +247,6 @@ register_tool(ToolDef(
         "required": ["text"],
     },
     handler=_echo,
-    timeout=DEMO_TOOL_TIMEOUT,
-    admin_only=True,
-))
-register_tool(ToolDef(
-    name="demo_weather",
-    description="查询指定城市天气（内置演示工具，固定假数据：验证工具步骤渲染）",
-    parameters={
-        "type": "object",
-        "properties": {"city": {"type": "string", "enum": sorted(_WEATHER)}},
-        "required": ["city"],
-    },
-    handler=_demo_weather,
     timeout=DEMO_TOOL_TIMEOUT,
     admin_only=True,
 ))

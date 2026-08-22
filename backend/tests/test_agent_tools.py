@@ -1,4 +1,9 @@
-"""REQ-031（iter-13 T1）：工具网关六项校验链 + 演示工具 + 注入防护 + 出网治理单元。"""
+"""REQ-031（iter-13 T1）：工具网关六项校验链 + 演示工具 + 注入防护 + 出网治理单元。
+
+demo_weather 用例随 CHG-016/REQ-053（2026-08-22 定夺①）退役：枚举/执行两例移除
+（枚举校验改内联合成工具承载——网关 ② 能力与具体工具无关），注册表与 payload
+断言改为仅 echo；退役映射逐条登记 plans/iter-22-verify.md T2 段。
+"""
 
 import asyncio
 
@@ -16,11 +21,20 @@ def test_演示工具_echo_回显入参():
     assert out.truncated is False
 
 
-def test_演示工具_demo_weather_枚举城市():
-    defn = gw._REGISTRY["demo_weather"]
-    out = asyncio.run(execute_tool(defn, '{"city": "北京"}', limit=LIMIT))
-    assert out.status == "ok"
-    assert out.result == "北京：晴，最高 32°C"
+def test_参数校验_枚举外取值():
+    # 原 demo_weather 枚举参数承载（CHG-016 定夺①移除）——改内联合成工具承载
+    async def noop(_args):
+        return "ok"
+
+    defn = ToolDef(name="t_enum", description="",
+                   parameters={"type": "object",
+                               "properties": {"city": {"type": "string",
+                                                       "enum": ["北京", "上海"]}},
+                               "required": ["city"]},
+                   handler=noop, timeout=1.0)
+    out = asyncio.run(execute_tool(defn, '{"city": "南京"}', limit=LIMIT))
+    assert out.status == "error"
+    assert "取值不在允许范围" in out.result
 
 
 def test_参数校验_缺必填():
@@ -33,12 +47,6 @@ def test_参数校验_类型错误():
     out = asyncio.run(execute_tool(gw._REGISTRY["echo"], '{"text": 123}', limit=LIMIT))
     assert out.status == "error"
     assert "类型" in out.result
-
-
-def test_参数校验_枚举外取值():
-    out = asyncio.run(execute_tool(gw._REGISTRY["demo_weather"], '{"city": "南京"}', limit=LIMIT))
-    assert out.status == "error"
-    assert "取值不在允许范围" in out.result
 
 
 def test_参数校验_超长():
@@ -116,13 +124,15 @@ def test_注入防护_控制字符转义与字面包裹():
 
 
 def test_可见性过滤_演示工具仅_admin():
-    assert [d.name for d in gw.tools_for_user(is_admin=True)] == ["echo", "demo_weather"]
+    # demo_weather 已移除（CHG-016 定夺①）——admin 视图仅剩 echo；weather/search 为
+    # gate 工具，gates 缺省（全关）视图不含（weather 门控面见 test_weather.py）
+    assert [d.name for d in gw.tools_for_user(is_admin=True)] == ["echo"]
     assert gw.tools_for_user(is_admin=False) == []
 
 
 def test_注册表转_openai_tools_payload():
     payload = gw.openai_tools_payload(gw.tools_for_user(is_admin=True))
-    assert [t["function"]["name"] for t in payload] == ["echo", "demo_weather"]
+    assert [t["function"]["name"] for t in payload] == ["echo"]
     assert payload[0]["type"] == "function"
     assert payload[0]["function"]["parameters"]["required"] == ["text"]
 

@@ -291,3 +291,12 @@
 
 - **首发部署发现**：服务器（Ubuntu 24.04，47.79.228.253）`cp .env.example .env` 原样部署，backend 启动崩溃（Restarting）——三单价变量留空传 `float | None` 字段，pydantic float 解析 ValidationError。`.env.example` 注释承诺「留空 = 未配置」与实际行为相悖，文档化路径必现。
 - **当轮修复**：config.py `field_validator(mode="before")` 空串→None（三单价字段）+ tests/test_config.py 2 用例（pytest 361→363）+ defects.md DEF-040 登记；服务器 pull 重建后 backend healthy 实证。
+
+## iter-22 真实天气工具（CHG-016 / REQ-053，T0+T2 全交付 2026-08-22）
+
+- **立项与基线**：CEO 上线后问题清单第一项（demo_weather 假数据）→ CHG-016 起草呈报（定夺①~⑤）→ CEO 补发和风凭据（Host + Key）当日复验（now/3d/坐标 200；GeoAPI 404 未启用 → 增定夺⑥）→ CEO「全部按推荐」批准，基线 req-baseline-v13（70f5392 + tag 已推 GitHub）；iter-22 计划同日批准（Σ4 = S1+M2+余量 1，T0→T2 严格串行，caac620）。
+- **T0 取证**：GeoAPI 复验仍 404 → 定夺⑥回退径行（内置城市表 + 坐标兜底）；坐标样例 6 城验证（含桂林/丽江/三亚小地名）+ fxLink 提取法 + 逐字文案定稿（工具描述/结果模板/四类 error）+ 额度口径（响应无 X-RateLimit 头，控制台读数 CEO 侧待补）；留档 plans/iter-22-verify.md T0 段。
+- **T2 后端**：weather.py（148 城坐标表——校验脚本 148/148 零失败 + 坐标正则兜底 + 白名单动态化新模式〔配置 Host 单元组〕+ T0 模板逐字组装）+ demo_weather 移除（echo 保留，定夺①）+ config +2 字段 + proxy gates 加 weather 键 + main lifespan 绑定；城市表 provenance 脚本 scripts/gen_weather_cities.py 入库。
+- **T2 测试与走查**：pytest 363→382（19 test_weather 纯新增 + demo_weather 退役映射 4 文件 8 处逐条登记）+ ruff clean + vitest 423 复跑背书；走查 walkthrough-22 **9 PASS / 0 FAIL**（真 Chrome + 真 DeepSeek + 真和风：北京北极星真实数据 27°C 多云 / 丽江三日逐日 / 表外漠河降级 / 查无亚特兰蒂斯回合不崩模型如实直答 / 降级后服务健康；截图 5 帧）。
+- **插曲（零 DEF）**：和风凭据误写本地 .env 被 pre-commit 全量测试门禁拦截（Settings extra_forbidden，iter-18 同型第三次）——撤出改进程环境注入，顺序纪律登记 verify T2 实现级决策 4；走查脚本自身 3 处夹具 bug（选择器/等待逻辑）当场修复，测试卫生非产品缺陷。
+- **台账**：verify T0/T2 全段 + 本周报节 + RTM REQ-053 行与全局回归基线天气面行同批收口；缺陷账零新 DEF。下一步 QA 审计 → Code Review → G4 复盘；生产部署（服务器 .env 两变量 + 重建 + 线上冒烟）待 CEO 批准后执行（CHG-016 后续动作面）。

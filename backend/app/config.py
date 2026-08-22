@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     # （AI_CHAT_SEARCH_KEY，与统一 key 三变量同法）；空 = 未配置 → search 工具不注册
     # （admin 开关状态可存，key 与开关分离，design §6.1）；不入 git/日志/响应体
     search_key: str = ""
+    # CHG-016/REQ-053（iter-22 T2）：和风天气 key 与专属 Host——backend/.env 注入
+    # （AI_CHAT_WEATHER_KEY / AI_CHAT_WEATHER_HOST，与 search_key 同法）；任一为空 =
+    # 未配置 → weather 工具不注册（key∧Host 均配置即启用，CHG-016 定夺②——不新增
+    # admin 开关）；不入 git/日志/响应体。Host 为账户专属 Host（和风专属 Host 制度，
+    # 无公共域可写死——出网白名单取自本配置，REQ-031 ③ 配置注入域新模式）
+    weather_key: str = ""
+    weather_host: str = ""
     # CHG-009/REQ-036（iter-15 T2）：产品人设 = system[0] 静态前缀内容物，跨全部用户全部请求
     # 字节恒定（T0 中性默认稿 CEO 审签定稿，全文留档 plans/iter-15-verify.md T0 §4）；
     # 空 = 回退基线 v5 单 system 形态（回归锚点）。多行值在 .env 以双引号包裹

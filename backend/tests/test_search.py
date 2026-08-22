@@ -432,11 +432,11 @@ def test_开关矩阵_admin关_档案开_无search_运行时生效(tmp_path: Pat
         _put_session(c, "s1", [])
         _events(c, "s1", "q1")
         assert _tools_names(json.loads(seen[-1].content.decode())) == \
-            ["echo", "demo_weather", "search"]  # 档案开（tools_enabled 默认 1）
+            ["echo", "search"]  # 档案开（tools_enabled 默认 1）；demo_weather 已移除（CHG-016）
         assert c.put("/api/admin/settings", json={"search_enabled": False}).status_code == 200
         _events(c, "s1", "q2")
         assert _tools_names(json.loads(seen[-1].content.decode())) == \
-            ["echo", "demo_weather"]  # admin 关 → 无 search（模型不知其存在）
+            ["echo"]  # admin 关 → 无 search（模型不知其存在）
 
 
 def test_开关矩阵_admin开_档案关_无tools(tmp_path: Path):
@@ -494,7 +494,7 @@ def test_开关矩阵_key缺失_开关开_不注册(tmp_path: Path):
         _put_session(c, "s1", [])
         _events(c, "s1", "q")
         payload = json.loads(seen[-1].content.decode())
-        assert _tools_names(payload) == ["echo", "demo_weather"]  # 无 search
+        assert _tools_names(payload) == ["echo"]  # 无 search（demo_weather 已移除，CHG-016）
         body = c.get("/api/admin/overview").json()
         assert body["search_enabled"] is True  # 开关状态仍默认开（可存）
         assert body["search_key_configured"] is False  # 只报有无

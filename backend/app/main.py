@@ -14,6 +14,7 @@ from fastapi import FastAPI
 
 from app import memory as memorysvc
 from app import search as searchsvc  # noqa: F401 —— import 即静态注册 search 工具（REQ-035）
+from app import weather as weathersvc  # noqa: F401 —— import 即静态注册 weather 工具（REQ-053）
 from app.config import Settings
 from app.db import connect, db_version, init_db
 from app.routers import admin, auth, memory, profiles, proxy, sessions
@@ -49,6 +50,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # 的下发门控（admin 开关 ∧ key）在回合受理处按 settings 判定，此处只管客户端与 key
         if settings.search_key:
             searchsvc.bind(app.state.http, settings.search_key)
+        # 真实天气运行时绑定（REQ-053 / CHG-016 定夺②）：key 与 Host 均配置才绑定——
+        # weather 工具下发门控在回合受理处按 settings 判定，此处只管客户端与凭据
+        if settings.weather_key and settings.weather_host:
+            weathersvc.bind(app.state.http, settings.weather_key, settings.weather_host)
         # CHG-011/REQ-042（iter-17 T2）记忆抽取常驻扫描任务——七期路线首个常驻后台任务：
         # 静默窗口扫描（轮数 ≥ N + 静默 ≥ X 分钟 + 有未覆盖增量）→ 抽取执行；
         # memory_jobs 持久化为重启恢复的唯一权威（pending 行进程重启不丢、启动后继续执行）。
@@ -65,6 +70,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             except asyncio.CancelledError:
                 pass
             searchsvc.unbind()
+            weathersvc.unbind()
             await app.state.http.aclose()
 
     app = FastAPI(title="ai-chat backend", version="1.0.0", lifespan=lifespan)

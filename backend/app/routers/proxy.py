@@ -269,9 +269,14 @@ async def chat_turn(
     # 生效）× key 已配置（缺失时开关状态可存但 search 不注册，§6.1）。
     # admin 关闭或 key 缺失 → search 不进下发 → 上游 tools 定义不含 search（模型不知其存在）。
     # CHG-012：tools_allowed/search_gate 判定已上移至三与门（_tool_gates 一处读两用）。
+    # CHG-016/REQ-053：weather 门 = key∧Host 均配置（定夺②，无 admin 开关——纯
+    # settings 判定不读 conn，独立于 _tool_gates；任一缺失 → weather 不下发）。
     tool_defs = tools_for_user(
         is_admin=user.is_admin,
-        gates={"search": search_gate},
+        gates={
+            "search": search_gate,
+            "weather": bool(settings.weather_key and settings.weather_host),
+        },
     ) if tools_allowed else []
 
     def record_usage(calls: int, tokens: int) -> None:

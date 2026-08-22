@@ -122,8 +122,9 @@ def tmp(tmp_path):
 def test_两步工具回合_事件序逐帧(tmp):
     def handler(_req, n):
         if n == 1:
+            # 原 demo_weather 承载（CHG-016 定夺①退役）→ echo 承载，事件序断言面不变
             return _sse(tool_call_then_done(
-                "我先查一下", "demo_weather", '{"city":"北京"}', 1200))
+                "我先查一下", "echo", '{"text":"天气往返"}', 1200))
         return _sse(text_then_done("北京：晴。", 900))
 
     with turn_app(tmp, handler) as (c, seen):
@@ -143,11 +144,11 @@ def test_两步工具回合_事件序逐帧(tmp):
         assert evs[1] == {"type": "turn.step", "step": 1, "max_steps": 10}
         assert evs[2] == {"type": "text.delta", "text": "我先查一下"}
         assert evs[3] == {"type": "tool.call", "tool_call_id": "c_1",
-                          "name": "demo_weather", "arguments": '{"city":"北京"}'}
+                          "name": "echo", "arguments": '{"text":"天气往返"}'}
         assert evs[4]["type"] == "tool.result"
         assert evs[4]["tool_call_id"] == "c_1"
         assert evs[4]["status"] == "ok"
-        assert evs[4]["result"] == "北京：晴，最高 32°C"
+        assert evs[4]["result"] == "天气往返"
         assert evs[4]["duration_ms"] >= 0
         assert evs[5] == {"type": "turn.step", "step": 2, "max_steps": 10}
         assert evs[6] == {"type": "text.delta", "text": "北京：晴。"}
@@ -492,7 +493,8 @@ def test_admin用户_上游载荷含工具定义(tmp):
         _put_session(c, "s1", [])
         _events(c, "s1", "q")
         payload = json.loads(seen[-1].content.decode())
-        assert [t["function"]["name"] for t in payload["tools"]] == ["echo", "demo_weather"]
+        # demo_weather 已移除（CHG-016 定夺①）；weather/search 为 gate 工具，key 未配置不下发
+        assert [t["function"]["name"] for t in payload["tools"]] == ["echo"]
 
 
 def test_自填档案_工具开关关_无工具模式组装(tmp):
