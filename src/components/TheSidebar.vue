@@ -7,6 +7,7 @@ import { useToastStore } from '../stores/toast'
 import { ApiBackendError, backend } from '../api/backend'
 import { matchSession, type SearchHit } from '../utils/search'
 import { TIME_GROUPS, timeGroupOf, type TimeGroupKey } from '../utils/timeGroup'
+import { useMediaQuery } from '../composables/useMediaQuery'
 import BrandMark from './BrandMark.vue'
 import SessionListItem from './SessionListItem.vue'
 import ConfirmModal from './ConfirmModal.vue'
@@ -26,6 +27,15 @@ const auth = useAuthStore()
 const toast = useToastStore()
 const router = useRouter()
 const emit = defineEmits<{ openSettings: []; chat: []; logout: []; export: [session: Session] }>()
+
+/* iter-20 T2（REQ-049，design-iter-20 §2.3）：≤768px 抽屉化——
+ * isMobile = CSS 同源媒体特性（max-width:768px）的 JS 消费面（仅模板级 rail 抑制）；
+ * drawerOpen 由 App 持有（瞬态 ref 零持久化），本组件只挂 class 承载平移动画。
+ * ≤768px 零 rail 口径：collapsed（桌面 localStorage 收起态）在移动断点被抑制不渲染——
+ * collapsed 键本身零读写变化，桌面 rail 态零污染（REQ-049 验收 6）。 */
+defineProps<{ drawerOpen?: boolean }>()
+const isMobile = useMediaQuery('(max-width: 768px)')
+const showRail = computed(() => collapsed.value && !isMobile.value)
 
 const pendingDelete = ref<Session | null>(null)
 
@@ -119,8 +129,8 @@ const avatarChar = computed(() => (auth.user?.username ?? '未').charAt(0))
 </script>
 
 <template>
-  <aside class="sidebar" :class="{ rail: collapsed }">
-    <template v-if="!collapsed">
+  <aside class="sidebar" :class="{ rail: showRail, 'drawer-open': drawerOpen }">
+    <template v-if="!showRail">
       <div class="brand-row">
         <BrandMark :size="24" with-text />
         <button
@@ -515,5 +525,33 @@ const avatarChar = computed(() => (auth.user?.username ?? '未').charAt(0))
 }
 .rail-avatar:hover {
   background: var(--c-hover-bg);
+}
+
+/* ---- iter-20 T2（REQ-049，design-iter-20 §2.3）：≤768px 抽屉态 ----
+ * fixed overlay 原样平移（264px，<330px 视口取 min(80vw, 264px)），非挤压正文；
+ * translateX + visibility .15s ease（tokens 唯一动效值）；rail 收起钮在断点内隐藏
+ * （移动端 collapsed 被 showRail 抑制，收起钮不可达 = 不污染 mm-sidebar-collapsed）；
+ * >768px 本块零生效，桌面 264px/rail 56px 逐像素零变化（媒体查询带界）。 */
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 40;
+    width: min(80vw, 264px);
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition:
+      transform 0.15s ease,
+      visibility 0.15s ease;
+  }
+  .sidebar.drawer-open {
+    transform: translateX(0);
+    visibility: visible;
+  }
+  .brand-row .icon-btn {
+    display: none;
+  }
 }
 </style>

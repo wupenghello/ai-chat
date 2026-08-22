@@ -181,6 +181,19 @@ function cancel() {
   background: var(--c-hover-bg);
   color: var(--c-text-1);
 }
+/* iter-20 T2（REQ-051，design-iter-20 §5.1/§5.2）：触屏（hover:none）「···」常显 +
+ * 44px 命中区（视觉 28px 不变，::after 透明扩展）——与 hover:hover 互斥，桌面 hover 规则零触碰 */
+@media (hover: none) {
+  .item :deep(.dd-trigger) {
+    opacity: 1;
+    position: relative;
+  }
+  .item :deep(.dd-trigger)::after {
+    content: '';
+    position: absolute;
+    inset: calc((44px - 100%) / 2);
+  }
+}
 .edit-input {
   grid-column: 1 / -1;
   min-width: 0;

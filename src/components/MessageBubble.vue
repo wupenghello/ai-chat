@@ -345,6 +345,29 @@ function onEditKey(e: KeyboardEvent) {
   background: var(--c-hover-bg);
   color: var(--c-text-1);
 }
+/* iter-20 T2（REQ-051，design-iter-20 §5.1/§5.2）：触屏（hover:none）操作栏常显 +
+ * 44px 命中区（icon 24px 视觉不变，::after 透明扩展）——与 hover:hover 互斥，桌面零触碰 */
+@media (hover: none) {
+  .action-btn {
+    opacity: 1;
+    position: relative;
+  }
+  .action-btn::after {
+    content: '';
+    position: absolute;
+    inset: calc((44px - 100%) / 2);
+  }
+}
+/* iter-20 T2（REQ-049，design-iter-20 §3）：≤480px 用户气泡 max-width 80% → 92%
+ * （随列宽自然收缩不横向溢出视口）；>480px 逐像素零变化（媒体查询带界） */
+@media (max-width: 480px) {
+  .msg-col {
+    max-width: 92%;
+  }
+  .msg-col.assistant {
+    max-width: 100%;
+  }
+}
 .version-nav {
   display: flex;
   align-items: center;

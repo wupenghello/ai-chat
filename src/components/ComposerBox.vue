@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import ToggleSwitch from './ToggleSwitch.vue'
+import { useMediaQuery } from '../composables/useMediaQuery'
+
+/* iter-20 T2（REQ-049/051，design-iter-20 §3 定夺④/M45）：触控口径——
+ * hover:none（CSS 同源媒体特性）下 placeholder = M45「输入消息」、闲置态 Enter hint 不渲染；
+ * M40/M41/生成中提示保留（模式与状态语义与输入方式无关）；hover:hover 存量逐字零变化 */
+const touch = useMediaQuery('(hover: none)')
+const PLACEHOLDER_DESKTOP = '输入消息，Enter 发送，Shift+Enter 换行'
+const PLACEHOLDER_TOUCH = '输入消息' // M45
+const placeholderText = computed(() => (touch.value ? PLACEHOLDER_TOUCH : PLACEHOLDER_DESKTOP))
 
 const props = defineProps<{ generating?: boolean; hint?: string; researchAvailable?: boolean }>()
 const emit = defineEmits<{ send: [text: string, mode?: 'research']; stop: [] }>()
@@ -34,7 +43,8 @@ const hintText = computed(() => {
   if (props.generating) return props.hint ?? 'AI 回复生成中，发送暂不可用…'
   if (researchDisabled.value) return M41
   if (research.value) return M40
-  return 'Enter 发送 · Shift+Enter 换行'
+  // 触屏闲置态：键盘口径文案不渲染（design-iter-20 §3 定夺④）；桌面逐字零变化
+  return touch.value ? '' : 'Enter 发送 · Shift+Enter 换行'
 })
 
 async function autosize() {
@@ -76,7 +86,7 @@ function onKey(e: KeyboardEvent) {
         v-model="text"
         rows="1"
         class="ta"
-        placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+        :placeholder="placeholderText"
         @keydown="onKey"
         @input="autosize"
       />
@@ -103,7 +113,7 @@ function onKey(e: KeyboardEvent) {
         />
         <span class="mlabel" :class="{ on: research && !researchDisabled, dis: researchDisabled }">{{ M38 }}</span>
       </div>
-      <span class="hint-right">{{ hintText }}</span>
+      <span v-if="hintText" class="hint-right">{{ hintText }}</span>
     </div>
   </div>
 </template>
@@ -225,5 +235,30 @@ function onKey(e: KeyboardEvent) {
 .stop:active {
   background: var(--c-danger-solid-h);
   transform: scale(0.94);
+}
+
+/* ---- iter-20 T2（REQ-051，design-iter-20 §5.2）：发送/停止钮 44px 命中区分类口径 ----
+ * ≤768px：36px 视觉不变 + ::after 透明热区扩至 44×44；≤480px：视觉放大 44×44（主操作钮）；
+ * >768px（hover:hover 桌面）36px 逐像素零变化（媒体查询带界，桌面规则面零触碰） */
+@media (max-width: 768px) {
+  .send,
+  .stop {
+    position: relative;
+  }
+  .send::after,
+  .stop::after {
+    content: '';
+    position: absolute;
+    inset: calc((44px - 100%) / 2);
+  }
+}
+@media (max-width: 480px) {
+  .send {
+    width: 44px;
+    height: 44px;
+  }
+  .stop {
+    height: 44px;
+  }
 }
 </style>

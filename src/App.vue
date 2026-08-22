@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { useSessionsStore } from './stores/sessions'
 import { useSettingsStore } from './stores/settings'
 import { useToastStore } from './stores/toast'
@@ -25,6 +25,26 @@ const quota = useQuotaStore()
 
 const settingsOpen = ref(false)
 const locateAdv = ref(false)
+
+/* ---- iter-20 T2（REQ-049，design-iter-20 §2）：≤768px 侧栏抽屉化 ----
+ * 开合态 = 组件本地 ref，瞬态不持久化（零 localStorage 读写，验收 6）；
+ * 视觉形态切换全在 CSS 带界媒体查询（≤768px），桌面（>768px）该状态 CSS 惰性、零影响；
+ * 关闭三径（遮罩/Esc/选中会话）同一 closeDrawer 函数，零分叉。 */
+const drawerOpen = ref(false)
+function openDrawer() {
+  drawerOpen.value = true
+}
+function closeDrawer() {
+  drawerOpen.value = false
+}
+function onDrawerKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') closeDrawer()
+}
+watch(drawerOpen, (open) => {
+  if (open) window.addEventListener('keydown', onDrawerKeydown)
+  else window.removeEventListener('keydown', onDrawerKeydown)
+})
+onUnmounted(() => window.removeEventListener('keydown', onDrawerKeydown))
 
 /** REQ-020 登出（design-iter-6 §4.2）：直接登出无确认；跳转由 Root 的登录态监听完成 */
 async function logout() {
@@ -81,10 +101,39 @@ function editMessage(id: string, text: string) {
 </script>
 
 <template>
-  <div class="app">
-    <TheSidebar @open-settings="openSettings" @logout="logout" @export="exportBySession" />
+  <div class="app" :class="{ 'drawer-open': drawerOpen }">
+    <TheSidebar
+      :drawer-open="drawerOpen"
+      @open-settings="openSettings"
+      @logout="logout"
+      @export="exportBySession"
+      @chat="closeDrawer"
+    />
+
+    <!-- ≤768px 抽屉遮罩（REQ-049，design-iter-20 §2.3）：--c-mask 既有令牌，常驻 DOM 承载 .15s fade，
+         仅媒体查询内可见可点（关闭态 opacity:0 + pointer-events:none）；>768px display:none -->
+    <div class="drawer-mask" aria-hidden="true" @click="closeDrawer"></div>
 
     <main class="main">
+      <!-- iter-20 T2（REQ-049，design-iter-20 §2.2）：≤768px 移动顶条——44×44 汉堡入口钮（M44）+ 当前会话名；
+           >768px 整条 display:none 不渲染视觉面（CSS 带界，桌面零触碰） -->
+      <div class="mobile-topbar">
+        <button
+          class="drawer-btn"
+          type="button"
+          aria-label="打开会话列表"
+          title="打开会话列表"
+          :aria-expanded="drawerOpen"
+          @click="drawerOpen ? closeDrawer() : openDrawer()"
+        >
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+            <line x1="4" y1="6" x2="20" y2="6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            <line x1="4" y1="12" x2="20" y2="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            <line x1="4" y1="18" x2="20" y2="18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+          </svg>
+        </button>
+        <span class="topbar-title">{{ sessions.active?.title ?? '' }}</span>
+      </div>
       <!-- iter-8 T3（design-iter-8 §2.1/定夺 ②）：主界面顶部全局提示条区（无旧数据零渲染） -->
       <MigrationBanners />
       <!-- REQ-027 走查 34/35（design-iter-11 §3.4 定夺⑦）：顶栏整体移除——
@@ -246,5 +295,77 @@ body {
 .composer-col {
   max-width: 712px;
   margin: 0 auto;
+}
+
+/* ---- iter-20 T2（REQ-049，design-iter-20 §2.2/§2.3/§3）：移动端顶条 + 抽屉遮罩 + ≤480px 收窄 ----
+ * 全部收敛在带界媒体查询内（max-width），缺省（>768px）零渲染零影响——桌面规则面零触碰；
+ * 零新增设计令牌（复用 --c-surface/--c-border/--c-text/--c-hover-bg/--c-mask 既有值）。 */
+.mobile-topbar,
+.drawer-mask {
+  display: none;
+}
+@media (max-width: 768px) {
+  .mobile-topbar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 48px;
+    padding: 0 12px 0 4px;
+    background: var(--c-surface);
+    border-bottom: 1px solid var(--c-border);
+  }
+  /* M44 入口钮：44×44 视觉即热区（REQ-049 描述「触发钮 ≥44px」） */
+  .drawer-btn {
+    flex: none;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    color: var(--c-text-2);
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+  .drawer-btn:hover {
+    background: var(--c-hover-bg);
+  }
+  .drawer-btn:focus-visible {
+    box-shadow: 0 0 0 3px var(--c-focus-ring);
+  }
+  .topbar-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--c-text-1);
+  }
+  /* 遮罩：--c-mask 既有令牌（浅/暗双主题），z-index 低于侧栏抽屉（TheSidebar 内 40） */
+  .drawer-mask {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 39;
+    background: var(--c-mask);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+  }
+  .app.drawer-open .drawer-mask {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+/* ≤480px 正文收窄（design-iter-20 §3）：composer-row 左右 padding 12px（REQ-049 验收 5 上限） */
+@media (max-width: 480px) {
+  .composer-row {
+    padding: 12px;
+  }
 }
 </style>
