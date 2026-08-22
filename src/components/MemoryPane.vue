@@ -308,6 +308,28 @@ defineExpose({ cancelEditing })
 </template>
 
 <style scoped>
+/* DEF-042（2026-08-23 CEO 上线后反馈）：以下三组 class 名复用自 SettingsForm，但
+ * scoped 样式不跨组件边界——本组件内原先吃不到定义、回落浏览器默认 16px/400，
+ * 整个分区比其他分区大一号（分区标题/开关行标签/提示）。此处显式对齐
+ * SettingsForm 同名规则值（沿 UsagePane 自定义 pane-label 的先例）：
+ * pane-label 14px/600、field-label 13px/500、field-hint 12px/text-3 */
+.section-label.pane-label {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--c-text-1);
+}
+.field-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--c-text-2);
+}
+.field-hint {
+  font-size: 12px;
+  color: var(--c-text-3);
+}
 .mem-pane {
   display: flex;
   flex-direction: column;

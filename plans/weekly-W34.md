@@ -306,3 +306,9 @@
 - **发现**：CEO 实际使用反馈——流式生成中上滚页面持续被拽回底部（DEF-034 修复后仍复现）。根因 = DEF-034 残留微任务级竞态：程序滚底赶在用户滚动事件派发前清掉上滚进度，120px 阈值实际攒不够。
 - **修复（当轮）**：输入意图先行——上滚轮 / 触屏下滑手势立即脱离跟随（先于位置判定）；DEF-034 既有语义零变化。MessageList.spec +3 用例（vitest 423→426）。
 - **取证**：scripts/e2e-def041-scroll.mjs 真实 Chrome 6 PASS / 0 FAIL（采样窗口 12/12 流式中、上滚后距底恒 >150px、浮钮出现、点按回底恢复）；defects.md DEF-041 登记含教训（交互时序类缺陷 jsdom 不设防，沿 DEF-039 同族）。
+
+### DEF-042 设置分区样式不统一当轮修（2026-08-23 CEO 上线后反馈）
+
+- **发现**：CEO 反馈设置弹窗内容「有的有大有小不统一」——真实 Chrome 计算样式逐分区审计坐实：「AI 的记忆」分区（iter-17）整组大一档（标题 16px/400 vs 其余六分区 14px/600；标签/提示同偏）。根因 = MemoryPane 复用 SettingsForm 的 class 名但 scoped 样式不跨组件边界，回落浏览器默认 16px。
+- **修复（当轮）**：MemoryPane 显式对齐三组复用 class（逐字同 SettingsForm）；新增 SettingsPaneCssContract.spec 2 用例补「分区标题跨组件一致 + 复用 class 防漂移」契约断言面（沿 MobileCssContract 先例）；修复后审计七分区分布同型逐值一致。
+- **取证**：scripts/e2e-def042-style-audit.mjs（真实 Chrome 逐分区计算样式直方图 + 截图）；defects.md DEF-042 登记，教训「跨组件复用 class 名 ≠ 复用样式」。
