@@ -318,3 +318,4 @@
 - **本版包含**：v1.0.0 以来三批——iter-22 REQ-053 真实天气工具（和风 148 城坐标表 + 坐标兜底 + demo_weather 移除，5aad421）+ DEF-041 流式滚动输入意图先行（30255d0）+ DEF-042 设置分区样式一致性（624b9e7）；semver 功能性新增 → **v1.1.0**（版本号三处落位随本批提交）。
 - **部署形态**：沿 v1.0.0 同形——服务器 47.79.228.253 /opt/ai-chat git pull → backend/.env 增 AI_CHAT_WEATHER_KEY/HOST 两变量（和风凭据，CHG-016 后续动作面）→ 本地 npm run build 后 dist scp 上传 → docker compose up --build -d 双容器重建。
 - **冒烟验证点**：双容器 healthy / HTTPS 301+200 / 真实账号天气回合端到端（真实和风数据）/ 设置弹窗分区样式一致性（部署产物含 DEF-042 契约规则）/ 流式上滚不再拽底（部署产物 git SHA 核对）。结果随部署执行回填本节与 releases/v1.1.0.md。
+- **部署完成 + 冒烟全过（2026-08-23 00:2x）**：双容器重建 healthy（backend 自报 1.1.0 / db_version 10 零迁移）；HTTP 301 → HTTPS 200、首页资产 hash 与本地构建逐字一致；冒烟账号 smoke-v110 天气回合端到端——tool.call weather → 真实数据「北京 多云 26°C 体感 28°C 南风 3 级 湿度 87%（观测 00:26）」→ turn.end done；DEF-042 契约规则确认在线上 CSS 产物；tag v1.1.0（6a9a8a3）已推 GitHub；发布记录 releases/v1.1.0.md（含回退方案与冒烟账号注记）。
