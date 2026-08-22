@@ -34,6 +34,11 @@ describe('设置分区样式一致性（DEF-042 契约）', () => {
     expect(mp).toContain('font-weight: 600')
   })
 
+  it('分区标题不带 border-top（2026-08-23 走查：弹窗化后单标题分区无分隔线，原 .pane-label 覆盖因声明顺序失效实显）', () => {
+    const sf = rule(read('../SettingsForm.vue'), '.section-label')
+    expect(sf).not.toContain('border-top')
+  })
+
   it('MemoryPane 复用 class 显式对齐 SettingsForm 同名规则（scoped 边界自持）', () => {
     const label = rule(read('../MemoryPane.vue'), '.field-label')
     expect(label).toContain('font-size: 13px')

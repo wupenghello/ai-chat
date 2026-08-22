@@ -61,7 +61,11 @@ describe('SettingsForm（REQ-014 v3 / design-iter-7 §1~2）', () => {
     expect(text).toContain('当前模式')
     expect(text).toContain('每日 — 次对话')
     expect(text).toContain('占位')
-    // 首屏无任何供应商密钥输入框（旧版三要素表单已消亡）；仅账号区改密 3 密码字段（REQ-021 新增）
+    // 首屏无任何供应商密钥输入框（旧版三要素表单已消亡）；账号区改密按需展开
+    // （2026-08-23 改版）：收起态零密码输入框，「修改」展开三字段（REQ-021）
+    expect(w.findAll('input[type="password"]').length).toBe(0)
+    await w.findAll('.sm-nav [role="tab"]')[6].trigger('click')
+    await w.findAll('button').find((b) => b.text().trim() === '修改')!.trigger('click')
     expect(w.findAll('input[type="password"]').length).toBe(3)
   })
 
@@ -139,11 +143,19 @@ describe('SettingsForm（REQ-014 v3 / design-iter-7 §1~2）', () => {
   })
 })
 
-describe('REQ-021 账号管理 · 修改密码（design-iter-9 §2）', () => {
+describe('REQ-021 账号管理 · 修改密码（design-iter-9 §2；2026-08-23 改版：按需展开）', () => {
   const submitBtn = (w: ReturnType<typeof mount>) => w.findAll('button').find((b) => b.text().trim() === '更新密码')!
 
-  it('必填缺失：三项行内「必填」提示，不提交', async () => {
+  /** 直达账号分区并展开改密表单（改版后三字段按需渲染，v-if 不在 DOM） */
+  async function mountPwdForm() {
     const w = await mountForm()
+    await w.findAll('.sm-nav [role="tab"]')[6].trigger('click')
+    await w.findAll('button').find((b) => b.text().trim() === '修改')!.trigger('click')
+    return w
+  }
+
+  it('必填缺失：三项行内「必填」提示，不提交', async () => {
+    const w = await mountPwdForm()
     await submitBtn(w).trigger('click')
     expect(w.text()).toContain('必填：请输入旧密码')
     expect(w.text()).toContain('必填：请输入新密码')
@@ -152,7 +164,7 @@ describe('REQ-021 账号管理 · 修改密码（design-iter-9 §2）', () => {
   })
 
   it('新密码不足 8 位：行内拦截，不提交', async () => {
-    const w = await mountForm()
+    const w = await mountPwdForm()
     const inputs = w.findAll('input[type="password"]')
     await inputs[0].setValue('mm2026')
     await inputs[1].setValue('1234567')
@@ -163,7 +175,7 @@ describe('REQ-021 账号管理 · 修改密码（design-iter-9 §2）', () => {
   })
 
   it('新密码纯数字：行内拦截「需包含字母与数字」，不提交', async () => {
-    const w = await mountForm()
+    const w = await mountPwdForm()
     const inputs = w.findAll('input[type="password"]')
     await inputs[0].setValue('mm2026')
     await inputs[1].setValue('12345678')
@@ -174,7 +186,7 @@ describe('REQ-021 账号管理 · 修改密码（design-iter-9 §2）', () => {
   })
 
   it('新密码纯字母：行内拦截「需包含字母与数字」，不提交', async () => {
-    const w = await mountForm()
+    const w = await mountPwdForm()
     const inputs = w.findAll('input[type="password"]')
     await inputs[0].setValue('mm2026')
     await inputs[1].setValue('abcdefgh')
@@ -185,7 +197,7 @@ describe('REQ-021 账号管理 · 修改密码（design-iter-9 §2）', () => {
   })
 
   it('两次不一致：确认字段行内拦截', async () => {
-    const w = await mountForm()
+    const w = await mountPwdForm()
     const inputs = w.findAll('input[type="password"]')
     await inputs[0].setValue('mm2026')
     await inputs[1].setValue('newpass123')
@@ -196,7 +208,7 @@ describe('REQ-021 账号管理 · 修改密码（design-iter-9 §2）', () => {
   })
 
   it('新密码=旧密码：行内拦截（与后端 400 同口径）', async () => {
-    const w = await mountForm()
+    const w = await mountPwdForm()
     const inputs = w.findAll('input[type="password"]')
     await inputs[0].setValue('password123')
     await inputs[1].setValue('password123')
@@ -208,7 +220,7 @@ describe('REQ-021 账号管理 · 修改密码（design-iter-9 §2）', () => {
 
   it('旧密码错误（后端 400）：旧密码字段红描边 + 行内提示', async () => {
     mocked.changePassword.mockRejectedValue(new ApiBackendError(400, '旧密码错误'))
-    const w = await mountForm()
+    const w = await mountPwdForm()
     const inputs = w.findAll('input[type="password"]')
     await inputs[0].setValue('wrong-old')
     await inputs[1].setValue('newpass123')
@@ -220,9 +232,9 @@ describe('REQ-021 账号管理 · 修改密码（design-iter-9 §2）', () => {
     expect(useAuthStore().user).not.toBeNull()
   })
 
-  it('成功：表单清空 + 成功横幅 + 成功绿 toast（当前设备保持登录，定夺①）', async () => {
+  it('成功：表单收起清空 + 成功横幅留在分节内 + 成功绿 toast（当前设备保持登录，定夺①）', async () => {
     mocked.changePassword.mockResolvedValue({ detail: '密码已更新' })
-    const w = await mountForm()
+    const w = await mountPwdForm()
     const inputs = w.findAll('input[type="password"]')
     await inputs[0].setValue('mm2026')
     await inputs[1].setValue('newpass123')
@@ -230,7 +242,9 @@ describe('REQ-021 账号管理 · 修改密码（design-iter-9 §2）', () => {
     await submitBtn(w).trigger('click')
     await flushPromises()
     expect(mocked.changePassword).toHaveBeenCalledWith('mm2026', 'newpass123')
-    expect((inputs[0].element as HTMLInputElement).value).toBe('')
+    // 2026-08-23 改版：成功即收起表单（v-if 卸载，三字段不在 DOM），横幅留在分节内
+    expect(w.findAll('input[type="password"]').length).toBe(0)
+    expect(w.findAll('button').some((b) => b.text().trim() === '更新密码')).toBe(false)
     expect(w.text()).toContain('密码已更新')
     expect(useAuthStore().user).not.toBeNull() // 当前设备保持登录
     const items = useToastStore().items
@@ -346,17 +360,29 @@ describe('SettingsForm 设置弹窗化（REQ-028，iter-11 T3，design-iter-11 �
     expect(w.emitted('close')).toBeTruthy()
   })
 
-  it('改密字段非空亦拦截；保存提示词后干净关闭不拦', async () => {
+  it('改密字段非空亦拦截；收起改密表单（清空三字段）后干净关闭不拦', async () => {
     const w = await mountForm()
-    await w.findAll('.sm-nav [role="tab"]')[4].trigger('click')
+    await w.findAll('.sm-nav [role="tab"]')[6].trigger('click')
+    await w.findAll('button').find((b) => b.text().trim() === '修改')!.trigger('click')
     await w.find('input[autocomplete="current-password"]').setValue('oldpass1')
     await w.find('button[aria-label="关闭设置"]').trigger('click')
     expect(w.find('.dirty-mask').exists()).toBe(true)
     await w.findAll('.dirty-mask .btn')[0].trigger('click')
-    // 清空改密字段 → 干净 → 直接 emit close
-    await w.find('input[autocomplete="current-password"]').setValue('')
+    // 收起改密表单 = 清空三字段 → 干净 → 直接 emit close
+    await w.findAll('button').find((b) => b.text().trim() === '取消')!.trigger('click')
     await w.find('button[aria-label="关闭设置"]').trigger('click')
     expect(w.find('.dirty-mask').exists()).toBe(false)
+    expect(w.emitted('close')).toBeTruthy()
+  })
+
+  it('Esc 链（改密表单展开态）：首个 Esc 收起表单不关弹窗，再 Esc 才关（先关最上层）', async () => {
+    const w = await mountForm()
+    await w.findAll('.sm-nav [role="tab"]')[6].trigger('click')
+    await w.findAll('button').find((b) => b.text().trim() === '修改')!.trigger('click')
+    await w.find('.settings-mask').trigger('keydown', { key: 'Escape' })
+    expect(w.emitted('close')).toBeFalsy()
+    expect(w.findAll('input[type="password"]').length).toBe(0) // 表单已收起
+    await w.find('.settings-mask').trigger('keydown', { key: 'Escape' })
     expect(w.emitted('close')).toBeTruthy()
   })
 

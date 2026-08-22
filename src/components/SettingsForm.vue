@@ -128,7 +128,8 @@ function close() {
 }
 
 /** 弹窗层 Esc（走查 43：先关最上层）：未保存确认 > 档案编辑模态 > 记忆编辑态（CHG-011
- * 加法插入点，design-iter-17 §2.3：取消还原不关弹窗）> （注销/删除确认各自组件处理）> 外层弹窗 */
+ * 加法插入点，design-iter-17 §2.3：取消还原不关弹窗）> 改密表单展开态（收起即清空，
+ * 同「编辑中取消还原」体例）>（注销/删除确认各自组件处理）> 外层弹窗 */
 function onModalKey(e: KeyboardEvent) {
   if (e.key !== 'Escape') return
   if (dirtyConfirm.value) {
@@ -140,6 +141,10 @@ function onModalKey(e: KeyboardEvent) {
     return
   }
   if (memPane.value?.cancelEditing()) return
+  if (pwdOpen.value) {
+    closePwdForm()
+    return
+  }
   if (deleteOpen.value || pendingDelete.value) return // DeleteAccountModal/ConfirmModal 各有 Esc
   attemptClose()
 }
@@ -292,8 +297,13 @@ function clearPrompt() {
   toast.push('已清除，后续对话将不使用系统提示词')
 }
 
-// ---- REQ-021 账号管理（design-iter-9 §2~3）----
-// 修改密码：3 字段 + 行内校验 + 旧密码错误 + 成功反馈（当前设备保持登录，定夺①）
+// ---- REQ-021 账号管理（design-iter-9 §2~3 改版：身份卡 + 分节行式布局）----
+// 身份卡头像字：用户名首字符（中英文均可）大写呈现
+const avatarChar = computed(() => (auth.user?.username ?? '?').trim().slice(0, 1).toUpperCase())
+// 修改密码：3 字段 + 行内校验 + 旧密码错误 + 成功反馈（当前设备保持登录，定夺①）；
+// 按需展开（收起态仅一行说明 + 「修改」钮）——收起 = 清空字段（放弃输入），dirty 判定随字段自然归零
+const pwdOpen = ref(false)
+const oldPwdEl = ref<HTMLInputElement | null>(null)
 const oldPwd = ref('')
 const newPwd = ref('')
 const confirmPwd = ref('')
@@ -303,6 +313,22 @@ const showConfirm = ref(false)
 const pwdErrors = ref<{ old?: string; next?: string; confirm?: string }>({})
 const pwdSuccess = ref(false)
 const pwdSubmitting = ref(false)
+
+/** 展开改密表单并聚焦旧密码（进入即输入，少一次点击） */
+function openPwdForm() {
+  pwdErrors.value = {}
+  pwdOpen.value = true
+  void nextTick(() => oldPwdEl.value?.focus())
+}
+
+/** 收起改密表单：清空三字段与错误（放弃输入），dirty 随字段归零自然解除 */
+function closePwdForm() {
+  pwdOpen.value = false
+  oldPwd.value = ''
+  newPwd.value = ''
+  confirmPwd.value = ''
+  pwdErrors.value = {}
+}
 
 function validateChangePassword(): boolean {
   const errs: { old?: string; next?: string; confirm?: string } = {}
@@ -333,6 +359,7 @@ async function submitChangePassword() {
     oldPwd.value = ''
     newPwd.value = ''
     confirmPwd.value = ''
+    pwdOpen.value = false // 成功即收起表单，成功横幅留在分节内
     pwdSuccess.value = true
     toast.push('✓ 密码已更新，其他设备已退出登录', undefined, undefined, 'success')
   } catch (e) {
@@ -421,7 +448,7 @@ async function confirmDeleteAccount(password: string) {
 
         <!-- 分区一：外观（REQ-017 唯一入口，与全局同状态同存储） -->
         <div v-show="pane === 'appearance'" class="sm-pane" role="tabpanel">
-          <div class="section-label pane-label">外观</div>
+          <div class="section-label">外观</div>
           <div class="theme-seg" role="radiogroup" aria-label="主题">
             <button
               type="button"
@@ -443,12 +470,23 @@ async function confirmDeleteAccount(password: string) {
             >
               深色
             </button>
+            <button
+              type="button"
+              class="seg-btn"
+              :class="{ on: theme === 'auto' }"
+              role="radio"
+              :aria-checked="theme === 'auto'"
+              @click="setTheme('auto')"
+            >
+              自动
+            </button>
           </div>
+          <p class="mode-note">「自动」跟随系统外观，系统切换浅色 / 深色时实时生效。</p>
         </div>
 
         <!-- 分区二：密钥模式（REQ-014 v3 模式卡，design-iter-7 §1） -->
         <div v-show="pane === 'mode'" class="sm-pane" role="tabpanel">
-          <div class="section-label pane-label">密钥模式</div>
+          <div class="section-label">密钥模式</div>
           <p class="mode-note">对话默认使用服务端统一密钥（零配置）；可在「高级设置」添加自有供应商密钥，密钥仅存服务端。</p>
           <KeyModeCard
             :mode="settings.keyMode"
@@ -461,7 +499,7 @@ async function confirmDeleteAccount(password: string) {
 
         <!-- 分区三：高级设置 · 自填供应商密钥（REQ-018，design-iter-7 §2；locateAdvanced 直达目标） -->
         <div v-show="pane === 'adv'" class="sm-pane" role="tabpanel">
-          <div ref="advSection" class="section-label pane-label">高级设置 · 自填供应商密钥</div>
+          <div ref="advSection" class="section-label">高级设置 · 自填供应商密钥</div>
           <div class="form">
       <p class="adv-intro">
         填写自有 Base URL / 模型名 / API Key，解锁更高配额。<b>密钥仅存服务端</b>（受保护存储），登录后任意设备可见；浏览器本地不存储任何密钥。
@@ -525,7 +563,7 @@ async function confirmDeleteAccount(password: string) {
 
         <!-- 分区四：对话设置 · 系统提示词（REQ-008，design-iter-2 触点一） -->
         <div v-show="pane === 'chat'" class="sm-pane" role="tabpanel">
-          <div class="section-label pane-label">对话设置</div>
+          <div class="section-label">对话设置</div>
           <label class="field" for="system-prompt">
         <span class="field-label">系统提示词<span class="optional">可选</span></span>
         <textarea
@@ -558,99 +596,120 @@ async function confirmDeleteAccount(password: string) {
           <UsagePane :active="pane === 'usage'" />
         </div>
 
-        <!-- 分区七：账号（REQ-021，design-iter-9 §2~3）：改密 + 注销危险区 -->
+        <!-- 分区七：账号（REQ-021，design-iter-9 §2~3 改版：身份卡 + 分节行式布局） -->
         <div v-show="pane === 'account'" class="sm-pane" role="tabpanel">
-          <div class="section-label pane-label">账号</div>
+          <div class="section-label">账号</div>
 
-    <!-- 修改密码 -->
-    <div class="pwd-form">
-      <label class="field">
-        <span class="field-label">旧密码<span class="req">*</span></span>
-        <span class="field-input-wrap">
-          <input
-            v-model="oldPwd"
-            class="input pw-input"
-            :class="{ invalid: pwdErrors.old }"
-            :type="showOld ? 'text' : 'password'"
-            autocomplete="current-password"
-            placeholder="输入当前登录密码"
-          />
-          <button class="eye-btn" type="button" :title="showOld ? '隐藏密码' : '显示密码'" :aria-label="showOld ? '隐藏密码' : '显示密码'" @click="showOld = !showOld">
-            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-              <path v-if="showOld" fill="currentColor" d="M12 5c5 0 9 4.5 9 7s-4 7-9 7-9-4.5-9-7 4-7 9-7Zm0 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0-2a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z" />
-              <path v-else fill="currentColor" d="M2.2 4.3 4.3 2.2l17.5 17.5-2.1 2.1-3.1-3.1A10 10 0 0 1 12 19c-5 0-9-4.5-9-7 0-1.2.8-2.7 2.2-4.1L2.2 4.3ZM12 7.1 16.9 12a4.9 4.9 0 0 0-6.9-6.9L7.6 3.7A10.6 10.6 0 0 1 12 3c5 0 9 4.5 9 7 0 .9-.5 2-1.4 3.2L12 5.6v1.5Z" />
-            </svg>
-          </button>
-        </span>
-        <span v-if="pwdErrors.old" class="field-error">{{ pwdErrors.old }}</span>
-      </label>
+          <!-- 身份卡：当前登录者一目了然 -->
+          <div class="acct-card">
+            <span class="acct-avatar" aria-hidden="true">{{ avatarChar }}</span>
+            <span class="acct-meta">
+              <span class="acct-name">{{ auth.user?.username ?? '未登录' }}</span>
+              <span class="acct-sub">{{ auth.user?.is_admin ? '管理员账号' : '成员账号' }}</span>
+            </span>
+          </div>
 
-      <label class="field">
-        <span class="field-label">新密码<span class="req">*</span></span>
-        <span class="field-input-wrap">
-          <input
-            v-model="newPwd"
-            class="input pw-input"
-            :class="{ invalid: pwdErrors.next }"
-            :type="showNew ? 'text' : 'password'"
-            autocomplete="new-password"
-            placeholder="至少 8 位，最多 128 位"
-          />
-          <button class="eye-btn" type="button" :title="showNew ? '隐藏密码' : '显示密码'" :aria-label="showNew ? '隐藏密码' : '显示密码'" @click="showNew = !showNew">
-            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-              <path v-if="showNew" fill="currentColor" d="M12 5c5 0 9 4.5 9 7s-4 7-9 7-9-4.5-9-7 4-7 9-7Zm0 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0-2a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z" />
-              <path v-else fill="currentColor" d="M2.2 4.3 4.3 2.2l17.5 17.5-2.1 2.1-3.1-3.1A10 10 0 0 1 12 19c-5 0-9-4.5-9-7 0-1.2.8-2.7 2.2-4.1L2.2 4.3ZM12 7.1 16.9 12a4.9 4.9 0 0 0-6.9-6.9L7.6 3.7A10.6 10.6 0 0 1 12 3c5 0 9 4.5 9 7 0 .9-.5 2-1.4 3.2L12 5.6v1.5Z" />
-            </svg>
-          </button>
-        </span>
-        <span v-if="pwdErrors.next" class="field-error">{{ pwdErrors.next }}</span>
-        <span v-else class="field-hint">至少 8 位，需包含字母与数字；不得与旧密码相同</span>
-      </label>
+          <!-- 修改密码：收起态仅一行说明 + 入口钮，展开才出现三字段（降低整页表单压迫感） -->
+          <div class="acct-section">
+            <div class="as-row">
+              <div class="as-info">
+                <span class="as-title">修改密码</span>
+                <span class="as-desc">更新后其他设备将退出登录，当前设备保持登录</span>
+              </div>
+              <button v-if="!pwdOpen" type="button" class="btn" @click="openPwdForm">修改</button>
+            </div>
 
-      <label class="field">
-        <span class="field-label">确认新密码<span class="req">*</span></span>
-        <span class="field-input-wrap">
-          <input
-            v-model="confirmPwd"
-            class="input pw-input"
-            :class="{ invalid: pwdErrors.confirm }"
-            :type="showConfirm ? 'text' : 'password'"
-            autocomplete="new-password"
-            placeholder="再次输入新密码"
-          />
-          <button class="eye-btn" type="button" :title="showConfirm ? '隐藏密码' : '显示密码'" :aria-label="showConfirm ? '隐藏密码' : '显示密码'" @click="showConfirm = !showConfirm">
-            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-              <path v-if="showConfirm" fill="currentColor" d="M12 5c5 0 9 4.5 9 7s-4 7-9 7-9-4.5-9-7 4-7 9-7Zm0 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0-2a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z" />
-              <path v-else fill="currentColor" d="M2.2 4.3 4.3 2.2l17.5 17.5-2.1 2.1-3.1-3.1A10 10 0 0 1 12 19c-5 0-9-4.5-9-7 0-1.2.8-2.7 2.2-4.1L2.2 4.3ZM12 7.1 16.9 12a4.9 4.9 0 0 0-6.9-6.9L7.6 3.7A10.6 10.6 0 0 1 12 3c5 0 9 4.5 9 7 0 .9-.5 2-1.4 3.2L12 5.6v1.5Z" />
-            </svg>
-          </button>
-        </span>
-        <span v-if="pwdErrors.confirm" class="field-error">{{ pwdErrors.confirm }}</span>
-      </label>
+            <div v-if="pwdOpen" class="pwd-form">
+              <label class="field">
+                <span class="field-label">旧密码<span class="req">*</span></span>
+                <span class="field-input-wrap">
+                  <input
+                    ref="oldPwdEl"
+                    v-model="oldPwd"
+                    class="input pw-input"
+                    :class="{ invalid: pwdErrors.old }"
+                    :type="showOld ? 'text' : 'password'"
+                    autocomplete="current-password"
+                    placeholder="输入当前登录密码"
+                  />
+                  <button class="eye-btn" type="button" :title="showOld ? '隐藏密码' : '显示密码'" :aria-label="showOld ? '隐藏密码' : '显示密码'" @click="showOld = !showOld">
+                    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+                      <path v-if="showOld" fill="currentColor" d="M12 5c5 0 9 4.5 9 7s-4 7-9 7-9-4.5-9-7 4-7 9-7Zm0 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0-2a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z" />
+                      <path v-else fill="currentColor" d="M2.2 4.3 4.3 2.2l17.5 17.5-2.1 2.1-3.1-3.1A10 10 0 0 1 12 19c-5 0-9-4.5-9-7 0-1.2.8-2.7 2.2-4.1L2.2 4.3ZM12 7.1 16.9 12a4.9 4.9 0 0 0-6.9-6.9L7.6 3.7A10.6 10.6 0 0 1 12 3c5 0 9 4.5 9 7 0 .9-.5 2-1.4 3.2L12 5.6v1.5Z" />
+                    </svg>
+                  </button>
+                </span>
+                <span v-if="pwdErrors.old" class="field-error">{{ pwdErrors.old }}</span>
+              </label>
 
-      <div v-if="pwdSuccess" class="ok-banner">
-        <span class="ob-ico">✓</span>
-        <span><span class="ob-title">密码已更新。</span>除当前设备外的其他设备已退出登录，需重新登录后再使用。</span>
-      </div>
+              <label class="field">
+                <span class="field-label">新密码<span class="req">*</span></span>
+                <span class="field-input-wrap">
+                  <input
+                    v-model="newPwd"
+                    class="input pw-input"
+                    :class="{ invalid: pwdErrors.next }"
+                    :type="showNew ? 'text' : 'password'"
+                    autocomplete="new-password"
+                    placeholder="至少 8 位，最多 128 位"
+                  />
+                  <button class="eye-btn" type="button" :title="showNew ? '隐藏密码' : '显示密码'" :aria-label="showNew ? '隐藏密码' : '显示密码'" @click="showNew = !showNew">
+                    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+                      <path v-if="showNew" fill="currentColor" d="M12 5c5 0 9 4.5 9 7s-4 7-9 7-9-4.5-9-7 4-7 9-7Zm0 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0-2a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z" />
+                      <path v-else fill="currentColor" d="M2.2 4.3 4.3 2.2l17.5 17.5-2.1 2.1-3.1-3.1A10 10 0 0 1 12 19c-5 0-9-4.5-9-7 0-1.2.8-2.7 2.2-4.1L2.2 4.3ZM12 7.1 16.9 12a4.9 4.9 0 0 0-6.9-6.9L7.6 3.7A10.6 10.6 0 0 1 12 3c5 0 9 4.5 9 7 0 .9-.5 2-1.4 3.2L12 5.6v1.5Z" />
+                    </svg>
+                  </button>
+                </span>
+                <span v-if="pwdErrors.next" class="field-error">{{ pwdErrors.next }}</span>
+                <span v-else class="field-hint">至少 8 位，需包含字母与数字；不得与旧密码相同</span>
+              </label>
 
-      <button class="btn btn-primary pwd-submit" type="button" :disabled="pwdSubmitting" @click="submitChangePassword">
-        {{ pwdSubmitting ? '更新中…' : '更新密码' }}
-      </button>
-    </div>
+              <label class="field">
+                <span class="field-label">确认新密码<span class="req">*</span></span>
+                <span class="field-input-wrap">
+                  <input
+                    v-model="confirmPwd"
+                    class="input pw-input"
+                    :class="{ invalid: pwdErrors.confirm }"
+                    :type="showConfirm ? 'text' : 'password'"
+                    autocomplete="new-password"
+                    placeholder="再次输入新密码"
+                  />
+                  <button class="eye-btn" type="button" :title="showConfirm ? '隐藏密码' : '显示密码'" :aria-label="showConfirm ? '隐藏密码' : '显示密码'" @click="showConfirm = !showConfirm">
+                    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+                      <path v-if="showConfirm" fill="currentColor" d="M12 5c5 0 9 4.5 9 7s-4 7-9 7-9-4.5-9-7 4-7 9-7Zm0 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0-2a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z" />
+                      <path v-else fill="currentColor" d="M2.2 4.3 4.3 2.2l17.5 17.5-2.1 2.1-3.1-3.1A10 10 0 0 1 12 19c-5 0-9-4.5-9-7 0-1.2.8-2.7 2.2-4.1L2.2 4.3ZM12 7.1 16.9 12a4.9 4.9 0 0 0-6.9-6.9L7.6 3.7A10.6 10.6 0 0 1 12 3c5 0 9 4.5 9 7 0 .9-.5 2-1.4 3.2L12 5.6v1.5Z" />
+                    </svg>
+                  </button>
+                </span>
+                <span v-if="pwdErrors.confirm" class="field-error">{{ pwdErrors.confirm }}</span>
+              </label>
 
-    <!-- 注销危险区 -->
-    <div class="danger-zone">
-      <div class="dz-title">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" style="flex:none;">
-          <path fill="none" stroke="currentColor" stroke-width="1.6" d="M12 3l7 2.6v5.6c0 4.4-3 8.3-7 9.8-4-1.5-7-5.4-7-9.8V5.6L12 3z" />
-          <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M9.2 9.2l5.6 5.6M14.8 9.2l-5.6 5.6" />
-        </svg>
-        注销账号
-      </div>
-      <div class="dz-desc">将删除账号与<b>全部云端数据</b>（会话、供应商档案、密钥等），此操作<b>不可恢复</b>。</div>
-      <div class="dz-actions"><button class="btn btn-danger dz-btn" type="button" @click="openDelete">注销账号</button></div>
+              <div class="actions">
+                <button type="button" class="btn" @click="closePwdForm">取消</button>
+                <button class="btn btn-primary" type="button" :disabled="pwdSubmitting" @click="submitChangePassword">
+                  {{ pwdSubmitting ? '更新中…' : '更新密码' }}
+                </button>
+              </div>
+            </div>
+
+            <div v-if="pwdSuccess" class="ok-banner">
+              <span class="ob-ico">✓</span>
+              <span><span class="ob-title">密码已更新。</span>除当前设备外的其他设备已退出登录，需重新登录后再使用。</span>
+            </div>
+          </div>
+
+          <!-- 注销危险区：静默样式（透明底 + 危险描边钮），确认强模态不变 -->
+          <div class="acct-section danger">
+            <div class="as-row">
+              <div class="as-info">
+                <span class="as-title">注销账号</span>
+                <span class="as-desc">删除账号与<b>全部云端数据</b>（会话、供应商档案、密钥等），此操作<b>不可恢复</b></span>
+              </div>
+              <button class="btn dz-btn" type="button" @click="openDelete">注销账号</button>
+            </div>
+          </div>
         </div>
-      </div>
       </div>
 
       <!-- 内层模态（§4.4 层叠：注销/档案编辑 z-110、未保存确认 z-120） -->
@@ -866,14 +925,10 @@ async function confirmDeleteAccount(password: string) {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 16px 24px 24px;
   scrollbar-width: thin;
   scrollbar-color: var(--c-scrollbar) transparent;
-}
-.pane-label {
-  margin-top: 0;
-  padding-top: 0;
-  border-top: none;
 }
 .mode-note {
   margin: 0 0 12px;
@@ -916,12 +971,14 @@ async function confirmDeleteAccount(password: string) {
   color: var(--c-danger);
   margin-left: 4px;
 }
+/* 2026-08-23 样式走查：表单控件与弹窗整体字号比例不匹配（原 16px/36px 为移动端防缩放
+   口径，桌面弹窗内突兀）——统一收敛到 13px/32px，与分区导航（13px）、hint（12px）同节奏 */
 .input {
-  height: 36px;
+  height: 32px;
   border: 1px solid var(--c-border);
   border-radius: 6px;
-  padding: 0 12px;
-  font-size: 16px;
+  padding: 0 10px;
+  font-size: 13px;
   color: var(--c-text-1);
   background: var(--c-surface);
   outline: none;
@@ -958,11 +1015,11 @@ async function confirmDeleteAccount(password: string) {
   flex-direction: column;
   gap: 2px;
 }
-/* REQ-008 对话设置分组（design-iter-2：分组线 + 标签）；「前往高级设置」分区直达高亮（§4.3） */
+/* REQ-008 对话设置分组（design-iter-2：分组标签）；「前往高级设置」分区直达高亮（§4.3）。
+   2026-08-23 样式走查：弹窗化后各分区仅一个标题，border-top 分隔线与 20px 让位留白
+   移除（原 .pane-label 覆盖规则因声明顺序在 .section-label 之前而失效，线一直实显） */
 .section-label {
-  margin-top: 4px;
-  padding-top: 20px;
-  border-top: 1px solid var(--c-border);
+  margin: 0 0 16px;
   font-size: 14px;
   font-weight: 600;
   color: var(--c-text-1);
@@ -986,9 +1043,9 @@ async function confirmDeleteAccount(password: string) {
   overflow-y: auto;
   border: 1px solid var(--c-border);
   border-radius: 8px;
-  padding: 8px 12px;
-  font-size: 16px;
-  line-height: 1.6;
+  padding: 6px 10px;
+  font-size: 13px;
+  line-height: 1.7;
   font-family: inherit;
   color: var(--c-text-1);
   background: var(--c-surface);
@@ -1000,7 +1057,7 @@ async function confirmDeleteAccount(password: string) {
   box-shadow: 3px 3px 0 var(--c-focus-ring);
 }
 .prompt-ta::placeholder {
-  font-size: 14px;
+  font-size: 12px;
   color: var(--c-text-3);
 }
 .char-count {
@@ -1035,8 +1092,8 @@ async function confirmDeleteAccount(password: string) {
   gap: 8px;
 }
 .btn {
-  height: 36px;
-  padding: 0 20px;
+  height: 32px;
+  padding: 0 16px;
   border-radius: 6px;
   border: 1px solid var(--c-border);
   background: var(--c-surface);
@@ -1227,12 +1284,84 @@ async function confirmDeleteAccount(password: string) {
   color: var(--c-text-3);
 }
 
-/* ---- REQ-021 账号管理（design-iter-9 §2~3）---- */
+/* ---- REQ-021 账号管理（2026-08-23 改版：身份卡 + 分节行式）---- */
+.acct-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  background: var(--c-subtle-bg);
+  margin-bottom: 16px;
+}
+.acct-avatar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--c-primary-l);
+  color: var(--c-primary);
+  font-size: 16px;
+  font-weight: 600;
+}
+.acct-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.acct-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--c-text-1);
+}
+.acct-sub {
+  font-size: 12px;
+  color: var(--c-text-3);
+}
+/* 分节容器（修改密码 / 注销各一节）：左信息右动作行，改密表单按需展开于节内 */
+.acct-section {
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+.acct-section.danger .as-title {
+  color: var(--c-danger);
+}
+.as-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.as-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.as-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-text-1);
+}
+.as-desc {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--c-text-3);
+}
 .pwd-form {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  max-width: 420px;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--c-border);
 }
 .field-input-wrap {
   position: relative;
@@ -1241,14 +1370,14 @@ async function confirmDeleteAccount(password: string) {
 .pw-input {
   width: 100%;
   box-sizing: border-box;
-  padding-right: 44px; /* 行尾眼睛按钮留白 */
+  padding-right: 40px; /* 行尾眼睛按钮留白 */
 }
 .eye-btn {
   position: absolute;
   top: 0;
   right: 0;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1262,16 +1391,15 @@ async function confirmDeleteAccount(password: string) {
   color: var(--c-text-1);
   background: var(--c-hover-bg);
 }
-.pwd-submit {
-  width: 100%;
-}
-/* 成功横幅（subtle-bg 底 + success 描边/标题，design-iter-9 §2.2） */
+/* 成功横幅（subtle-bg 底 + success 描边/标题，design-iter-9 §2.2）；
+   成功后表单收起，横幅留在分节内与说明行分隔 */
 .ok-banner {
   display: flex;
   align-items: flex-start;
   gap: 8px;
   border-radius: 8px;
   padding: 10px 12px;
+  margin-top: 12px;
   font-size: 13px;
   line-height: 1.7;
   background: var(--c-subtle-bg);
@@ -1287,32 +1415,16 @@ async function confirmDeleteAccount(password: string) {
   color: var(--c-success);
   font-weight: 600;
 }
-/* 注销危险区（danger-l 底 + danger 描边/文字 + 危险实底按钮，design-iter-9 §3.1） */
-.danger-zone {
-  max-width: 420px;
-  border: 1px solid var(--c-danger);
-  border-radius: 8px;
+/* 注销入口钮（改版）：透明底 + 危险描边/文字，hover 才染 danger-l——危险语义在、
+   视觉不轰炸；二次确认仍走 DeleteAccountModal 强模态 */
+.dz-btn {
+  flex: none;
+  border-color: var(--c-danger);
+  background: transparent;
+  color: var(--c-danger);
+}
+.dz-btn:hover {
   background: var(--c-danger-l);
-  padding: 14px 16px;
-  margin-top: 20px;
-}
-.dz-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--c-danger);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.dz-desc {
-  font-size: 12px;
-  color: var(--c-danger);
-  opacity: 0.92;
-  line-height: 1.7;
-  margin-top: 4px;
-}
-.dz-actions {
-  margin-top: 12px;
 }
 .btn-danger {
   border-color: var(--c-danger-solid);

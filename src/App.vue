@@ -257,8 +257,14 @@ function editMessage(id: string, text: string) {
 * {
   box-sizing: border-box;
 }
+/* 2026-08-23 CEO 走查：按住拖动整页可上下左右晃动（Safari/PWA 橡皮筋 + 滚动链）——
+   应用壳（.app 100% 高 + 内部各自滚动区）自管全部滚动，html/body 固定不滚不弹 */
 html,
-body,
+body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
 #app {
   height: 100%;
 }
@@ -279,6 +285,7 @@ body {
   min-width: 0;
   height: 100%;
   overflow-y: auto;
+  overscroll-behavior: contain; /* 滚到头不外溢成整页拖拽 */
   /* REQ-021 基调反转（CEO 2026-08-16）：正文白底 --c-surface（侧栏灰底见 TheSidebar） */
   background: var(--c-surface);
 }

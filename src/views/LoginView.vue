@@ -3,13 +3,13 @@
     <button
       class="theme-btn"
       type="button"
-      :title="theme === 'dark' ? '切换到浅色' : '切换到深色'"
-      :aria-label="theme === 'dark' ? '切换到浅色' : '切换到深色'"
+      :title="resolvedTheme === 'dark' ? '切换到浅色' : '切换到深色'"
+      :aria-label="resolvedTheme === 'dark' ? '切换到浅色' : '切换到深色'"
       @click="toggleTheme"
     >
       <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
         <path
-          v-if="theme === 'dark'"
+          v-if="resolvedTheme === 'dark'"
           fill="currentColor"
           d="M12 5a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0V6a1 1 0 0 1 1-1Zm0 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm0 2a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0v-1a1 1 0 0 1 1-1Zm7-5a1 1 0 0 1-1 1h-1a1 1 0 1 1 0-2h1a1 1 0 0 1 1 1ZM7 12a1 1 0 0 1-1 1H5a1 1 0 1 1 0-2h1a1 1 0 0 1 1 1Zm10.07-6.07a1 1 0 0 1 0 1.41l-.7.71a1 1 0 1 1-1.42-1.42l.71-.7a1 1 0 0 1 1.41 0ZM9.05 15.95a1 1 0 0 1 0 1.41l-.71.71a1 1 0 1 1-1.41-1.42l.7-.7a1 1 0 0 1 1.42 0Zm8.02 2.12a1 1 0 0 1-1.41 0l-.71-.71a1 1 0 0 1 1.42-1.41l.7.7a1 1 0 0 1 0 1.42ZM9.05 8.05a1 1 0 0 1-1.42 0l-.7-.71a1 1 0 0 1 1.41-1.41l.71.7a1 1 0 0 1 0 1.42Z"
         />
@@ -165,7 +165,8 @@ const USERNAME_RE = /^[A-Za-z0-9_\-一-鿿]{2,32}$/
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
-const { theme, toggleTheme } = useTheme()
+// 2026-08-23 主题三档化：图标/提示按「实际生效」主题判断（auto 档跟随系统解析结果）
+const { resolvedTheme, toggleTheme } = useTheme()
 
 const mode = ref<'login' | 'register'>('login')
 const username = ref('')

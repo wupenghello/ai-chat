@@ -334,3 +334,16 @@
 - **部署形态**：沿 v1.0.0 同形——服务器 47.79.228.253 /opt/ai-chat git pull → backend/.env 增 AI_CHAT_WEATHER_KEY/HOST 两变量（和风凭据，CHG-016 后续动作面）→ 本地 npm run build 后 dist scp 上传 → docker compose up --build -d 双容器重建。
 - **冒烟验证点**：双容器 healthy / HTTPS 301+200 / 真实账号天气回合端到端（真实和风数据）/ 设置弹窗分区样式一致性（部署产物含 DEF-042 契约规则）/ 流式上滚不再拽底（部署产物 git SHA 核对）。结果随部署执行回填本节与 releases/v1.1.0.md。
 - **部署完成 + 冒烟全过（2026-08-23 00:2x）**：双容器重建 healthy（backend 自报 1.1.0 / db_version 10 零迁移）；HTTP 301 → HTTPS 200、首页资产 hash 与本地构建逐字一致；冒烟账号 smoke-v110 天气回合端到端——tool.call weather → 真实数据「北京 多云 26°C 体感 28°C 南风 3 级 湿度 87%（观测 00:26）」→ turn.end done；DEF-042 契约规则确认在线上 CSS 产物；tag v1.1.0（6a9a8a3）已推 GitHub；发布记录 releases/v1.1.0.md（含回退方案与冒烟账号注记）。
+
+## 上线后样式走查批（CHG-017 + DEF-043~046，2026-08-23 CEO 直派六项样式优化）
+
+### CHG-017 主题自动档 + 账号分区改版 & DEF-043~046 当轮修（2026-08-23）
+
+- **触发**：CEO 直派六项——①分区标题 border-top 去除 ②弹窗显示尺寸过大（输入框/按钮突兀）③文件卡与段落间距混乱 ④账号分区设计/布局/交互重构 ⑤外观增「自动」选项 ⑥整页按住拖动晃动。①②③⑥走 DEF-043~046，④⑤走 CHG-017（spec/rtm REQ-017 注记同批）。
+- **CHG-017 A 账号分区改版**：三段式——账号身份卡（首字符头像 + 用户名 + 成员/管理员标识，补此前弹窗无账号身份呈现）→「修改密码」分节（收起态一行说明 + 「修改」入口钮；展开才渲染三字段并聚焦旧密码；取消/Esc 收起即清空、成功即收起留横幅；校验/后端口径/dirty 拦截零变化）→「注销账号」危险分节（danger 描边幽灵钮替代 danger-l 大红块；DeleteAccountModal 强模态不变）。Esc 链插入「改密表单展开态」于记忆编辑态之后。
+- **CHG-017 B 主题三档化**：ThemePref = light/dark/auto——auto 跟随 prefers-color-scheme（模块级 mql 监听实时生效，仅 auto 档消费；显式档不被系统覆盖）；resolvedTheme 计算值（登录页翻转钮按生效值显示/翻转）；持久化存档位值；matchMedia 不可用兜底浅色。存量 light/dark 语义与无存储默认浅色零变化。useTheme 429→435 批内 +7 用例（auto 族 5：初始化/系统深色解析/实时跟随/auto 档 toggle/持久化往返；改密 Esc 先收起 1；分区标题无 border-top 契约 1）。
+- **DEF-043 分区标题分隔线**：`.pane-label{border-top:none}` 声明在 `.section-label` 之前、同特异度后者胜——覆盖自弹窗化（iter-11）起从未生效。基规则移除 border-top/padding-top，覆盖规则与模板残留 class 清理。
+- **DEF-044 控件尺寸**：`.input`/`.prompt-ta` 16px/36px（防缩放口径误用于桌面弹窗）统一收敛 13px/32px（btn/eye-btn 同步）；与 DEF-042 修正后的 13px 系单一节奏。
+- **DEF-045 消息块间距**：code-block 12→8px、md hr 12→8px、degrade-note 4→8px——消息气泡内块级间距统一 8px 基准（工具卡/来源卡/段落原 8px 不动，标题层级间距保留）。
+- **DEF-046 整页拖动晃动**：html/body overflow hidden + overscroll-behavior none（应用壳自管滚动）；main/sm-pane overscroll-behavior contain（滚动链不穿透文档根）。
+- **验证（机器口径）**：vitest 428→435（+7 纯新增，既有用例零删除——改密 8 例随按需展开交互改造挂载方式、成功例断言随收起行为改写，功能断言零削弱）；后端 pytest 382 复跑全过（零改动）；guard:style 过；生产构建过。走查 scripts/e2e-style-0823.mjs 真实 Chrome 19/19 PASS（auto 档系统切换实时生效/显式档不覆盖、账号三段布局与展开聚焦、Esc 链、改密输入框 13px/32px、分区标题 borderTopWidth=0px、code-block margin 8px、html/body overflow hidden、注销端到端自清理走查账号）。

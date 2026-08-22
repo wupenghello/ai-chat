@@ -303,9 +303,10 @@ function onEditKey(e: KeyboardEvent) {
   padding: 2px 10px;
 }
 /* iter-14 D1 降级引导条（design-iter-14 §3 逐字）：warning-l 底 + 左缘 3px warning +
-   13px warning 字 + padding 8px 12px + 8px 圆角；宽度包裹内容（block 级可见性） */
+   13px warning 字 + padding 8px 12px + 8px 圆角；宽度包裹内容（block 级可见性）。
+   2026-08-23 样式走查：块间距与段落/卡片统一 8px 节奏（原 4px 与上下文不齐） */
 .degrade-note {
-  margin: 4px 0;
+  margin: 8px 0;
   width: fit-content;
   max-width: 100%;
   border-left: 3px solid var(--c-warning);
@@ -527,7 +528,7 @@ function onEditKey(e: KeyboardEvent) {
 .md hr {
   border: none;
   border-top: 1px solid var(--c-border);
-  margin: 12px 0;
+  margin: 8px 0;
 }
 .md strong {
   font-weight: 600;
@@ -567,9 +568,11 @@ function onEditKey(e: KeyboardEvent) {
   margin: 8px 0;
 }
 
+/* 2026-08-23 样式走查：代码块与段落/工具卡/来源卡的块间距统一 8px 节奏
+   （原 12px 与相邻块 8px 混排，视觉间距忽大忽小） */
 .code-block {
   position: relative;
-  margin: 12px 0;
+  margin: 8px 0;
 }
 .code-head {
   display: flex;
