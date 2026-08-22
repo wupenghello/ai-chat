@@ -1,7 +1,7 @@
 # 自部署手册（iter-9 T3）
 
 > ai-chat 全链路一键起：前端静态站（nginx）+ 后端（FastAPI）+ SQLite 数据卷。
-> 目标读者：在任意机器本地跑起完整服务的部署者。云部署（VPS/域名/HTTPS）见 `charter.md`，本迭代不做。
+> 目标读者：在任意机器本地跑起完整服务的部署者。线上 VPS 部署（域名/HTTPS/certbot）见 `deploy-vps.md`（v1.0.0 上线实录沉淀）。
 
 ## 架构一览
 
