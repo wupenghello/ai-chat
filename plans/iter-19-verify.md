@@ -88,6 +88,41 @@ future: <Task finished name='Task-9' coro=<boom() ...> exception=RuntimeError('h
 - pytest --collect-only 实测核实存量 332（v1.4.16 C 机器采集，2026-08-22）。
 - 本段为 REQ-048 验收 8 载体 + CHG-013 落地核对清单第 7 项交付；T2 开发解锁（T0→T2 串行口径满足）。
 
-## T2 段 — 后端实现与 D2 面收口（待实现后回填）
+## T2 段 — 后端实现与 D2 面收口（2026-08-22 交付）
 
-（占位：验收 1~7 逐条对照 + 改写映射为零断言 + pytest 计数 + RTM 收口记录）
+### T2-1 实现面（与 T0 技术基线逐项对应）
+
+- **app/hooks.py 新模块**（沿 research.py 薄模块先例）：5 事件常量（闭合枚举）+ `HookEvent` frozen dataclass（元数据-only 字段表 = CHG-013 内容 3.2；不适用字段恒 None）+ `register_hook(name, callback, events=None)` 部署侧静态注册（同事件多 hook 各自分发）+ `dispatch()` 同步入口（注册表空 / hooks_enabled 关 → 短路零任务）+ `_run()` 任务体（wait_for(hook, hook_timeout)；TimeoutError / Exception 分记 warning；CancelledError 重抛）+ `_drain()` done_callback（终态自移除 + 异常消费——T0-1 组 4 必设项）+ `_TASKS` 强引用集合（T0-1 组 1/5 必设项）+ `emit()` 埋点便捷入口（timestamp 内部填 UTC ISO8601 毫秒；未知 extra 字段在 dataclass 构造处 TypeError 开发期暴露）。
+- **埋点 5 处**（点位 = T0-2 核对表）：agent.py run_turn 内 4 处（tool.before = tool.call yield 后执行前〔含未注册→error 路径〕/ tool.after = execute_tool 返回后遥测行同位 / turn.end = 事件后〔reason 与累计值已知〕/ turn.cancelled = 取消处理器内补行后 raise 前〔emit 为同步调用，不引入新 await 点〕）+ proxy.py chat_turn 内 1 处（turn.accepted = turn_id 生成后组装开始前；拒绝分支 404/503/422/429 全在其前返回）。
+- **config.py +2 参数**：`hooks_enabled: bool = True` / `hook_timeout: float = 5.0`（T0-3 定档值；.env 经 AI_CHAT_ 前缀可覆盖）+ .env.example 无需占位（默认值即文档——与 summary_timeout 等先例一致，无新 env 必填项）。main.py 注册挂载点注释示例（定夺④部署者参照）。
+- **零改动面核证**：db.py / telemetry.py / quota.py / 前端全部零改动；零新表零迁移（SCHEMA_VERSION 维持 10）；SSE v2 零新帧类型；遥测 kind/endpoint 枚举零变化。
+
+### T2-2 实现级决策登记（CHG-013 内容 3.3 授权 T0/实现期定案，不走变更）
+
+1. **run_turn 加 `user_id: str | None = None` 形参**：载荷公共字段 user_id 的来源（T0-4 定案模块级单例时未覆盖载荷字段传递）；加法带默认值，既有调用零破坏，proxy 恒传 user.id、直驱测试可 None。
+2. **载荷 mode 字段语义 = 回合模式（"chat" | "research"）**：CHG-013「mode 进载荷」指回合模式（chat 与 research 同管线区分），非配额模式（self/unified）；agent 侧由 research 参数推断、proxy 侧由 body.mode 判定，两侧口径一致。
+3. **timestamp = UTC ISO8601 毫秒**（`datetime.now(UTC).isoformat(timespec="milliseconds")`）：机器消费中性时区，与服务器本地自然日配额口径互不干扰。
+4. **dispatch 停用/超时读全局 `get_settings()`**：模块级单例定案（T0-4）的落实；测试以 monkeypatch `hooks.get_settings` 对齐非默认值（体例同 dependency_overrides 之于路由依赖）。
+5. **warning 文案**：`hook {name} failed on {event}`（含 exc_info）/ `hook {name} timed out on {event} ({timeout}s)`——hook 名/事件名 only，无消息内容（验收 1 卫生断言面）。
+
+### T2-3 REQ-048 验收 1~8 逐条对照（tests/test_hooks.py，15 用例）
+
+| 验收 | 承载用例 | 结论 |
+|------|---------|------|
+| 1 分发与载荷 + 卫生探针 | 验收1_五回合事件真实时序与公共载荷 / 验收1_工具与终态事件专有字段 / 验收1_载荷与warning日志卫生探针 | ✅ 五事件真实时序〔accepted→before→after→end〕；公共字段逐项（turn_id 与 SSE turn.start 同源/session_id/user_id 非空/mode/timestamp ISO）；专有字段（step/tool_name/status/duration_ms/reason/requests/tokens 数值断言）；卫生——载荷 dump 与 caplog 检索不到消息正文标记、工具结果全文标记、UNIFIED_KEY |
+| 2 故障隔离 | 验收2_必抛与超时hook_事件序基线一致_无任务泄漏 | ✅ 必抛 + 超时（0.15s）hook 双挂：SSE 九帧序与 REQ-030 验收 1 基线逐帧一致、回合 done、两条 warning 落日志、`_TASKS` 收敛为空（无任务泄漏/无引用累积） |
+| 3 超时护栏 | 验收3_超时护栏_回合不因hook拖累 + 吞取消坏公民hook_护栏有界_任务自移除 | ✅ hook 悬挂 3s、护栏 0.1s——回合耗时 < 1.0s 不拖累；坏公民（吞 CancelledError 不重抛）护栏仍有界（T0-1 组 3b 回归）、任务正常终态自移除 |
+| 4 断连终态 | 验收4_断连取消_turn_cancelled且无turn_end | ✅ 直驱 run_turn 工具挂起期取消消费 task（等价代理层取消传播路径）：turn.cancelled 触发、无 turn.end、tool.before 已先达、取消口径零变化（REQ-030 验收 4 面沿既有断言） |
+| 5 零注册零回退 | 验收5_注册表空_零任务_事件序正常 + 验收5_停用开关_零分发_流逐帧等价 | ✅ 注册表空——九帧序正常 + `_TASKS` 恒空（短路零任务）；hooks_enabled=False + 有注册——零分发零任务、SSE 流除 turn_id 外逐帧等价（strip 对比） |
+| 6 research 覆盖 | 验收6_research回合_同管线触发_mode字段 | ✅ run_turn(research=ResearchProfile) 同管线触发 turn.end 且 mode='research'（无工具回合仅终态——accepted 属 proxy 侧，如实断言） |
+| 7 被拒回合零事件 | 验收7_配额拒绝_零事件 + 验收7_research门控拒绝_零事件 | ✅ 配额 429（quota_free_daily=1 耗尽后）与 research 三与门 422（search_key 空）两态零事件 |
+| 8 机制写实留档 | T0 段承载（本文档） | ✅ T2 引用收口 |
+| — 注册语义补充 | 订阅过滤_仅收订阅事件 / 同事件多hook_各自分发 / 未注册工具_前后事件照常_error终态 | events 过滤、多 hook 独立分发、未注册工具名 before/after 同点触发且 after.status='error' 降级直答 |
+
+### T2-4 D2 面收口与回归
+
+- **pytest 332 → 347 全绿**（+15 test_hooks 纯新增；主会话亲跑采信，v1.4.14 B）；ruff clean。
+- **改写映射为零 ✅**：347 = 332 存量 + 15 新增，git diff 证实既有测试文件零改动（CHG-013 测试基线段「预计零既有用例改写」兑现）。
+- 开发中插曲如实登记：首轮全量运行 6 例既有用例失败（test_search 开关矩阵 4 + test_turn 工具定义 2）——根因为 test_hooks 验收 4 用例注册的临时工具 `hk_slow_demo` 污染全局工具注册表（测试卫生问题，非产品缺陷）；已以用例内 finally 清理修复，修复后全量全绿；零既有用例改写维持。
+- **前端 vitest 378/378 复跑背书**（零触达面：client.ts/sessions.ts/组件零改动，主会话亲跑）；无 UI 走查面（零 UI）。
+- 台账五件套随本批：代码 + 本 verify + 周报节（落 weekly-W34——iter-19 当周为 W34〔08-17~08-23〕，PM 计划原写 W35 为周次计算偏差，实现级修正登记于此）+ RTM REQ-048 行与全局回归基线 D2 面行同批收口 + 缺陷账（本轮无新 DEF，DEF-001~038 维持全闭环）。

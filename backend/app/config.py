@@ -67,6 +67,12 @@ class Settings(BaseSettings):
     # （plans/iter-18-verify.md §2：默认 60s 配置静默流 60.0s 断连、20s 心跳 100s 完整
     # 存活）；非法值 ≤0 由使用方兜底默认 20.0（保守方向，不拒启动）
     heartbeat_interval: float = 20.0
+    # CHG-013/REQ-048（iter-19 T2）生命周期事件 hooks——部署者级配置（定夺④）：
+    # 注册面为部署侧代码静态注册（app/hooks.py register_hook，main.py 留示例注释），
+    # hooks_enabled 仅为部署者免改码停用而设（注册表空即无操作，机制惰性）；
+    # hook_timeout 独立超时护栏（T0 定档 5.0s，1~30s 授权内——plans/iter-19-verify.md T0-3）
+    hooks_enabled: bool = True
+    hook_timeout: float = 5.0
 
 
 @lru_cache

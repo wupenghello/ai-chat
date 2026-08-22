@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from app import agent, compress, memory, quota, research, telemetry
+from app import agent, compress, hooks, memory, quota, research, telemetry
 from app.config import Settings, get_settings
 from app.db import DatabaseDep, is_search_enabled
 from app.routers.auth import CurrentUser
@@ -230,6 +230,11 @@ async def chat_turn(
     # CHG-010/REQ-039（iter-16 T2）三级压缩管道（组装阶段，run_turn 收到的 messages 为产物）：
     # 一级 snip 每次组装无条件执行（wire 层确定性裁剪，不触库）→ 三级阈值判定 → 二级 compact
     turn_id = uuid.uuid4().hex[:12]
+    # CHG-013/REQ-048（iter-19 T2）turn.accepted：受理成立点（配额已计、turn_id 已生成、
+    # 组装开始前；拒绝分支 404/503/422/429 全在本点之前返回——被拒回合零事件）
+    hooks.emit(hooks.TURN_ACCEPTED, turn_id=turn_id, session_id=body.session_id,
+               user_id=user.id,
+               mode=("research" if body.mode == "research" else "chat"))
     history = compress.snip_tool_results(
         doc, agent.wire_messages_from_doc(doc), settings.snip_keep_recent_tools)
     messages, summary_tokens = await _assemble_pipeline(
@@ -330,6 +335,7 @@ async def chat_turn(
             api_key=api_key,
             model=model,
             session_id=body.session_id,
+            user_id=user.id,
             messages=messages,
             tool_defs=tool_defs,
             max_steps=settings.agent_max_steps,

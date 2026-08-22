@@ -18,6 +18,12 @@ from app.config import Settings
 from app.db import connect, db_version, init_db
 from app.routers import admin, auth, memory, profiles, proxy, sessions
 
+# CHG-013/REQ-048（iter-19 T2）生命周期事件 hooks——部署侧扩展点（定夺④：代码静态
+# 注册，admin 运行时零配置面）。部署者按需在自建模块 import 后注册，示例：
+#     from app import hooks
+#     async def notify(ev: hooks.HookEvent) -> None: ...  # 元数据-only 载荷
+#     hooks.register_hook("notify", notify, events={"turn.end", "turn.cancelled"})
+
 # 可观测（非功能条款）：quota/转发结果日志默认可见（uvicorn 只配置自家 logger，
 # root 无 handler 时 INFO 会被吞掉；basicConfig 幂等，已有 handler 时不重复加）
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")

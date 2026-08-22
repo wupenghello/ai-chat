@@ -20,6 +20,7 @@ from typing import Any
 
 import httpx
 
+from app import hooks as hooksvc
 from app import tools as toolsgw
 from app.research import ResearchProfile
 from app.tools import ToolDef
@@ -274,6 +275,7 @@ async def run_turn(
     api_key: str,
     model: str,
     session_id: str,
+    user_id: str | None = None,
     messages: list[dict[str, Any]],
     tool_defs: list[ToolDef],
     max_steps: int,
@@ -323,6 +325,12 @@ async def run_turn(
     total_deadline = (
         time.monotonic() + research.total_timeout if research is not None else None
     )
+    # CHG-013/REQ-048（iter-19 T2）生命周期事件旁路：回合模式进载荷（chat|research）
+    _hook_mode = "research" if research is not None else "chat"
+
+    def _hook(event: str, **extra: object) -> None:
+        hooksvc.emit(event, turn_id=turn_id, session_id=session_id,
+                     user_id=user_id, mode=_hook_mode, **extra)
 
     def _finish() -> None:
         nonlocal finished
@@ -457,6 +465,8 @@ async def run_turn(
                     break
                 yield {"type": "tool.call", "tool_call_id": tc["id"],
                        "name": tc["name"], "arguments": tc["arguments"]}
+                # REQ-048 tool.before：模型发起工具调用（含未注册 → error 路径）、执行前
+                _hook(hooksvc.TOOL_BEFORE, step=step, tool_name=tc["name"])
                 defn = registry.get(tc["name"])
                 if defn is None:
                     execution = toolsgw.ToolExecution("error", f"未注册工具：{tc['name']}", 0)
@@ -464,6 +474,9 @@ async def run_turn(
                     execution = await toolsgw.execute_tool(
                         defn, tc["arguments"], limit=tool_result_limit
                     )
+                # REQ-048 tool.after：执行终态已知（与 tool 遥测行同点位）
+                _hook(hooksvc.TOOL_AFTER, step=step, tool_name=tc["name"],
+                      status=execution.status, duration_ms=execution.duration_ms)
                 # 工具执行遥测行（REQ-037 主流程 2）：与网关日志四字段同源并存
                 _emit({"kind": "tool", "turn_id": turn_id, "step": step,
                        "tool_name": tc["name"], "latency_ms": execution.duration_ms,
@@ -491,6 +504,8 @@ async def run_turn(
                 break
         yield {"type": "usage", "requests": calls, "tokens": tokens}
         yield {"type": "turn.end", "reason": reason}
+        # REQ-048 turn.end：回合终态（reason 与累计值已知；fire-and-forget 不阻塞流终）
+        _hook(hooksvc.TURN_END, reason=reason, requests=calls, tokens=tokens)
     except (asyncio.CancelledError, GeneratorExit):
         # 断连取消：在途上游调用补 cancelled 行（tokens 计已发生部分，REQ-037 异常分支；
         # 与 REQ-034 定夺⑧同口径），同步写入不引入新 await 点；两终态路径
@@ -500,6 +515,9 @@ async def run_turn(
                    "latency_ms": int((time.monotonic() - pending_started) * 1000),
                    "status": "cancelled", "usage": pending_call.usage_detail,
                    "error_code": None})
+        # REQ-048 turn.cancelled：断连/中止终态（emit 为同步调用，不引入新 await 点；
+        # 现行口径本路径不产 turn.end——独立事件承载，消费者可区分完成与中断）
+        _hook(hooksvc.TURN_CANCELLED)
         raise
     finally:
         if active is not None:
