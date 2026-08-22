@@ -67,7 +67,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             searchsvc.unbind()
             await app.state.http.aclose()
 
-    app = FastAPI(title="ai-chat backend", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="ai-chat backend", version="1.0.0", lifespan=lifespan)
     # 进行中回合登记（CHG-010/REQ-040，iter-16 T3）：(user_id, session_id) 集合——回合受理
     # 置位、流终态（含断连）清除；手动压缩端点 409 判定的服务端唯一权威（多设备竞态，
     # design-iter-16 §2.3 定夺④）。进程内内存态：重启即清零 = 无进行中回合，语义自洽。

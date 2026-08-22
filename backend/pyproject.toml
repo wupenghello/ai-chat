@@ -1,6 +1,6 @@
 [project]
 name = "ai-chat-backend"
-version = "0.1.0"
+version = "1.0.0"
 description = "ai-chat 后端：账号体系 + 会话云存储 + 流式代理（FastAPI + SQLite）"
 requires-python = ">=3.12"
 dependencies = [

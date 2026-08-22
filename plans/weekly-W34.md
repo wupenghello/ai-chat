@@ -278,3 +278,11 @@
 **非阻塞取舍 5 项（留档接受）**：①tool/memory_extract 遥测行贡献「有数据日」——个人面可能出现全 0 日行（与 admin 有数据日口径一致，一致性优先）②走查未配置/失败态为网络层响应拦截模拟（后端不可达未配置态，verify T3-1① 登记，组件/API 面各有真实测试承载）③窗口切换失败停留失败态且 win 已切换——重试即拉新窗口（语义自洽，无回滚必要）④today 快照与 KeyModeCard 两处独立拉取存在同刻 ≤1 回合瞬时差异（CHG-015 定夺④设计口径已登记）⑤M40 复验未执行（.env 无 search 配置，触发条件未出现——QA OBS-1 留档）。
 
 **总评**：交付质量沿高位；两处当轮修均为边界一致性问题，无核心路径缺陷。
+
+## v1.0.0 发布（2026-08-22 CEO 批准「批准，定版 v1.0.0」，进行中）
+
+- **发布前提复核**（主会话 2026-08-22）：前端 vitest 423/423（40 文件）+ 后端 pytest 361 全绿亲跑复核（较 iter-21 关闭台账 +1 例，系 NCR-CR-iter21-001 当轮修新增用例）、RTM 基线 v12 全量达成（REQ-001~052）、缺陷台账 DEF-010~039 无未处置项、iter-21 QA 审计/Code Review/G4 三关闭环（制度 v1.4.20）。
+- **发布记录落盘**：releases/v1.0.0.md（本版包含 = v0.4.0 以来 21 轮迭代 REQ-020~052 十主题全量 + 已知问题四项 + VPS 部署步骤 + 回滚方案）；版本号沿变说明留档（原计划 v0.5.0 为 iter-9 时点口径，此后又交付 26 项需求且为首个线上多用户生产形态，CEO 定夺定版 v1.0.0）；服务器 Ubuntu 24.04，域名已指向服务器。
+- **本批提交**：版本号三处落位（package.json 0.4.0→1.0.0 + backend/pyproject.toml 0.1.0→1.0.0 + main.py FastAPI version="1.0.0"）+ 搜索供应商对比评估文档 docs/search-provider-eval-2026-08-22.md 留档入库；pre-commit 门禁（v1.4.19 B 本仓 hooks）复跑 pytest 361 全绿放行。
+- **部署形态**（VPS 全新机 Ubuntu 24.04）：Docker Compose 全链路（frontend nginx 8080 + backend 8000，端口改绑 127.0.0.1 不外露）+ 宿主 nginx + certbot TLS（SSE 口径 proxy_buffering off/read_timeout 300s 与容器内 nginx 同构）+ backend/.env 增设 AI_CHAT_COOKIE_SECURE=1；dist 由本地构建后上传（不入 git）。
+- **待办收口**：服务器部署执行与冒烟六验证点（DNS/301/health/首页与 SPA 深路由/注册首账号管理员+对话+用量面板/改密重登+admin）→ 全过后打 tag v1.0.0 + metrics 采集 + registry 状态「已发布」+ 发布记录回填实际输出。
