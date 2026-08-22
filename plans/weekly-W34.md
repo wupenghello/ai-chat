@@ -320,7 +320,7 @@
 - **NCR-iter22-002**：releases/v1.1.0.md 全文落盘晚于部署动作（release.md §3 字面不符；缓解 = 发布要件五项先行承载于同批周报 v1.1.0 节）。**CEO 定夺按建议②：下轮发布起恢复两段式**（先落 releases 要件版 → 执行 → 回填实录，沿 v1.0.0 先例；本轮不回溯重写）。
 - OBS 六条处置（详见 retros/qa-audit-iter-22.md 关闭记录）：OBS-1/2/5 随批收口（措辞/vitest 428 终态/uv.lock 为版本落位合法配套）；OBS-3/4 知悉；OBS-6 认可（`_TODAY` 跨点加固随 G4 承载）。
 
-### iter-22 Code Review（2026-08-23 三问全过，无 NCR 级缺陷——材料产出，待 CEO 过目）
+### iter-22 Code Review（2026-08-23 三问全过，无 NCR 级缺陷——CEO 过目认可落痕 2026-08-23「认可」）
 
 - **问题一（安全面全等价）过**：weather 出网治理与 search 范本逐行等价——三条拒绝路径（字面 IP/DNS 解析期/Host 不一致）真实可达且 fail-closed（配置 Host 单变量构造 URL 与白名单，结构性不可分叉）；key 全仓仅三处引用无第二出口（日志零调用、异常 from None 断链）；门控双保险（下发面 gates 过滤 + payload 面未注册即 error，幻觉调用不触达 handler）。
 - **问题二（机制疑点）过**：两次子调用取消链干净（wait_for 包裹、CancelledError 不被 httpx.HTTPError 吞、至多一个在途）；lifespan 关闭顺序正确（unbind 先于池关闭）；demo_weather 移除存量零回退（前端纯按事件数据渲染，历史会话卡片不变）；DEF-041 交互自洽（强制回底仅新消息时刻触发）。
