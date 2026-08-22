@@ -312,3 +312,9 @@
 - **发现**：CEO 反馈设置弹窗内容「有的有大有小不统一」——真实 Chrome 计算样式逐分区审计坐实：「AI 的记忆」分区（iter-17）整组大一档（标题 16px/400 vs 其余六分区 14px/600；标签/提示同偏）。根因 = MemoryPane 复用 SettingsForm 的 class 名但 scoped 样式不跨组件边界，回落浏览器默认 16px。
 - **修复（当轮）**：MemoryPane 显式对齐三组复用 class（逐字同 SettingsForm）；新增 SettingsPaneCssContract.spec 2 用例补「分区标题跨组件一致 + 复用 class 防漂移」契约断言面（沿 MobileCssContract 先例）；修复后审计七分区分布同型逐值一致。
 - **取证**：scripts/e2e-def042-style-audit.mjs（真实 Chrome 逐分区计算样式直方图 + 截图）；defects.md DEF-042 登记，教训「跨组件复用 class 名 ≠ 复用样式」。
+
+## v1.1.0 发布（2026-08-23 CEO 指示「你先发布部署吧」，G3 批准）
+
+- **本版包含**：v1.0.0 以来三批——iter-22 REQ-053 真实天气工具（和风 148 城坐标表 + 坐标兜底 + demo_weather 移除，5aad421）+ DEF-041 流式滚动输入意图先行（30255d0）+ DEF-042 设置分区样式一致性（624b9e7）；semver 功能性新增 → **v1.1.0**（版本号三处落位随本批提交）。
+- **部署形态**：沿 v1.0.0 同形——服务器 47.79.228.253 /opt/ai-chat git pull → backend/.env 增 AI_CHAT_WEATHER_KEY/HOST 两变量（和风凭据，CHG-016 后续动作面）→ 本地 npm run build 后 dist scp 上传 → docker compose up --build -d 双容器重建。
+- **冒烟验证点**：双容器 healthy / HTTPS 301+200 / 真实账号天气回合端到端（真实和风数据）/ 设置弹窗分区样式一致性（部署产物含 DEF-042 契约规则）/ 流式上滚不再拽底（部署产物 git SHA 核对）。结果随部署执行回填本节与 releases/v1.1.0.md。
