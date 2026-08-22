@@ -661,6 +661,9 @@ input, textarea { font-family: inherit; }
           <button class="btn-text-danger" onclick="confirmClearKey()">清除密钥</button>
           <span class="saved-flag" id="savedFlag">已保存</span>
         </div>
+        <div class="settings-note" id="usagePanePh" style="margin-top:16px;">
+          〔CHG-015/REQ-052 占位示意〕「用量与费用」分区：现行产品形态为设置弹窗第七分区（本原型为 v0.1 单页设置形态的历史基线附件，弹窗分区载体见 design/iter-11+ 系列设计稿）；高保真规格见 design/iter-21/（今日对话/费用估算摘要行 + 近 7/30 天切换 + 每日用量表格，成本仅统一 key 模式计）。
+        </div>
         <div class="settings-note">
           原型说明：本页演示 REQ-014 的完整交互（必填校验 / 保存反馈 / 清除密钥）。配置写入 localStorage 演示持久化；产品实现为 IndexedDB，密钥不出本地。<br>
           未配置 API Key 时发送消息 → 不发出请求，提示并引导到本页（REQ-007）。

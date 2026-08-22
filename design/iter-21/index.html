@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>design-iter-21 · 用量与费用分区（REQ-052）</title>
+<style>
+  /* tokens v1.3 / v1.3.1 —— 零新增令牌零自造色值（design-iter-21 §9 自查） */
+  :root {
+    --c-primary:#3370FF; --c-primary-h:#2E5FDF; --c-primary-l:#F0F4FF;
+    --c-bg:#F5F6F7; --c-surface:#FFFFFF; --c-border:#E5E6EB;
+    --c-text-1:#1F2329; --c-text-2:#646A73; --c-text-3:#8F959E;
+    --c-hover-bg:#F2F3F5; --c-subtle-bg:#FAFBFC; --c-mask:rgba(31,35,41,.4);
+    --r-sm:6px; --r-md:8px; --r-lg:12px;
+    --shadow-3:0 12px 40px rgba(31,35,41,.16);
+  }
+  [data-theme="dark"] {
+    --c-primary:#5C8DFF; --c-primary-h:#7AA4FF; --c-primary-l:#1D2740;
+    --c-bg:#131417; --c-surface:#1E2026; --c-border:#33363E;
+    --c-text-1:#E6EAF0; --c-text-2:#A2A9B6; --c-text-3:#808896;
+    --c-hover-bg:#262930; --c-subtle-bg:#24272E; --c-mask:rgba(0,0,0,.55);
+    --shadow-3:0 12px 40px rgba(0,0,0,.6);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif; background:var(--c-bg); color:var(--c-text-1); font-size:14px; padding:24px; }
+  h1 { font-size:18px; margin-bottom:4px; }
+  .page-sub { font-size:13px; color:var(--c-text-3); margin-bottom:20px; }
+  .controls { display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap; }
+  .controls button { height:32px; padding:0 14px; font-size:13px; border:1px solid var(--c-border); background:var(--c-surface); color:var(--c-text-2); border-radius:var(--r-sm); cursor:pointer; }
+  .controls button.on { background:var(--c-primary-l); color:var(--c-primary); border-color:transparent; font-weight:500; }
+  .stage-wrap { position:relative; }
+  /* ---- 页面底（模拟对话主界面遮罩上的设置弹窗） ---- */
+  .stage { background:var(--c-bg); border:1px solid var(--c-border); border-radius:var(--r-lg); padding:48px; display:flex; justify-content:center; }
+  .stage.mobile { padding:0; }
+  .stage.mobile .modal { width:100vw; max-width:100%; height:100vh; border-radius:0; border:none; flex-direction:column; }
+  /* ---- 设置弹窗（design-iter-11 基线 720px 左导航分栏） ---- */
+  .modal { width:720px; max-width:100%; background:var(--c-surface); border-radius:var(--r-lg); box-shadow:var(--shadow-3); display:flex; height:520px; overflow:hidden; }
+  .sm-nav { width:168px; border-right:1px solid var(--c-border); background:var(--c-subtle-bg); padding:12px 8px; display:flex; flex-direction:column; gap:2px; flex:none; }
+  .sm-nav button { height:36px; padding:0 12px; border:none; background:transparent; border-radius:var(--r-md); font-size:13px; color:var(--c-text-2); text-align:left; cursor:pointer; }
+  .sm-nav button.on { background:var(--c-primary-l); color:var(--c-primary); font-weight:500; }
+  .stage.mobile .sm-nav { width:auto; flex-direction:row; overflow-x:auto; border-right:none; border-bottom:1px solid var(--c-border); padding:8px 12px; flex:none; }
+  .stage.mobile .sm-nav button { flex:none; white-space:nowrap; }
+  .sm-body { flex:1; display:flex; flex-direction:column; min-width:0; }
+  .sm-head { padding:16px 24px 12px; }
+  .sm-title { font-size:16px; font-weight:600; }
+  .sm-close { position:absolute; top:12px; right:12px; width:32px; height:32px; }
+  .sm-pane { flex:1; overflow-y:auto; padding:4px 24px 24px; scrollbar-width:thin; }
+  .stage.mobile .sm-head { padding:12px 16px; }
+  .stage.mobile .sm-pane { padding:4px 16px 16px; }
+  /* ---- 用量与费用分区体（本稿新增面，§3 规格） ---- */
+  .u-sub { font-size:13px; color:var(--c-text-3); margin-top:2px; }
+  .u-today { background:var(--c-subtle-bg); border-radius:var(--r-md); padding:12px 16px; margin-top:12px; display:flex; gap:32px; flex-wrap:wrap; }
+  .u-today .cell .k { font-size:12px; color:var(--c-text-3); margin-bottom:4px; }
+  .u-today .cell .v { font-size:16px; font-weight:600; }
+  .u-win { display:flex; align-items:center; gap:4px; margin:16px 0 8px; }
+  .u-win button { height:28px; padding:0 12px; font-size:13px; border:none; background:transparent; color:var(--c-text-2); border-radius:var(--r-sm); cursor:pointer; }
+  .u-win button.on { background:var(--c-primary-l); color:var(--c-primary); font-weight:500; }
+  .u-win .note { font-size:12px; color:var(--c-text-3); margin-left:8px; }
+  .u-table-wrap { overflow-x:auto; margin-top:4px; }
+  table.u { width:100%; border-collapse:collapse; font-size:13px; }
+  table.u th { font-size:12px; color:var(--c-text-3); font-weight:400; text-align:right; padding:8px 8px; border-bottom:1px solid var(--c-border); white-space:nowrap; }
+  table.u th:first-child, table.u td:first-child { text-align:left; padding-left:0; }
+  table.u td { text-align:right; padding:9px 8px; border-bottom:1px solid var(--c-border); white-space:nowrap; font-variant-numeric:tabular-nums; }
+  table.u tr.sum td { background:var(--c-subtle-bg); font-weight:600; border-bottom:none; }
+  table.u tr.sum td:first-child { border-radius:var(--r-sm) 0 0 var(--r-sm); }
+  table.u tr.sum td:last-child { border-radius:0 var(--r-sm) var(--r-sm) 0; }
+  .u-foot { font-size:12px; color:var(--c-text-3); margin-top:8px; }
+  .u-state { padding:32px 0; text-align:center; font-size:12px; color:var(--c-text-3); }
+  .u-state .retry { display:inline-block; margin-top:8px; font-size:13px; color:var(--c-primary); cursor:pointer; }
+  /* 状态切换演示用 */
+  .hidden { display:none !important; }
+  .demo-note { margin-top:16px; font-size:12px; color:var(--c-text-3); }
+</style>
+</head>
+<body>
+<h1>design-iter-21 · 设置弹窗第七分区「用量与费用」（REQ-052）</h1>
+<div class="page-sub">高保真设计稿 · 桌面 720px / ≤480px 全屏双态 × 明暗双主题 · 样件文案 U1~U16 见 design-iter-21.md §7</div>
+<div class="controls">
+  <button id="btnTheme" onclick="toggleTheme()">切换深色</button>
+  <button id="btnLayout" onclick="toggleLayout()">切换 ≤480px 全屏态</button>
+  <button class="on" id="st-normal" onclick="setState('normal')">正常数据</button>
+  <button id="st-empty" onclick="setState('empty')">空态</button>
+  <button id="st-unset" onclick="setState('unset')">未配置单价</button>
+  <button id="st-error" onclick="setState('error')">加载失败</button>
+</div>
+
+<div class="stage-wrap">
+<div class="stage" id="stage">
+  <div class="modal">
+    <nav class="sm-nav" role="tablist" aria-label="设置分区">
+      <button>外观</button><button>密钥模式</button><button>高级设置</button>
+      <button>对话设置</button><button>AI 的记忆</button>
+      <button class="on">用量与费用</button><button>账号</button>
+    </nav>
+    <div class="sm-body">
+      <div class="sm-head"><div class="sm-title">用量与费用</div><div class="u-sub">查看你的对话用量与费用估算</div></div>
+      <div class="sm-pane" role="tabpanel">
+        <!-- 今日摘要行（§3.1） -->
+        <div class="u-today">
+          <div class="cell"><div class="k">今日对话</div><div class="v" id="todayTurns">5 / 30 次</div></div>
+          <div class="cell"><div class="k">今日费用估算</div><div class="v" id="todayCost">¥0.0123</div></div>
+        </div>
+        <!-- 时间窗（§3.2） -->
+        <div class="u-win" role="radiogroup" aria-label="用量时间窗">
+          <button class="on">近 7 天</button><button>近 30 天</button>
+          <span class="note">明细保留 90 天，超期自动清理</span>
+        </div>
+        <!-- 每日列表（§3.3） -->
+        <div class="u-table-wrap" id="tbl-normal">
+          <table class="u">
+            <thead><tr><th>日期</th><th>回合数</th><th>输入 tokens</th><th>输出 tokens</th><th>缓存命中</th><th>费用估算</th></tr></thead>
+            <tbody>
+              <tr><td>2026-08-22</td><td>5</td><td>12,345</td><td>6,789</td><td>4,200</td><td>¥0.0123</td></tr>
+              <tr><td>2026-08-21</td><td>8</td><td>21,402</td><td>11,036</td><td>9,870</td><td>¥0.0204</td></tr>
+              <tr><td>2026-08-20</td><td>3</td><td>6,812</td><td>3,940</td><td>—</td><td>¥0.0067</td></tr>
+              <tr><td>2026-08-19</td><td>12</td><td>33,156</td><td>18,220</td><td>15,041</td><td>¥0.0312</td></tr>
+              <tr class="sum"><td>合计</td><td>28</td><td>73,715</td><td>39,985</td><td>29,111</td><td>¥0.0706</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <!-- 空态（§3.4） -->
+        <div class="u-state hidden" id="tbl-empty">选定时间范围内暂无用量记录</div>
+        <!-- 未配置单价（§3.4：tokens 照常，费用列「—」+ 表头注） -->
+        <div class="u-table-wrap hidden" id="tbl-unset">
+          <table class="u">
+            <thead><tr><th>日期</th><th>回合数</th><th>输入 tokens</th><th>输出 tokens</th><th>缓存命中</th><th>费用估算（未配置单价）</th></tr></thead>
+            <tbody>
+              <tr><td>2026-08-22</td><td>5</td><td>12,345</td><td>6,789</td><td>4,200</td><td>—</td></tr>
+              <tr><td>2026-08-21</td><td>8</td><td>21,402</td><td>11,036</td><td>9,870</td><td>—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <!-- 加载失败（§3.4） -->
+        <div class="u-state hidden" id="tbl-error">用量数据加载失败，请稍后重试<br><span class="retry">重试</span></div>
+        <div class="u-foot">仅统一 key 模式计成本；自填模式 tokens 不计成本</div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+<div class="demo-note">演示控制：上方按钮切换主题/布局/四分支态；「近 7 天 · 近 30 天」选中态互斥（交互演示稿内静态呈现）。走查 28 条见 design-iter-21.md §6。</div>
+<script>
+  function toggleTheme(){ const b=document.body; const d=b.getAttribute('data-theme')==='dark'; b.setAttribute('data-theme', d?'light':'dark'); document.getElementById('btnTheme').textContent = d?'切换深色':'切换浅色'; }
+  function toggleLayout(){ const s=document.getElementById('stage'); s.classList.toggle('mobile'); document.getElementById('btnLayout').classList.toggle('on'); }
+  function setState(k){
+    const map={normal:['tbl-normal'],empty:['tbl-empty'],unset:['tbl-unset'],error:['tbl-error']};
+    ['tbl-normal','tbl-empty','tbl-unset','tbl-error'].forEach(id=>document.getElementById(id).classList.add('hidden'));
+    map[k].forEach(id=>document.getElementById(id).classList.remove('hidden'));
+    document.getElementById('todayCost').textContent = k==='unset' ? '未配置' : '¥0.0123';
+    ['st-normal','st-empty','st-unset','st-error'].forEach(id=>document.getElementById(id).classList.remove('on'));
+    document.getElementById('st-'+k).classList.add('on');
+  }
+</script>
+</body>
+</html>
