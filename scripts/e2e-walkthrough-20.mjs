@@ -206,10 +206,7 @@ try {
   // 条 29：侧栏 264px 双列 + rail 56px 逐像素零变化（iter-11 走查 16~18 复跑）
   const deskSidebar = await rect('.sidebar')
   const deskMain = await rect('.main')
-  const railOk = await page.evaluate(async () => {
-    localStorage.setItem('mm-sidebar-collapsed', '1')
-    return true
-  })
+  await page.evaluate(() => localStorage.setItem('mm-sidebar-collapsed', '1'))
   await page.reload({ waitUntil: 'networkidle0' })
   await sleep(600)
   const railW = (await rect('.sidebar'))?.w
@@ -218,7 +215,7 @@ try {
   await page.reload({ waitUntil: 'networkidle0' })
   await sleep(600)
   log('条29 [几][零] >768px 侧栏 264px 双列 + rail 56px（collapsed 键）逐像素零变化 + 移动顶条不渲染',
-    Math.round(deskSidebar.w) === 264 && Math.round(deskMain.x) === 264 && railOk && Math.round(railW) === 56 && drawerBtnDesktopHidden,
+    Math.round(deskSidebar.w) === 264 && Math.round(deskMain.x) === 264 && Math.round(railW) === 56 && drawerBtnDesktopHidden,
     `sidebar=${deskSidebar?.w} mainX=${deskMain?.x} rail=${railW} topbarHidden=${drawerBtnDesktopHidden}`)
 
   // 条 30：hover:hover 下「···」hover 浮现行为零变化 + hint/placeholder 桌面逐字零变化
