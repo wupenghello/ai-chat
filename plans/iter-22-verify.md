@@ -93,7 +93,7 @@
 | 3 门控 | ✅ | test_weather 门控 2 例（weather 键关 → 注册面不可见；开 → 全员可见）+ test_search 既有开关矩阵改写后复跑 |
 | 4 出网白名单 | ✅ | test_weather 白名单/DNS 3 例（配置域放行；他域 + 内网字面 IP 拒绝；DNS 解析内网保留地址连接前拒绝——零连接） |
 | 5 Host 不一致拒绝 | ✅ | `test_白名单_请求Host与配置Host不一致_拒绝`（evil.example.com 与三个内网 IP 对 (配置 Host,) 白名单 → 一律「不在白名单」） |
-| 6 demo_weather 移除映射 | ✅ | 见 §3（4 文件 8 处退役映射逐条登记） |
+| 6 demo_weather 移除映射 | ✅ | 见 §3（3 个既有测试文件 × 8 处退役映射逐条登记——NCR-iter22-001/OBS-1 整改口径） |
 
 ### 3. test 改写映射（demo_weather 退役——决策驱动已批准变更，CHG-016 定夺①；沿 test_proxy 16 例退役映射先例）
 
@@ -130,7 +130,7 @@
 
 ### 6. 度量（机器采集，铁律 5）
 
-- pytest 363 → **382 全绿**（19 test_weather 纯新增 + §3 既有改写映射；`make check` 亲跑 113s）+ ruff check 通过
+- pytest 363 → **382 全绿**（**20 test_weather 新增 − demo_weather 枚举 1 例退役 = 净 +19**〔363−1+20=382，`--collect-only` 机器计数——NCR-iter22-001 整改口径〕+ §3 既有改写映射；`make check` 亲跑 113s）+ ruff check 通过
 - 走查 walkthrough-22：**9 PASS / 0 FAIL**
 - vitest 423 复跑背书（零触达；随提交门禁 npm test 实测）
 - 城市表校验 148/148（一次性约 296 次真调用）

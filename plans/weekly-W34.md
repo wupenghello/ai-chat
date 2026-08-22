@@ -297,7 +297,7 @@
 - **立项与基线**：CEO 上线后问题清单第一项（demo_weather 假数据）→ CHG-016 起草呈报（定夺①~⑤）→ CEO 补发和风凭据（Host + Key）当日复验（now/3d/坐标 200；GeoAPI 404 未启用 → 增定夺⑥）→ CEO「全部按推荐」批准，基线 req-baseline-v13（70f5392 + tag 已推 GitHub）；iter-22 计划同日批准（Σ4 = S1+M2+余量 1，T0→T2 严格串行，caac620）。
 - **T0 取证**：GeoAPI 复验仍 404 → 定夺⑥回退径行（内置城市表 + 坐标兜底）；坐标样例 6 城验证（含桂林/丽江/三亚小地名）+ fxLink 提取法 + 逐字文案定稿（工具描述/结果模板/四类 error）+ 额度口径（响应无 X-RateLimit 头，控制台读数 CEO 侧待补）；留档 plans/iter-22-verify.md T0 段。
 - **T2 后端**：weather.py（148 城坐标表——校验脚本 148/148 零失败 + 坐标正则兜底 + 白名单动态化新模式〔配置 Host 单元组〕+ T0 模板逐字组装）+ demo_weather 移除（echo 保留，定夺①）+ config +2 字段 + proxy gates 加 weather 键 + main lifespan 绑定；城市表 provenance 脚本 scripts/gen_weather_cities.py 入库。
-- **T2 测试与走查**：pytest 363→382（19 test_weather 纯新增 + demo_weather 退役映射 4 文件 8 处逐条登记）+ ruff clean + vitest 423 复跑背书；走查 walkthrough-22 **9 PASS / 0 FAIL**（真 Chrome + 真 DeepSeek + 真和风：北京北极星真实数据 27°C 多云 / 丽江三日逐日 / 表外漠河降级 / 查无亚特兰蒂斯回合不崩模型如实直答 / 降级后服务健康；截图 5 帧）。
+- **T2 测试与走查**：pytest 363→382（**20 test_weather 新增 − demo_weather 枚举 1 例退役 = 净 +19**——NCR-iter22-001 整改口径；退役映射 3 个既有测试文件 × 8 处逐条登记）+ ruff clean + vitest 423 复跑背书；走查 walkthrough-22 **9 PASS / 0 FAIL**（真 Chrome + 真 DeepSeek + 真和风：北京北极星真实数据 27°C 多云 / 丽江三日逐日 / 表外漠河降级 / 查无亚特兰蒂斯回合不崩模型如实直答 / 降级后服务健康；截图 5 帧）。
 - **插曲（零 DEF）**：和风凭据误写本地 .env 被 pre-commit 全量测试门禁拦截（Settings extra_forbidden，iter-18 同型第三次）——撤出改进程环境注入，顺序纪律登记 verify T2 实现级决策 4；走查脚本自身 3 处夹具 bug（选择器/等待逻辑）当场修复，测试卫生非产品缺陷。
 - **台账**：verify T0/T2 全段 + 本周报节 + RTM REQ-053 行与全局回归基线天气面行同批收口；缺陷账零新 DEF。下一步 QA 审计 → Code Review → G4 复盘；生产部署（服务器 .env 两变量 + 重建 + 线上冒烟）待 CEO 批准后执行（CHG-016 后续动作面）。
 
@@ -312,6 +312,21 @@
 - **发现**：CEO 反馈设置弹窗内容「有的有大有小不统一」——真实 Chrome 计算样式逐分区审计坐实：「AI 的记忆」分区（iter-17）整组大一档（标题 16px/400 vs 其余六分区 14px/600；标签/提示同偏）。根因 = MemoryPane 复用 SettingsForm 的 class 名但 scoped 样式不跨组件边界，回落浏览器默认 16px。
 - **修复（当轮）**：MemoryPane 显式对齐三组复用 class（逐字同 SettingsForm）；新增 SettingsPaneCssContract.spec 2 用例补「分区标题跨组件一致 + 复用 class 防漂移」契约断言面（沿 MobileCssContract 先例）；修复后审计七分区分布同型逐值一致。
 - **取证**：scripts/e2e-def042-style-audit.mjs（真实 Chrome 逐分区计算样式直方图 + 截图）；defects.md DEF-042 登记，教训「跨组件复用 class 名 ≠ 复用样式」。
+- **vitest 终态补记（QA OBS-2）**：423→**428**（DEF-041 批 MessageList.spec +3 / DEF-042 批 SettingsPaneCssContract.spec +2，静态 `it(` 机器计数——DEF 批不入 REQ 行收口面，终态随 iter-22 收口登记）。
+
+### iter-22 QA 审计（2026-08-23 有条件符合 2 NCR，CEO「整改」当轮闭环）
+
+- **NCR-iter22-001**：台账三处记「19 test_weather 纯新增」，机器实测 20 例（RTM 行内分解自加亦 20，自相矛盾；真实算术 363−1+20=382，"+19"为净值误记为新增数）——testing.md §4b 机器采集条款同型复发（iter-17 OBS-1 首犯）。**已整改**：四处口径统一为「20 新增 − 1 退役 = 净 +19」+ OBS-1 措辞（3 文件 × 8 处）随批收口。
+- **NCR-iter22-002**：releases/v1.1.0.md 全文落盘晚于部署动作（release.md §3 字面不符；缓解 = 发布要件五项先行承载于同批周报 v1.1.0 节）。**CEO 定夺按建议②：下轮发布起恢复两段式**（先落 releases 要件版 → 执行 → 回填实录，沿 v1.0.0 先例；本轮不回溯重写）。
+- OBS 六条处置（详见 retros/qa-audit-iter-22.md 关闭记录）：OBS-1/2/5 随批收口（措辞/vitest 428 终态/uv.lock 为版本落位合法配套）；OBS-3/4 知悉；OBS-6 认可（`_TODAY` 跨点加固随 G4 承载）。
+
+### iter-22 Code Review（2026-08-23 三问全过，无 NCR 级缺陷——材料产出，待 CEO 过目）
+
+- **问题一（安全面全等价）过**：weather 出网治理与 search 范本逐行等价——三条拒绝路径（字面 IP/DNS 解析期/Host 不一致）真实可达且 fail-closed（配置 Host 单变量构造 URL 与白名单，结构性不可分叉）；key 全仓仅三处引用无第二出口（日志零调用、异常 from None 断链）；门控双保险（下发面 gates 过滤 + payload 面未注册即 error，幻觉调用不触达 handler）。
+- **问题二（机制疑点）过**：两次子调用取消链干净（wait_for 包裹、CancelledError 不被 httpx.HTTPError 吞、至多一个在途）；lifespan 关闭顺序正确（unbind 先于池关闭）；demo_weather 移除存量零回退（前端纯按事件数据渲染，历史会话卡片不变）；DEF-041 交互自洽（强制回底仅新消息时刻触发）。
+- **问题三（测试弱断言）过**：无恒真断言；如实登记四处证据强度弱点（见取舍④⑤）。
+- **六条非阻塞取舍留档（待 CEO 过目）**：①wheel 亚阈值回拽残留（<120px 单格上滚可能被位置判定重挂跟随；CEO 反馈的大幅回看场景已修复实证，恶化则加意图后短窗忽略位置重挂）②weather_host 无格式校验（畸形值 fail-closed 但报错不友好，恶化则启动期校验）③gaierror 未归一「天气服务不可达」（与范本 search 同构，恶化则 search/weather 同批修）④出网治理测试单元级低于范本流级一档（缺配置 Host=内网 IP 流级零连接与正向 payload 两例，下个触及 weather 的迭代顺手补）⑤文档计数笔误（NCR-001 同源）与环境敏感断言（`==["echo"]` 依赖环境无凭据，search 既有模式）⑥CssContract 契约锁死「复制+对齐」方案（抽公共样式重构会先红；第三处分区再犯同病即升级共享 CSS，契约改计算样式级）。
+- 复核运行：pytest（test_weather/test_agent_tools/test_search/test_turn）117 全绿 + vitest（MessageList/SettingsPaneCssContract）9 全绿（审计只读复跑）。
 
 ## v1.1.0 发布（2026-08-23 CEO 指示「你先发布部署吧」，G3 批准）
 
