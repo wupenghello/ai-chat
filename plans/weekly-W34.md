@@ -244,3 +244,14 @@
 - **T3 设置弹窗全屏化 + 断点走查 + 全局回归收口完成**（2026-08-22，本批提交）：首步冒烟既有 settings 43 用例全绿零改写（容器耦合风险证伪）；SettingsForm ≤480px 全屏态（inset 0 = 100vw×100vh + 导航横向滚动条〔定夺⑤〕+ 单滚动 + 二级弹窗〔档案编辑/ConfirmModal/DeleteAccountModal〕同口径全屏；弹窗逻辑零改动、桌面 720px 分栏零触碰）+ locateAdv 挂载路径 flash 丢失顺带修正（watch 注册序）+ showPane scrollIntoView（验收 6）；vitest 399→411（+12 SettingsMobileCssContract）；走查 scripts/e2e-walkthrough-20.mjs 真实 Chrome + 真实后端 **38 PASS / 0 FAIL**（design §7.2 全 31 条：768/480 双断点 × 亮暗四象限 + 桌面零回退 E 组 + 像素级几何〔抽屉 264/256、inset 0、热区 hit-test〕+ M44/M45 逐字；触屏态 = isMobile+hasTouch 设备仿真——CDP hover 特性本机 Chrome 已不生效，登记 verify）；截图 10 帧 /tmp/e2e20/shots。
 - **DEF-039 当轮发现当轮修复**：T2 触屏热区 `::after` inset 方向写反（calc((44px-100%)/2) 向内收缩为 12×12 而非扩 44）——真实 Chrome hit-test 捕获，三处改 calc((100%-44px)/2) + 契约 spec 同步 + 走查条 25 复验 PASS（桌面零影响）。
 - **全局回归收口**：后端 pytest 347/347 复跑背书（零后端改动）+ 前端 vitest 411/411 + guard:style + 生产构建全绿；既有用例改写映射为零；RTM REQ-049/050/051 三行 + 全局回归基线移动端面行同批收口。**iter-20 T1~T3 全交付，待 QA 审计 → Code Review → G4 复盘。**
+
+
+### Code Review（iter-20，fb0b667..d6c50e0，2026-08-22）
+
+**三问结论**：①REQ 承载完整——REQ-049/050/051 共 18 条验收逐条代码 + 测试/走查双面承载，桌面零回退双面证据（CSS 契约 spec 断言新增规则全部落 @media 块内 + 桌面基线值媒体查询外逐字保留 + 真实 Chrome 像素复证 + 既有 vitest 378 零改写）；②实现疑点独立实证全过——useMediaQuery SSR 兜底语义自洽 / scrollIntoView(nearest) 轴向正确 jsdom 可选链兜底 / 热区 ::after DEF-039 修正后方向正确（elementFromPoint 实测）/ hooks bash -n + commit-msg 探针通过 / z 序层叠正确无冲突；③测试卫生——新增 33 用例本机复跑全绿无恒真，走查关键 10 条断言抽查均实值（条 26 弱断言有契约 spec 补面）。
+
+**NCR 级缺陷 1 项（已当轮整改）**：NCR-iter20-CR-001 pre-commit 台账门禁 A 整批豁免洞——staged 含任意 scripts/hooks/ 文件即整批跳过周报检查（设计意图为 hooks 安装脚本自身不触发）；与 NCR-iter20-003 同型且出现在其整改交付物本身。整改：豁免语义改 per-file（staged 先过滤 ^scripts/hooks/ 再判触发面），dry-run 实证——src+hooks 同 staged 无周报拒 / 仅 hooks 放行 / bash -n 过。
+
+**非阻塞取舍 6 项（留档接受）**：①抽屉遮罩开时 body 背后滚动未锁（全仓弹窗同一现状口径，后续统一收口）②Esc 双消费窗口（抽屉开+弹窗开时一次 Esc 同关，方向皆「关」无数据风险；下轮 Esc 链插入点补「上层弹窗 open 时抽屉让位」）③::after 热区相邻重叠约 16px（WCAG 2.5.5 满足为主的典型触屏取舍）④useMediaQuery 老 Safari 冻结初值渐进降级桌面口径⑤走查条 26 全局 CSSOM 计数偏弱有契约 spec 补面⑥触屏闲置 hint 以 v-if 移除 DOM（JS 消费面口径已登记、桌面断言逐字零变化）。
+
+**总评**：工程交付质量沿 iter-18/19 高位，唯一 NCR 为门禁自身逻辑洞已当轮整改。

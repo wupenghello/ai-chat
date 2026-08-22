@@ -27,14 +27,13 @@ if python3 -c 'import json; s=json.load(open("package.json")).get("scripts",{});
 fi
 
 # —— 台账门禁 A（v1.4.14）：代码/测试变更必须同批携带周报条目 ——
-staged=$(git diff --cached --name-only 2>/dev/null)
+# NCR-iter20-CR-001 整改：豁免语义自「整批跳过」改为 per-file——先从 staged 中
+# 过滤掉 hooks 安装脚本自身，再判触发面与周报存在性（避免无关 hooks 文件旁路周报机检）。
+staged=$(git diff --cached --name-only 2>/dev/null | grep -vE '^scripts/hooks/' || true)
 if [ -n "$staged" ] && printf '%s' "$staged" | grep -qE '^(backend/(app|tests)/|src/|scripts/)'; then
-  # 走查脚本自身的台账面由门禁 B 承载；hooks 目录安装脚本不触发周报面
-  if ! printf '%s' "$staged" | grep -qE '^scripts/hooks/'; then
-    if ! printf '%s' "$staged" | grep -qE '^plans/weekly-W[0-9]+\.md$'; then
-      echo "提交被拒绝：代码/测试变更未同时暂存周报当迭代条目（plans/weekly-W*.md）——台账四件套机检（v1.4.14 A）。" >&2
-      exit 1
-    fi
+  if ! printf '%s' "$staged" | grep -qE '^plans/weekly-W[0-9]+\.md$'; then
+    echo "提交被拒绝：代码/测试变更未同时暂存周报当迭代条目（plans/weekly-W*.md）——台账四件套机检（v1.4.14 A）。" >&2
+    exit 1
   fi
 fi
 
