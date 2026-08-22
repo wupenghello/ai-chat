@@ -45,13 +45,15 @@ if printf '%s' "$staged" | grep -qE '^scripts/e2e-walkthrough-'; then
   fi
 fi
 
-# —— 台账门禁 C（v1.4.19，iter-20 复盘 A）：CHG 落地核对清单回填机检 ——
-# staged 含 changes.md 且其内容存在「⬜ 待」清单状态行 → 拒（拟稿呈批阶段不提交
+# —— 台账门禁 C（v1.4.19，iter-20 复盘 A；iter-21 QA NCR-iter21-002 修补）：CHG 落地核对清单回填机检 ——
+# staged 含 changes.md 且其内容存在未勾清单状态行 → 拒（拟稿呈批阶段不提交
 # changes.md；批准落盘与清单全量回填必须同批）。治 NCR-iter20-001 台账滞后第 7 代。
+# 符号面修补（NCR-iter21-002，2026-08-22）：原仅匹配「⬜」，CHG-015 清单用「☐」即旁路——
+# 未勾符号匹配扩为 ⬜/☐/◻ 并集（同一语义的三种 Unicode 呈现），未勾状态一律拦。
 if printf '%s' "$staged" | grep -qE '^requirements/changes\.md$'; then
-  if grep -n '⬜' requirements/changes.md >/dev/null 2>&1; then
-    echo "提交被拒绝：requirements/changes.md 存在「⬜ 待」清单状态行——CHG 落地核对清单须与批准落盘同批全量回填（台账门禁 C，制度 v1.4.19 A）。" >&2
-    grep -n '⬜' requirements/changes.md >&2 || true
+  if grep -nP '^\s*\d+\.\s*[⬜☐◻]' requirements/changes.md >/dev/null 2>&1; then
+    echo "提交被拒绝：requirements/changes.md 存在未勾（⬜/☐/◻）清单状态行——CHG 落地核对清单须与批准落盘同批全量回填（台账门禁 C，v1.4.19 A + NCR-iter21-002 修补）。" >&2
+    grep -nP '[⬜☐◻]' requirements/changes.md >&2 || true
     exit 1
   fi
 fi

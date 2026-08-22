@@ -34,8 +34,8 @@
   2. ✅ rtm.md 新增 REQ-052 行（设计稿/实现/测试/状态列）+ 全局回归基线行「用量面（CHG-015）」注记（pytest 347 / vitest 411 基线口径，2026-08-22 同批）
   3. ✅ changes.md 本条状态更新为已批准 + 定夺结果回填（2026-08-22 同批）
   4. ✅ tag req-baseline-v12（2026-08-22 主会话执行）
-  5. ☐ design/proto 设置分区示意同步（随 design-iter-21 基线同批，不单独先行——本 CHG 影响评估承诺，T1 交付时兑现）
-  6. ☐ plans/iter-21.md 依本 CHG 定夺起草（/mm-iteration-plan，Σ6 口径——T1 后随即起草）
+  5. ✅ design/proto 设置分区示意同步（design/proto/index.html「用量与费用」占位示意块，随 design-iter-21 基线同批提交 6c048cf——2026-08-22 回填，NCR-iter21-001 整改）
+  6. ✅ plans/iter-21.md 依本 CHG 定夺起草并批准（Σ6 = M×3，CEO「批准」2026-08-22，d612956——2026-08-22 回填，NCR-iter21-001 整改）
 
 ## CHG-014 移动端主界面适配（主对话/设置弹窗响应式 + 触摸交互）
 
