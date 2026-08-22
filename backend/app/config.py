@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -73,6 +74,13 @@ class Settings(BaseSettings):
     # hook_timeout 独立超时护栏（T0 定档 5.0s，1~30s 授权内——plans/iter-19-verify.md T0-3）
     hooks_enabled: bool = True
     hook_timeout: float = 5.0
+
+    @field_validator("price_input", "price_output", "price_cache_hit", mode="before")
+    @classmethod
+    def _empty_price_is_none(cls, v: object) -> object:
+        # .env「留空 = 未配置」契约（backend/.env.example 同批口径）：空串按 None 处理，
+        # 不经 pydantic float 解析（DEF-040：空串曾致启动崩溃）
+        return None if v == "" else v
 
 
 @lru_cache

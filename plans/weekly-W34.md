@@ -286,3 +286,8 @@
 - **本批提交**：版本号三处落位（package.json 0.4.0→1.0.0 + backend/pyproject.toml 0.1.0→1.0.0 + main.py FastAPI version="1.0.0"）+ 搜索供应商对比评估文档 docs/search-provider-eval-2026-08-22.md 留档入库；pre-commit 门禁（v1.4.19 B 本仓 hooks）复跑 pytest 361 全绿放行。
 - **部署形态**（VPS 全新机 Ubuntu 24.04）：Docker Compose 全链路（frontend nginx 8080 + backend 8000，端口改绑 127.0.0.1 不外露）+ 宿主 nginx + certbot TLS（SSE 口径 proxy_buffering off/read_timeout 300s 与容器内 nginx 同构）+ backend/.env 增设 AI_CHAT_COOKIE_SECURE=1；dist 由本地构建后上传（不入 git）。
 - **待办收口**：服务器部署执行与冒烟六验证点（DNS/301/health/首页与 SPA 深路由/注册首账号管理员+对话+用量面板/改密重登+admin）→ 全过后打 tag v1.0.0 + metrics 采集 + registry 状态「已发布」+ 发布记录回填实际输出。
+
+### v1.0.0 部署冒烟缺陷当轮修（DEF-040，2026-08-22）
+
+- **首发部署发现**：服务器（Ubuntu 24.04，47.79.228.253）`cp .env.example .env` 原样部署，backend 启动崩溃（Restarting）——三单价变量留空传 `float | None` 字段，pydantic float 解析 ValidationError。`.env.example` 注释承诺「留空 = 未配置」与实际行为相悖，文档化路径必现。
+- **当轮修复**：config.py `field_validator(mode="before")` 空串→None（三单价字段）+ tests/test_config.py 2 用例（pytest 361→363）+ defects.md DEF-040 登记；服务器 pull 重建后 backend healthy 实证。
